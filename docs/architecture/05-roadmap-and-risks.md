@@ -29,6 +29,18 @@ chunk of work that must be discovered now, not in month three.
 Success criterion: a hand-built 20-cut timeline round-trips cleanly into all four
 NLEs at all four frame rates.
 
+> **Built.** `spikes/aaf-roundtrip/` — see its
+> [README](../../spikes/aaf-roundtrip/README.md) for findings. Automated checks
+> pass for all four formats at all four rates. The NLE half is still open and is
+> the part that actually settles this risk.
+>
+> Two findings already change the plan. AAF writes reliably **once clips carry
+> an explicit MobID** — the MobID is the relink key, and the writer's
+> `use_empty_mob_ids` option produces files that cannot be relinked. And
+> **FCPXML is the fragile one**, not AAF: its adapter cannot write NTSC rates
+> without a patch, and reads them back ~4% wrong. That inverts the risk ordering
+> assumed in [02 — Media & Interchange](02-media-and-interchange.md).
+
 ### Spike B — The quality spike
 
 *Is text-only selection good enough to be worth paying for?*

@@ -40,3 +40,7 @@ coverage/
 *.prores
 scratch/
 tmp/
+
+# Spike outputs — generated media and exports
+spikes/*/out/
+spikes/*/.venv/

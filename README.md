@@ -71,6 +71,13 @@ npm run dev      # web app on :3000, mock data throughout
 npm run api      # FastAPI on :8000
 ```
 
+## Spikes
+
+| Spike | Question | Status |
+|---|---|---|
+| [A — AAF round-trip](spikes/aaf-roundtrip/) | Will an NLE open, relink and correctly play what we generate? | Automated checks pass; NLE verification open |
+| B — Selection quality | Do AI selects overlap what a human editor actually used? | Not started |
+
 ## Status
 
 Scaffolding with mock data. No pipeline yet — Spike A and Spike B come first,

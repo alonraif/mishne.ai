@@ -106,6 +106,22 @@ is a small amount of code that everything depends on, and errors surface as
 | OTIO | Native | Internal canonical | Always persisted |
 | `mishne.json` | Own schema | Transcript page, API | Rationale, scores, unused material |
 
+### What the spike found
+
+`spikes/aaf-roundtrip/` has since tested this. The short version, with detail in
+its [README](../../spikes/aaf-roundtrip/README.md):
+
+- **AAF was the reliable one.** It writes and round-trips frame-exact at all four
+  rates — but only when every clip carries an explicit `metadata["AAF"]["MobID"]`.
+  Without it the writer refuses outright. The `use_empty_mob_ids` escape hatch
+  writes a file that no editor can relink, because the MobID *is* the relink key.
+- **FCPXML was the fragile one.** Its adapter cannot write 23.976 or 29.97
+  without a patch, and reads them back roughly 4% wrong.
+- **EDL carries no frame rate at all**, so it is ambiguous unless the rate is
+  communicated some other way.
+- Validating by round-tripping through the same library is a weak check —
+  a symmetric bug agrees with itself. Parse independently.
+
 ### On the AAF writer
 
 The OpenTimelineIO AAF adapter has a documented history of producing files that
