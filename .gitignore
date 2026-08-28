@@ -44,3 +44,6 @@ tmp/
 # Spike outputs — generated media and exports
 spikes/*/out/
 spikes/*/.venv/
+
+# Files awaiting manual deletion (sandbox cannot delete)
+spikes/_to_delete/
