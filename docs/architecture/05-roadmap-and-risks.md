@@ -153,6 +153,12 @@ Named explicitly, because unnamed assumptions are the ones that break projects.
 Highest technical risk. Fully testable in week one. Fallback exists but is expensive.
 **Mitigation: Spike A, before anything else.**
 
+> **Partially retired (2026-08-28).** Generated AAF confirmed importing correctly in
+> DaVinci Resolve. Avid Media Composer remains untested, and Resolve is the
+> permissive importer while Avid is the strict one — so the specific risk named
+> in this heading is still live. Accepted knowingly for now; re-test before any
+> customer with an Avid workflow is onboarded.
+
 ### 2. Text-only selection is sufficient
 
 The premise is that the AI never needs to see pixels. This is largely true and it is

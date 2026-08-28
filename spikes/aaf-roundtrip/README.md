@@ -57,6 +57,21 @@ correct clip counts, correct edit rates.
 ¹ requires the patch in `fcpx_patch.py` — see below
 ² audio verified as channel notation, not as clips — see below
 
+### NLE verification — in progress
+
+| NLE | Format | Result | Date |
+|---|---|---|---|
+| DaVinci Resolve | AAF | **confirmed** | 2026-08-28 |
+| Avid Media Composer | AAF | not tested | |
+| Premiere Pro | FCPXML | not tested | |
+| Final Cut Pro | FCPXML | not tested | |
+
+**Resolve is the permissive one.** It imports almost anything, so a pass there
+is real but weak evidence. Avid is strict, and Avid is the customer who actually
+demands AAF — broadcast shops asking for AAF are overwhelmingly Avid shops. The
+central question of this spike is therefore still open, and the project is
+carrying that risk knowingly rather than having retired it.
+
 **This does not mean the spike passed.** It means the files are internally
 consistent. Whether Media Composer opens them is what the spike is actually
 asking, and only Media Composer can answer it. Work through
