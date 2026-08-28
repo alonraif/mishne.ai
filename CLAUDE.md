@@ -31,7 +31,11 @@ infra/          docker-compose for local Postgres; Terraform later
 
 ## Current state
 
-**Scaffolding with mock data.** Every screen renders from `apps/web/src/lib/mock-data.ts`.
+**Stages 0–4 are real** — see [apps/api/PIPELINE.md](apps/api/PIPELINE.md).
+`ingest.py` takes a media file to structured beats and emits the format the
+selection-quality spike reads. Stages 5–12 are still stubs.
+
+The rest is **scaffolding with mock data.** Every screen renders from `apps/web/src/lib/mock-data.ts`.
 The API returns the same shapes from `apps/api/src/mishne/mock.py`. No real pipeline
 yet — see [05 — Roadmap](docs/architecture/05-roadmap-and-risks.md); Spike A and
 Spike B come before Phase 1.

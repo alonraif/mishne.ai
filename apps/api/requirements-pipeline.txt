@@ -1,0 +1,5 @@
+# Stages 0-4. Kept separate from the API service dependencies so the API image
+# does not carry a 200 MB inference runtime it never uses.
+faster-whisper>=1.1
+numpy>=1.26
+pytest>=8.3
