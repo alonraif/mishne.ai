@@ -1,0 +1,177 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+   mishne.ai design tokens
+
+   This file is the design system. Retune the palette here rather than
+   hardcoding colours in components.
+
+   The product is a professional post-production tool, so the visual language
+   leans dark, dense and precise — closer to an NLE than to a SaaS dashboard.
+   Dark is the primary theme; light is supported and should stay usable.
+--------------------------------------------------------------------------- */
+
+:root {
+  --radius: 0.5rem;
+
+  /* Surfaces */
+  --background: oklch(0.99 0.002 285);
+  --foreground: oklch(0.18 0.008 285);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.008 285);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.008 285);
+
+  /* Brand — indigo-violet. Distinctive without being loud. */
+  --primary: oklch(0.52 0.185 274);
+  --primary-foreground: oklch(0.99 0.002 285);
+
+  --secondary: oklch(0.96 0.004 285);
+  --secondary-foreground: oklch(0.24 0.01 285);
+  --muted: oklch(0.96 0.004 285);
+  --muted-foreground: oklch(0.53 0.012 285);
+  --accent: oklch(0.95 0.012 274);
+  --accent-foreground: oklch(0.35 0.09 274);
+
+  --destructive: oklch(0.58 0.21 27);
+  --destructive-foreground: oklch(0.99 0.002 285);
+
+  --border: oklch(0.91 0.004 285);
+  --input: oklch(0.91 0.004 285);
+  --ring: oklch(0.52 0.185 274);
+
+  /* --- Domain semantics ------------------------------------------------- */
+
+  /* Transcript: material that made the cut vs material that did not */
+  --used: oklch(0.55 0.14 155);
+  --used-surface: oklch(0.95 0.045 155);
+  --used-foreground: oklch(0.32 0.09 155);
+  --unused-foreground: oklch(0.62 0.008 285);
+
+  /* Beat flags */
+  --flag-filler: oklch(0.62 0.10 60);
+  --flag-retake: oklch(0.58 0.14 300);
+  --flag-lowconf: oklch(0.62 0.16 40);
+
+  /* Job stage states */
+  --stage-pending: oklch(0.72 0.008 285);
+  --stage-active: oklch(0.70 0.16 70);
+  --stage-done: oklch(0.55 0.14 155);
+  --stage-failed: oklch(0.58 0.21 27);
+
+  /* Timecode and waveform */
+  --timecode: oklch(0.45 0.04 274);
+  --waveform: oklch(0.62 0.08 274);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
+}
+
+.dark {
+  --background: oklch(0.165 0.006 285);
+  --foreground: oklch(0.95 0.003 285);
+  --card: oklch(0.202 0.007 285);
+  --card-foreground: oklch(0.95 0.003 285);
+  --popover: oklch(0.222 0.008 285);
+  --popover-foreground: oklch(0.95 0.003 285);
+
+  --primary: oklch(0.65 0.17 274);
+  --primary-foreground: oklch(0.14 0.01 285);
+
+  --secondary: oklch(0.25 0.008 285);
+  --secondary-foreground: oklch(0.93 0.003 285);
+  --muted: oklch(0.25 0.008 285);
+  --muted-foreground: oklch(0.66 0.01 285);
+  --accent: oklch(0.30 0.035 274);
+  --accent-foreground: oklch(0.90 0.04 274);
+
+  --destructive: oklch(0.62 0.20 25);
+  --destructive-foreground: oklch(0.97 0.003 285);
+
+  --border: oklch(0.28 0.008 285);
+  --input: oklch(0.30 0.008 285);
+  --ring: oklch(0.65 0.17 274);
+
+  --used: oklch(0.68 0.15 155);
+  --used-surface: oklch(0.28 0.05 155);
+  --used-foreground: oklch(0.86 0.09 155);
+  --unused-foreground: oklch(0.50 0.008 285);
+
+  --flag-filler: oklch(0.70 0.10 60);
+  --flag-retake: oklch(0.68 0.13 300);
+  --flag-lowconf: oklch(0.70 0.15 40);
+
+  --stage-pending: oklch(0.42 0.008 285);
+  --stage-active: oklch(0.76 0.15 70);
+  --stage-done: oklch(0.68 0.15 155);
+  --stage-failed: oklch(0.65 0.19 25);
+
+  --timecode: oklch(0.72 0.06 274);
+  --waveform: oklch(0.55 0.09 274);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-used: var(--used);
+  --color-used-surface: var(--used-surface);
+  --color-used-foreground: var(--used-foreground);
+  --color-unused-foreground: var(--unused-foreground);
+  --color-flag-filler: var(--flag-filler);
+  --color-flag-retake: var(--flag-retake);
+  --color-flag-lowconf: var(--flag-lowconf);
+  --color-stage-pending: var(--stage-pending);
+  --color-stage-active: var(--stage-active);
+  --color-stage-done: var(--stage-done);
+  --color-stage-failed: var(--stage-failed);
+  --color-timecode: var(--timecode);
+  --color-waveform: var(--waveform);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Timecode should never reflow as digits change */
+  .tc {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "mishne",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": ["apps/web", "packages/*"],
+  "scripts": {
+    "dev": "npm run dev --workspace=@mishne/web",
+    "build": "npm run build --workspace=@mishne/web",
+    "lint": "npm run lint --workspace=@mishne/web",
+    "typecheck": "npm run typecheck --workspace=@mishne/web",
+    "api": "cd apps/api && uv run uvicorn mishne.main:app --reload --port 8000",
+    "db": "docker compose -f infra/docker-compose.yml up -d"
+  },
+  "engines": { "node": ">=20" }
+}
