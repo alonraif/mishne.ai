@@ -1,0 +1,802 @@
+{
+ "name": "harbour-lights-ep3",
+ "fps": 25,
+ "notes": "Hand-authored fixture. ~40 min of interview, human web cut of 13 beats. Synthetic material cannot validate the product \u2014 only real pairs can. This exists to prove the harness and to check the metric discriminates.",
+ "beats": [
+  {
+   "id": "b000",
+   "start": 900600,
+   "end": 900696,
+   "speaker": "Interviewer",
+   "text": "Whenever you're ready. Just talk to me, not the camera.",
+   "flags": []
+  },
+  {
+   "id": "b001",
+   "start": 901050,
+   "end": 901137,
+   "speaker": "Margret Olsen",
+   "text": "Um. Right. Where do you want me to start?",
+   "flags": [
+    "filler"
+   ]
+  },
+  {
+   "id": "b002",
+   "start": 901800,
+   "end": 902040,
+   "speaker": "Margret Olsen",
+   "text": "My father kept his boat in the east basin for forty-three years. The Sigrun. She hasn't left the harbour since March, and she won't again.",
+   "flags": []
+  },
+  {
+   "id": "b003",
+   "start": 902850,
+   "end": 902937,
+   "speaker": "Margret Olsen",
+   "text": "Sorry, was that alright? I can do it again.",
+   "flags": [
+    "false_start"
+   ]
+  },
+  {
+   "id": "b004",
+   "start": 903900,
+   "end": 904131,
+   "speaker": "Margret Olsen",
+   "text": "People keep saying the harbour is closing. It isn't closing. It's being closed. There's a difference and everybody here knows exactly what it is.",
+   "flags": []
+  },
+  {
+   "id": "b005",
+   "start": 905100,
+   "end": 905225,
+   "speaker": "Margret Olsen",
+   "text": "The dredging survey came back in, I want to say, February. Maybe March.",
+   "flags": [
+    "low_confidence"
+   ]
+  },
+  {
+   "id": "b006",
+   "start": 906149,
+   "end": 906274,
+   "speaker": "Margret Olsen",
+   "text": "Nobody from the department has been down here. Not once. They've seen photographs.",
+   "flags": []
+  },
+  {
+   "id": "b007",
+   "start": 907500,
+   "end": 907540,
+   "speaker": "Interviewer",
+   "text": "Who made the decision?",
+   "flags": []
+  },
+  {
+   "id": "b008",
+   "start": 907950,
+   "end": 908046,
+   "speaker": "Margret Olsen",
+   "text": "That depends who you ask, which is rather the point.",
+   "flags": []
+  },
+  {
+   "id": "b009",
+   "start": 909300,
+   "end": 909377,
+   "speaker": "Margret Olsen",
+   "text": "There's a lot of paperwork. Forms about forms.",
+   "flags": []
+  },
+  {
+   "id": "b010",
+   "start": 910500,
+   "end": 910788,
+   "speaker": "Jonas Berg",
+   "text": "I've been harbour master for nineteen years. I have signed off on every vessel that's come through that gate. And in February I signed the notice that says they can't.",
+   "flags": []
+  },
+  {
+   "id": "b011",
+   "start": 912150,
+   "end": 912410,
+   "speaker": "Jonas Berg",
+   "text": "The tonnage thresholds moved in twenty-three and again in twenty-five, so a fleet that was compliant on Monday was non-compliant on Tuesday without anybody doing anything differently.",
+   "flags": []
+  },
+  {
+   "id": "b012",
+   "start": 914100,
+   "end": 914244,
+   "speaker": "Jonas Berg",
+   "text": "I don't blame the council. I blame the arithmetic. The council just read it out.",
+   "flags": []
+  },
+  {
+   "id": "b013",
+   "start": 915300,
+   "end": 915463,
+   "speaker": "Jonas Berg",
+   "text": "The gate mechanism is from nineteen sixty-eight. It still works. Everything here still works, that's the thing.",
+   "flags": []
+  },
+  {
+   "id": "b014",
+   "start": 916500,
+   "end": 916577,
+   "speaker": "Jonas Berg",
+   "text": "We had an inspection in April. Passed it.",
+   "flags": []
+  },
+  {
+   "id": "b015",
+   "start": 917700,
+   "end": 917758,
+   "speaker": "Interviewer",
+   "text": "And the boats that are left?",
+   "flags": []
+  },
+  {
+   "id": "b016",
+   "start": 918000,
+   "end": 918183,
+   "speaker": "Margret Olsen",
+   "text": "There were sixty-two boats working out of here when I took over from my father. Sixty-two. There are nine.",
+   "flags": []
+  },
+  {
+   "id": "b017",
+   "start": 919650,
+   "end": 919919,
+   "speaker": "Margret Olsen",
+   "text": "Two are going to Thorshofn. Three are being sold south. The rest of us are waiting to see what the compensation looks like, and nobody will tell us.",
+   "flags": []
+  },
+  {
+   "id": "b018",
+   "start": 921450,
+   "end": 921575,
+   "speaker": "Margret Olsen",
+   "text": "I mean the compensation, sorry, the transition package. That's what they call it.",
+   "flags": [
+    "false_start",
+    "filler"
+   ]
+  },
+  {
+   "id": "b019",
+   "start": 922800,
+   "end": 923098,
+   "speaker": "Jonas Berg",
+   "text": "You can measure a harbour by the ice plant. If the ice plant runs, the harbour is alive. Ours stopped in April and nobody has asked me to start it again.",
+   "flags": []
+  },
+  {
+   "id": "b020",
+   "start": 924599,
+   "end": 924695,
+   "speaker": "Jonas Berg",
+   "text": "There's a rota for the lights. I still do it.",
+   "flags": []
+  },
+  {
+   "id": "b021",
+   "start": 925650,
+   "end": 925900,
+   "speaker": "Margret Olsen",
+   "text": "My daughter asked me last week whether she should learn the boat. And I didn't have an answer for her. That's the first time that's happened.",
+   "flags": []
+  },
+  {
+   "id": "b022",
+   "start": 927750,
+   "end": 927865,
+   "speaker": "Margret Olsen",
+   "text": "She's good with the engine. Better than I was at that age.",
+   "flags": []
+  },
+  {
+   "id": "b023",
+   "start": 928800,
+   "end": 928877,
+   "speaker": "Interviewer",
+   "text": "Do you think it could have gone differently?",
+   "flags": []
+  },
+  {
+   "id": "b024",
+   "start": 929250,
+   "end": 929327,
+   "speaker": "Margret Olsen",
+   "text": "Yes. That's the part I can't put down.",
+   "flags": []
+  },
+  {
+   "id": "b025",
+   "start": 930600,
+   "end": 930821,
+   "speaker": "Margret Olsen",
+   "text": "If the survey had come back a year earlier there'd have been money in the coastal fund. A year. That's all it was.",
+   "flags": []
+  },
+  {
+   "id": "b026",
+   "start": 932400,
+   "end": 932458,
+   "speaker": "Jonas Berg",
+   "text": "The fund closed in twenty-four. Reallocated.",
+   "flags": []
+  },
+  {
+   "id": "b027",
+   "start": 933450,
+   "end": 933565,
+   "speaker": "Jonas Berg",
+   "text": "I've written to them four times. I get a reference number back.",
+   "flags": []
+  },
+  {
+   "id": "b028",
+   "start": 934800,
+   "end": 934983,
+   "speaker": "Margret Olsen",
+   "text": "The east basin freezes first. Always has. My father used to say you could set your calendar by it.",
+   "flags": []
+  },
+  {
+   "id": "b029",
+   "start": 936150,
+   "end": 936333,
+   "speaker": "Margret Olsen",
+   "text": "We used to have a festival in June. Stopped that in twenty-two, nothing to do with any of this.",
+   "flags": []
+  },
+  {
+   "id": "b030",
+   "start": 937500,
+   "end": 937548,
+   "speaker": "Interviewer",
+   "text": "What happens to the buildings?",
+   "flags": []
+  },
+  {
+   "id": "b031",
+   "start": 937950,
+   "end": 938017,
+   "speaker": "Jonas Berg",
+   "text": "Sold, probably. Somebody will want the view.",
+   "flags": []
+  },
+  {
+   "id": "b032",
+   "start": 939300,
+   "end": 939425,
+   "speaker": "Jonas Berg",
+   "text": "There's a company been round twice. Photographs, tape measures. Nobody's told me anything.",
+   "flags": []
+  },
+  {
+   "id": "b033",
+   "start": 941100,
+   "end": 941283,
+   "speaker": "Margret Olsen",
+   "text": "I'm not sentimental about it. I want to be clear about that. It's a job. It was a job.",
+   "flags": []
+  },
+  {
+   "id": "b034",
+   "start": 942900,
+   "end": 943054,
+   "speaker": "Margret Olsen",
+   "text": "But you don't do a job for thirty years without it being something else as well.",
+   "flags": []
+  },
+  {
+   "id": "b035",
+   "start": 944700,
+   "end": 944796,
+   "speaker": "Margret Olsen",
+   "text": "[overlapping] no but that's exactly what I. Sorry, go on.",
+   "flags": [
+    "crosstalk",
+    "false_start"
+   ]
+  },
+  {
+   "id": "b036",
+   "start": 945600,
+   "end": 945725,
+   "speaker": "Jonas Berg",
+   "text": "Would I do it again? Yes. Obviously yes. That was never the question.",
+   "flags": []
+  },
+  {
+   "id": "b037",
+   "start": 947250,
+   "end": 947394,
+   "speaker": "Jonas Berg",
+   "text": "The question is what we tell the ones coming up. And I don't have that.",
+   "flags": []
+  },
+  {
+   "id": "b038",
+   "start": 948900,
+   "end": 949006,
+   "speaker": "Margret Olsen",
+   "text": "[off mic] Do you want the bit about the ice again?",
+   "flags": [
+    "off_mic"
+   ]
+  },
+  {
+   "id": "b039",
+   "start": 949800,
+   "end": 950002,
+   "speaker": "Margret Olsen",
+   "text": "It's a working harbour. That's not a description, it's a category. Once you lose the category you don't get it back.",
+   "flags": []
+  },
+  {
+   "id": "b040",
+   "start": 951750,
+   "end": 951856,
+   "speaker": "Jonas Berg",
+   "text": "I'll be the last one out. Somebody has to lock it.",
+   "flags": []
+  },
+  {
+   "id": "b041",
+   "start": 953100,
+   "end": 953148,
+   "speaker": "Interviewer",
+   "text": "Anything you want to add?",
+   "flags": []
+  },
+  {
+   "id": "b042",
+   "start": 953550,
+   "end": 953608,
+   "speaker": "Margret Olsen",
+   "text": "No. I think that's it, really.",
+   "flags": [
+    "filler"
+   ]
+  },
+  {
+   "id": "b043",
+   "start": 954750,
+   "end": 954904,
+   "speaker": "Jonas Berg",
+   "text": "There's a plaque somewhere about the eighteen-ninety-four storm. I should find that before they take it.",
+   "flags": []
+  },
+  {
+   "id": "b044",
+   "start": 956100,
+   "end": 956244,
+   "speaker": "Margret Olsen",
+   "text": "My father would have argued. He'd have gone to every meeting. I've been to two.",
+   "flags": []
+  },
+  {
+   "id": "b045",
+   "start": 957450,
+   "end": 957546,
+   "speaker": "Margret Olsen",
+   "text": "That's not defeat, by the way. That's arithmetic as well.",
+   "flags": []
+  },
+  {
+   "id": "b046",
+   "start": 958650,
+   "end": 958765,
+   "speaker": "Jonas Berg",
+   "text": "You get used to the sound. And then you notice it's gone.",
+   "flags": []
+  },
+  {
+   "id": "b047",
+   "start": 960000,
+   "end": 960048,
+   "speaker": "Interviewer",
+   "text": "Thank you. That was great.",
+   "flags": []
+  },
+  {
+   "id": "b048",
+   "start": 901350,
+   "end": 901475,
+   "speaker": "Interviewer",
+   "text": "Can you say your name and what you do, just for the record.",
+   "flags": []
+  },
+  {
+   "id": "b049",
+   "start": 901500,
+   "end": 901567,
+   "speaker": "Margret Olsen",
+   "text": "Margret Olsen. I fish, or I did.",
+   "flags": []
+  },
+  {
+   "id": "b050",
+   "start": 903150,
+   "end": 903265,
+   "speaker": "Jonas Berg",
+   "text": "Do you want me in this bit or shall I wait outside?",
+   "flags": []
+  },
+  {
+   "id": "b051",
+   "start": 904500,
+   "end": 904644,
+   "speaker": "Margret Olsen",
+   "text": "The survey was commissioned by the port authority, not the council. People get that wrong.",
+   "flags": []
+  },
+  {
+   "id": "b052",
+   "start": 905700,
+   "end": 905815,
+   "speaker": "Margret Olsen",
+   "text": "There are two basins. East and west. West silted up years ago.",
+   "flags": []
+  },
+  {
+   "id": "b053",
+   "start": 906900,
+   "end": 906987,
+   "speaker": "Jonas Berg",
+   "text": "Tide's low this morning. You can see the sill.",
+   "flags": []
+  },
+  {
+   "id": "b054",
+   "start": 908400,
+   "end": 908506,
+   "speaker": "Margret Olsen",
+   "text": "It's not a big harbour. It was never a big harbour.",
+   "flags": []
+  },
+  {
+   "id": "b055",
+   "start": 909900,
+   "end": 910006,
+   "speaker": "Jonas Berg",
+   "text": "The lights are on a timer now. Used to be manual.",
+   "flags": []
+  },
+  {
+   "id": "b056",
+   "start": 911400,
+   "end": 911506,
+   "speaker": "Margret Olsen",
+   "text": "My grandfather was here too, but he was crew, not skipper.",
+   "flags": []
+  },
+  {
+   "id": "b057",
+   "start": 912900,
+   "end": 912977,
+   "speaker": "Interviewer",
+   "text": "Sorry, one second, there's a van going past.",
+   "flags": []
+  },
+  {
+   "id": "b058",
+   "start": 913200,
+   "end": 913248,
+   "speaker": "Margret Olsen",
+   "text": "Shall I wait? I'll wait.",
+   "flags": [
+    "false_start"
+   ]
+  },
+  {
+   "id": "b059",
+   "start": 913500,
+   "end": 913615,
+   "speaker": "Jonas Berg",
+   "text": "The quota paperwork goes to Reykjavik and comes back six weeks later.",
+   "flags": []
+  },
+  {
+   "id": "b060",
+   "start": 915900,
+   "end": 916015,
+   "speaker": "Margret Olsen",
+   "text": "We used to land haddock mostly. Some cod. Depends on the year.",
+   "flags": []
+  },
+  {
+   "id": "b061",
+   "start": 917100,
+   "end": 917177,
+   "speaker": "Jonas Berg",
+   "text": "There's a chandlery on the corner. Closed Tuesdays.",
+   "flags": []
+  },
+  {
+   "id": "b062",
+   "start": 918900,
+   "end": 919025,
+   "speaker": "Margret Olsen",
+   "text": "You'd get maybe two hundred days a year you could go out. Weather.",
+   "flags": []
+  },
+  {
+   "id": "b063",
+   "start": 920550,
+   "end": 920665,
+   "speaker": "Jonas Berg",
+   "text": "I keep the logbooks. All of them, back to when I started.",
+   "flags": []
+  },
+  {
+   "id": "b064",
+   "start": 922200,
+   "end": 922315,
+   "speaker": "Margret Olsen",
+   "text": "It's not that people don't care. It's that caring isn't a submission.",
+   "flags": []
+  },
+  {
+   "id": "b065",
+   "start": 923850,
+   "end": 923908,
+   "speaker": "Interviewer",
+   "text": "Tell me about the ice plant.",
+   "flags": []
+  },
+  {
+   "id": "b066",
+   "start": 925200,
+   "end": 925296,
+   "speaker": "Margret Olsen",
+   "text": "The co-op ran it. Six of us on the committee.",
+   "flags": []
+  },
+  {
+   "id": "b067",
+   "start": 926700,
+   "end": 926767,
+   "speaker": "Jonas Berg",
+   "text": "Electricity bill on that thing was extraordinary.",
+   "flags": []
+  },
+  {
+   "id": "b068",
+   "start": 928350,
+   "end": 928408,
+   "speaker": "Margret Olsen",
+   "text": "Um, what was the question? Sorry.",
+   "flags": [
+    "filler",
+    "false_start"
+   ]
+  },
+  {
+   "id": "b069",
+   "start": 930000,
+   "end": 930106,
+   "speaker": "Jonas Berg",
+   "text": "You have to sound the horn before the gate moves. Regulation.",
+   "flags": []
+  },
+  {
+   "id": "b070",
+   "start": 931350,
+   "end": 931456,
+   "speaker": "Margret Olsen",
+   "text": "My husband worked at the plant. Different plant, up the road.",
+   "flags": []
+  },
+  {
+   "id": "b071",
+   "start": 932850,
+   "end": 932946,
+   "speaker": "Interviewer",
+   "text": "Can we go back to the survey for a moment?",
+   "flags": []
+  },
+  {
+   "id": "b072",
+   "start": 934200,
+   "end": 934287,
+   "speaker": "Margret Olsen",
+   "text": "It's forty pages and about six of them matter.",
+   "flags": []
+  },
+  {
+   "id": "b073",
+   "start": 935700,
+   "end": 935748,
+   "speaker": "Jonas Berg",
+   "text": "I read all forty. Twice.",
+   "flags": []
+  },
+  {
+   "id": "b074",
+   "start": 936900,
+   "end": 936977,
+   "speaker": "Margret Olsen",
+   "text": "There's a consultation window. It closed in June.",
+   "flags": []
+  },
+  {
+   "id": "b075",
+   "start": 938700,
+   "end": 938796,
+   "speaker": "Jonas Berg",
+   "text": "I did submit. I have the reference number here somewhere.",
+   "flags": []
+  },
+  {
+   "id": "b076",
+   "start": 940200,
+   "end": 940335,
+   "speaker": "Margret Olsen",
+   "text": "People assume it's romantic. It's cold and it's wet and the money is bad.",
+   "flags": []
+  },
+  {
+   "id": "b077",
+   "start": 941850,
+   "end": 941975,
+   "speaker": "Jonas Berg",
+   "text": "The moorings are numbered but the numbers don't run in order. Never have.",
+   "flags": []
+  },
+  {
+   "id": "b078",
+   "start": 943500,
+   "end": 943596,
+   "speaker": "Margret Olsen",
+   "text": "I sold the small boat in twenty-three. Kept the Sigrun.",
+   "flags": []
+  },
+  {
+   "id": "b079",
+   "start": 945000,
+   "end": 945077,
+   "speaker": "Interviewer",
+   "text": "Is there anyone else we should talk to?",
+   "flags": []
+  },
+  {
+   "id": "b080",
+   "start": 945300,
+   "end": 945387,
+   "speaker": "Margret Olsen",
+   "text": "Talk to Erla. She'll tell you about the co-op.",
+   "flags": []
+  },
+  {
+   "id": "b081",
+   "start": 946500,
+   "end": 946548,
+   "speaker": "Jonas Berg",
+   "text": "Erla's in Akureyri now, mind.",
+   "flags": []
+  },
+  {
+   "id": "b082",
+   "start": 948000,
+   "end": 948115,
+   "speaker": "Margret Olsen",
+   "text": "The nets go to a yard in Denmark. They pay by weight.",
+   "flags": []
+  },
+  {
+   "id": "b083",
+   "start": 949500,
+   "end": 949587,
+   "speaker": "Jonas Berg",
+   "text": "I've got a key to everything here. Every door.",
+   "flags": []
+  },
+  {
+   "id": "b084",
+   "start": 951000,
+   "end": 951144,
+   "speaker": "Margret Olsen",
+   "text": "It's not a museum. That's what I'd say to them. It's not a museum yet.",
+   "flags": []
+  },
+  {
+   "id": "b085",
+   "start": 952500,
+   "end": 952606,
+   "speaker": "Jonas Berg",
+   "text": "The tide gauge is the oldest instrument on the coast, apparently.",
+   "flags": []
+  },
+  {
+   "id": "b086",
+   "start": 954000,
+   "end": 954087,
+   "speaker": "Margret Olsen",
+   "text": "You want the truth, I've stopped reading the letters.",
+   "flags": []
+  },
+  {
+   "id": "b087",
+   "start": 955500,
+   "end": 955587,
+   "speaker": "Jonas Berg",
+   "text": "Somebody suggested a heritage trail. I didn't say anything.",
+   "flags": []
+  },
+  {
+   "id": "b088",
+   "start": 958200,
+   "end": 958296,
+   "speaker": "Margret Olsen",
+   "text": "My father would have known who to ring. I don't.",
+   "flags": []
+  },
+  {
+   "id": "b089",
+   "start": 959250,
+   "end": 959290,
+   "speaker": "Jonas Berg",
+   "text": "Anyway. That's the harbour.",
+   "flags": []
+  }
+ ],
+ "human_cut": [
+  [
+   901800,
+   902040
+  ],
+  [
+   903900,
+   904131
+  ],
+  [
+   910500,
+   910788
+  ],
+  [
+   914100,
+   914244
+  ],
+  [
+   918000,
+   918183
+  ],
+  [
+   919650,
+   919919
+  ],
+  [
+   922800,
+   923098
+  ],
+  [
+   925650,
+   925900
+  ],
+  [
+   941100,
+   941283
+  ],
+  [
+   947250,
+   947394
+  ],
+  [
+   949800,
+   950002
+  ],
+  [
+   951750,
+   951856
+  ],
+  [
+   956100,
+   956244
+  ]
+ ]
+}

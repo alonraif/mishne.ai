@@ -76,7 +76,7 @@ npm run api      # FastAPI on :8000
 | Spike | Question | Status |
 |---|---|---|
 | [A — AAF round-trip](spikes/aaf-roundtrip/) | Will an NLE open, relink and correctly play what we generate? | Automated checks pass; NLE verification open |
-| B — Selection quality | Do AI selects overlap what a human editor actually used? | Not started |
+| [B — Selection quality](spikes/selection-quality/) | Do AI selects overlap what a human editor actually used? | Harness built and running; needs real pairs |
 
 ## Status
 

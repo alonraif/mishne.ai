@@ -1,0 +1,5 @@
+ortools>=9.11
+anthropic>=0.40
+opentimelineio>=0.18
+otio-cmx3600-adapter>=1.0
+otio-aaf-adapter>=2.0

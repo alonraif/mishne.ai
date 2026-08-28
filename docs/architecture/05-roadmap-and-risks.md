@@ -61,12 +61,29 @@ Rough interpretation:
 | 40–60% | Viable. Editors save real time even while disagreeing with choices |
 | < 40% | The premise needs rework before any product is built |
 
+These thresholds are provisional. Two editors given the same rushes do not agree
+either, so human-to-human agreement is the real ceiling and it is unknown. Until
+it is measured, **lift over the best baseline is the trustworthy signal**, not
+the absolute score.
+
 Measure recall of the human's selections more than precision — a rough cut that is
 somewhat long but contains everything the editor wanted is useful; one that is
 exactly the right length but missing the best soundbite is not. Weight accordingly.
 
 **Do not skip Spike B because it is less fun than building.** It is the one that
 determines whether the product is worth building at all.
+
+> **Built.** `spikes/selection-quality/` — see its
+> [README](../../spikes/selection-quality/README.md). The harness, the metric
+> and four baselines are done and running. It needs real pairs.
+>
+> Two things already change the plan. **Ground truth is free**: the editor's own
+> finished sequence, exported as an EDL or AAF, is an exact record of what they
+> used — no annotation, and one customer export per corpus entry. And
+> **`longest` is a far stronger baseline than expected**, beating the non-LLM
+> control on the fixture. The question is therefore not whether the engine beats
+> random; it is whether the language model beats "pick the longest answers" by
+> enough to justify its cost.
 
 ## Phase 1 — Vertical slice
 
