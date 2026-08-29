@@ -69,7 +69,11 @@ def main() -> int:
 
     print(f"\n{'=' * 68}\n mishne.ai — {args.media.name}\n{'=' * 68}")
 
-    if (msg := warn_model_for_language(args.model, args.language)):
+    # Report the model actually being used. Warning about the unused --model
+    # default while --model-path points at large-v3 is worse than saying
+    # nothing: it tells you to fix something you already fixed.
+    effective_model = args.model_path or args.model
+    if (msg := warn_model_for_language(effective_model, args.language)):
         print(f" {Y}{msg}{X}\n")
 
     is_aaf = args.media.suffix.lower() == ".aaf"

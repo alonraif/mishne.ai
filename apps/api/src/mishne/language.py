@@ -73,15 +73,23 @@ def direction(text: str = "", language: str | None = None) -> str:
 
 
 def warn_model_for_language(model: str, language: str | None) -> str | None:
-    """Whisper size warning for RTL languages. Returns a message or None."""
+    """Whisper size warning for RTL languages. Returns a message or None.
+
+    Matches the size *within* the name rather than comparing the whole thing.
+    A model is just as often given as a path — `models/faster-whisper-large-v3`
+    — as by bare size, and comparing basenames warned that large-v3 was too
+    small, which is exactly the advice someone who already fixed the problem
+    does not need.
+    """
     if not is_rtl_language(language):
         return None
-    size = model.split("/")[-1].lower()
-    if size in MIN_MODEL_FOR_RTL:
+    name = model.replace("\\", "/").split("/")[-1].lower()
+    if any(size in name for size in MIN_MODEL_FOR_RTL):
         return None
     return (
-        f"Whisper '{model}' is too small for {language}. Hebrew and Arabic "
-        f"degrade sharply below 'medium'; word timestamps drift and filler is "
-        f"dropped. Use --model medium or large-v3. Transcription will be "
-        f"slower, and on CPU considerably slower."
+        f"Whisper '{name}' is small for {language}. Hebrew and Arabic degrade "
+        f"sharply below 'medium': word timestamps drift and filler gets "
+        f"dropped, which matters here because removing filler is this system's "
+        f"job and it cannot do it if the ASR already did. Use medium or "
+        f"large-v3."
     )

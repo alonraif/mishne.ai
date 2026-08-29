@@ -141,6 +141,14 @@ That is the path from a real interview to a real quality number.
 
 ## Notes that will save an hour
 
+**Python 3.10-3.13 only.** OpenTimelineIO is a C++ extension and publishes
+wheels for cp39-cp313. On 3.14 there is nothing to install, the bindings end up
+mismatched, and every adapter fails at load with `RuntimeError: bad any cast` —
+which reads like a corrupt file rather than a version problem. `setup.sh` picks
+a supported interpreter and refuses rather than letting that happen.
+
+**Do not share a `.venv` between machines.**
+
 **A virtualenv is not portable.** `.venv/bin/python` symlinks to the interpreter
 that created it, so one built inside the Cowork Linux VM is a dead link on
 macOS — and macOS answers by trying to locate `python` and asking you to install
