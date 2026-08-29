@@ -92,8 +92,19 @@ def verify(original: otio.schema.Timeline, path: Path, fmt: str, adapter: str,
             "audio tracks", True,
             f"{len(b_aud)} read — format uses channel notation, not clips"))
     else:
-        rt.checks.append(Check("audio clips", o_aud == b_aud,
-                               f"wrote {len(o_aud)}, read {len(b_aud)}"))
+        if o_aud == b_aud:
+            detail = f"{len(o_aud)} clips, frame-exact"
+        elif len(o_aud) == len(b_aud):
+            # Same count, different ranges — the misleading case. Saying
+            # "wrote 9, read 9" on a failure sends you looking in the wrong
+            # place entirely.
+            oc, bc = Counter(o_aud), Counter(b_aud)
+            detail = (f"{len(o_aud)} clips but ranges differ, e.g. wrote "
+                      f"{list((oc - bc).elements())[:2]} read "
+                      f"{list((bc - oc).elements())[:2]}")
+        else:
+            detail = f"wrote {len(o_aud)}, read {len(b_aud)}"
+        rt.checks.append(Check("audio clips", o_aud == b_aud, detail))
 
     o_rate, b_rate = original.duration().rate, back.duration().rate
     rt.checks.append(Check("edit rate", abs(o_rate - b_rate) < 1e-6,

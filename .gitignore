@@ -47,3 +47,7 @@ spikes/*/.venv/
 
 # Files awaiting manual deletion (sandbox cannot delete)
 spikes/_to_delete/
+
+# Real source material — never committed
+samples/*
+!samples/README.md

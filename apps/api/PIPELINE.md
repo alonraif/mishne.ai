@@ -41,6 +41,35 @@ commonest way of asking for another take, did not match the original fixed
 phrases and an announced retake reached the cut. Worth checking both against
 real material.
 
+## AAF input
+
+**ffprobe cannot read an AAF** — it is OLE structured storage, not a media
+container — so AAF ingest is its own path (`pipeline/steps/aaf_ingest.py`).
+
+An AAF is a *sequence*, not a file: an ordered list of clips each pointing at a
+region of some source by timecode. So the AAF's timeline becomes the source. It
+is flattened to one audio track for transcription, and selected ranges are
+mapped back through a source map at assembly.
+
+```bash
+python run.py selects.aaf --notes "..." --target 6m
+```
+
+Both resolution modes work. **Linked** clips reference external files; when the
+AAF names paths that do not exist on this machine, the resolver also looks for
+the media beside the AAF, which is the usual case after a file has been moved.
+**Embedded** essence is extracted to the working directory. Unresolvable
+references are reported rather than skipped — a sequence that silently
+transcribes 60% of itself is worse than one that refuses.
+
+**This is the best input the system can take.** The AAF carries its own source
+mob IDs, so the rough cut relinks *silently* in the project it came from. Spike A
+established that the MobID is the relink key; this is where real ones come from
+instead of synthesised ones.
+
+A selection spanning a join in the original sequence becomes **two clips**, each
+referencing its own source. Those frames genuinely come from different media.
+
 ## Stages 0–4 (ingest)
 
 Media file in, structured beats out.
@@ -61,6 +90,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-pipeline.txt
 | 1 · extract audio | `pipeline/steps/audio.py` | working |
 | 2 · transcribe | `pipeline/steps/transcribe.py`, `asr/` | working; needs a model |
 | 3 · silence map | `pipeline/steps/vad.py` | working, fully offline |
+| — · AAF ingest | `pipeline/steps/aaf_ingest.py` | working |
 | — · speaker attribution | `pipeline/steps/speakers.py` | working, 11 tests |
 | 4 · structure into beats | `pipeline/steps/structure.py` | working, 14 tests |
 | 5 · compile brief | `pipeline/steps/brief.py` | working; LLM optional |

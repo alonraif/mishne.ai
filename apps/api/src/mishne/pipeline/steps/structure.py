@@ -132,7 +132,7 @@ def group_beats(sentences: list[list[Word]]) -> list[list[Word]]:
 
 
 def detect_flags(beats: list[Beat], language: str = "en",
-                 loudness_lufs: float | None = None) -> None:
+                 loudness_lufs: float | None = None) -> list[str]:
     """Attach flags in place.
 
     Retake detection is the highest-value item here and the least obvious. In
@@ -144,7 +144,11 @@ def detect_flags(beats: list[Beat], language: str = "en",
     near-verbatim redelivery, which is the actual case, and costs nothing. A
     paraphrased second attempt will slip through — that is stage 6's redundancy
     clustering to catch, not this.
+
+    Returns track-level warnings — conditions that describe the recording rather
+    than any individual beat.
     """
+    warnings: list[str] = []
     filler_words = FILLER_LEXICON.get(language, FILLER_LEXICON["en"])
 
     for i, b in enumerate(beats):
@@ -195,10 +199,25 @@ def detect_flags(beats: list[Beat], language: str = "en",
                     prev.flags.append("superseded")
                 break
 
-        if loudness_lufs is not None and loudness_lufs < -40:
-            b.flags.append("off_mic")
-
         b.flags[:] = sorted(set(b.flags))
+
+    # Off-mic is a property of a *beat* — one speaker turned away, or on the
+    # wrong microphone — and absolute track loudness cannot detect it. A quiet
+    # track is a gain problem, and flagging every beat off-mic because of it
+    # disqualified the entire transcript and produced an empty cut. That is
+    # what this used to do.
+    #
+    # Detecting it properly needs per-beat levels relative to the track's own
+    # speech median, which is the same normalisation the speaker attribution
+    # does. Until that is wired through, say something true about the track
+    # instead of something false about every beat.
+    if loudness_lufs is not None and loudness_lufs < -40:
+        warnings.append(
+            f"Audio is very quiet ({loudness_lufs:.1f} LUFS). Check the gain — "
+            f"transcription and cut-point detection both degrade below about "
+            f"-35 LUFS."
+        )
+    return warnings
 
 
 def build(words: list[Word], speech: SpeechMap | None = None,
@@ -229,5 +248,7 @@ def build(words: list[Word], speech: SpeechMap | None = None,
             mean_confidence=sum(confs) / len(confs) if confs else 1.0,
         ))
 
-    detect_flags(beats, language=language, loudness_lufs=loudness_lufs)
+    warnings = detect_flags(beats, language=language,
+                            loudness_lufs=loudness_lufs)
+    build.warnings = warnings   # read by the caller for reporting
     return beats

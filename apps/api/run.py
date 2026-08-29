@@ -28,9 +28,9 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from mishne.language import is_rtl_language, warn_model_for_language  # noqa: E402
 from mishne.pipeline.steps import (  # noqa: E402
-    assemble, audio as audio_step, brief as brief_step, emit, prepare, refine,
-    score as score_step, select, speakers as speakers_step, structure,
-    transcript_page, transcribe, validate, vad,
+    aaf_ingest, assemble, audio as audio_step, brief as brief_step, emit,
+    prepare, refine, score as score_step, select, speakers as speakers_step,
+    structure, transcript_page, transcribe, validate, vad,
 )
 from mishne.timecode import Rate, frames_to_tc  # noqa: E402
 
@@ -72,6 +72,9 @@ def main() -> int:
     if (msg := warn_model_for_language(args.model, args.language)):
         print(f" {Y}{msg}{X}\n")
 
+    is_aaf = args.media.suffix.lower() == ".aaf"
+    aaf: aaf_ingest.AAFSource | None = None
+
     # 0 -------------------------------------------------------------------
     assume = None
     if args.rate:
@@ -79,16 +82,41 @@ def main() -> int:
                     (30000, 1001) if abs(args.rate - 29.97) < .01 else
                     (int(args.rate), 1))
         assume = Rate(num, den)
-    info = prepare.probe(args.media, assume_rate=assume)
-    print(f"  0 probe        {info.codec} · {info.rate} · start {info.start_tc}"
-          f" · {info.duration_s / 60:.1f} min · {len(info.audio)} audio")
+    if is_aaf:
+        # ffprobe cannot read an AAF; it is structured storage, not a media
+        # container. The sequence is parsed instead, and its timeline becomes
+        # the source everything downstream works against.
+        aaf = aaf_ingest.parse(args.media)
+        kind = "embedded essence" if aaf.embedded else "linked media"
+        print(f"  0 probe        AAF · {aaf.rate} · {len(aaf.clips)} clips · "
+              f"{aaf.duration_s / 60:.1f} min · {kind}")
+        for note in aaf.notes:
+            print(f"                 {D}{note}{X}")
+        for miss in aaf.missing[:5]:
+            print(f"                 {Y}unresolved: {miss}{X}")
+        if not aaf.resolved_clips and not aaf.embedded:
+            print(f"\n  {R}No clip in this AAF resolves to media.{X}")
+            print(f"  {Y}The AAF names paths that do not exist on this machine. "
+                  f"Put the media\n  beside the AAF, or supply it at the paths "
+                  f"the sequence expects.{X}")
+            return 1
+        flat = aaf_ingest.flatten_audio(aaf, work)
+        info = prepare.probe(flat, assume_rate=aaf.rate)
+        info.start_tc_frames = aaf.start_tc_frames
+        info.duration_frames = aaf.duration_frames
+        print(f"  1 audio        flattened {len(aaf.clips)} clips to one track")
+        tracks = audio_step.extract(info, work)
+    else:
+        info = prepare.probe(args.media, assume_rate=assume)
+        print(f"  0 probe        {info.codec} · {info.rate} · "
+              f"start {info.start_tc} · {info.duration_s / 60:.1f} min · "
+              f"{len(info.audio)} audio")
+        tracks = audio_step.extract(info, work)
+        print(f"  1 audio        {len(tracks)} track(s) extracted")
 
-    # 1 -------------------------------------------------------------------
-    tracks = audio_step.extract(info, work)
     if not tracks:
         print(f"  {R}no audio streams — nothing to cut{X}")
         return 1
-    print(f"  1 audio        {len(tracks)} track(s) extracted")
 
     # 3 -------------------------------------------------------------------
     speech = vad.build(tracks[0].path)
@@ -130,6 +158,8 @@ def main() -> int:
                             loudness_lufs=tracks[0].integrated_lufs)
     print(f"  4 structure    {len(beats)} beats · "
           f"{sum(1 for b in beats if b.flags)} flagged")
+    for w in getattr(structure.build, "warnings", []):
+        print(f"                 {Y}{w}{X}")
 
     # 5 -------------------------------------------------------------------
     ed = brief_step.compile_brief(
@@ -169,13 +199,25 @@ def main() -> int:
           + (f" · {warned} with notes" if warned else ""))
 
     # 10 ------------------------------------------------------------------
-    timeline = assemble.build(cuts, args.media, info.rate,
-                              info.start_tc_frames, info.duration_frames,
-                              audio_tracks=len(tracks),
-                              name=f"{args.media.stem}_roughcut")
+    if aaf is not None:
+        timeline = assemble.build_from_aaf(
+            cuts, aaf, name=f"{args.media.stem}_roughcut")
+        emitted = len(list(timeline.tracks[0].find_clips()))
+        extra = ("" if emitted == len(cuts)
+                 else f" · {emitted - len(cuts)} split across source joins")
+    else:
+        timeline = assemble.build(cuts, args.media, info.rate,
+                                  info.start_tc_frames, info.duration_frames,
+                                  audio_tracks=len(tracks),
+                                  name=f"{args.media.stem}_roughcut")
+        extra = ""
     total = sum(c.frames for c in cuts)
     print(f" 10 assemble     {total} frames · {total / info.rate.fps:.1f}s · "
-          f"record {frames_to_tc(round(timeline.global_start_time.value), info.rate)}")
+          f"record {frames_to_tc(round(timeline.global_start_time.value), info.rate)}"
+          f"{extra}")
+    if aaf is not None:
+        print(f"                 {D}source mob IDs inherited — this will "
+              f"relink in the original project{X}")
 
     # 11 ------------------------------------------------------------------
     artifacts = emit.emit(timeline, out, args.media.stem)

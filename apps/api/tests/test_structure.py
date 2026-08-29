@@ -84,9 +84,19 @@ def test_low_confidence_flagged():
     assert "low_confidence" in beats[0].flags
 
 
-def test_off_mic_from_loudness():
+def test_quiet_track_warns_but_does_not_flag_every_beat():
+    """Regression: a quiet track used to flag every beat off-mic.
+
+    Off-mic is a property of a beat — one speaker turned away, or on the wrong
+    microphone. Absolute track loudness cannot detect that, and using it as a
+    proxy disqualified the entire transcript and produced an empty cut. A quiet
+    track is a gain problem, and the honest response is to say so about the
+    track rather than something false about every beat.
+    """
     beats = structure.build(words("can you hear me"), loudness_lufs=-52.0)
-    assert "off_mic" in beats[0].flags
+    assert "off_mic" not in beats[0].flags
+    warnings = getattr(structure.build, "warnings", [])
+    assert any("quiet" in w.lower() for w in warnings)
 
 
 def test_empty_input():
