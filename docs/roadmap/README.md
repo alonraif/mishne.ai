@@ -34,8 +34,15 @@ Media Composer will not take it, the platform has nothing to deliver.
 |---|---|---|
 | [B1](B1-persistence.md) | Postgres, the real schema, RLS from day one | — |
 
-**Phase B entry point:** a ready-to-paste session prompt for B1 is in
-[B-SESSION-PROMPT.md](B-SESSION-PROMPT.md). B1 blocks B2, B3 and B4.
+**Phase B prompts**, one session each — B1 first, then B2 and B4 in parallel,
+then B3:
+
+| Workstream | Prompt | Needs |
+|---|---|---|
+| B1 persistence | [B-SESSION-PROMPT.md](B-SESSION-PROMPT.md) | — |
+| B2 storage | [B2-SESSION-PROMPT.md](B2-SESSION-PROMPT.md) | B1 |
+| B4 auth | [B4-SESSION-PROMPT.md](B4-SESSION-PROMPT.md) | B1 |
+| B3 orchestration | [B3-SESSION-PROMPT.md](B3-SESSION-PROMPT.md) | B1, B2 |
 | [B2](B2-storage-and-upload.md) | S3, multipart upload, presigned URLs | B1 |
 | [B3](B3-orchestration.md) | Step Functions, workers, the step contract | B1, B2 |
 | [B4](B4-auth-and-tenancy.md) | Accounts, orgs, session, tenant isolation | B1 |
