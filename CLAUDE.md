@@ -35,10 +35,17 @@ infra/          docker-compose for local Postgres; Terraform later
 `ingest.py` takes a media file to structured beats and emits the format the
 selection-quality spike reads. Stages 5–12 are still stubs.
 
-The rest is **scaffolding with mock data.** Every screen renders from `apps/web/src/lib/mock-data.ts`.
-The API returns the same shapes from `apps/api/src/mishne/mock.py`. No real pipeline
-yet — see [05 — Roadmap](docs/architecture/05-roadmap-and-risks.md); Spike A and
-Spike B come before Phase 1.
+**The platform is being built underneath it.** B1 put in Postgres — twenty
+tables, `org_id` everywhere, RLS enabled and forced. B2 is in progress: object
+storage, presigned multipart upload and the workspace that gives ffmpeg and
+pyaaf2 real file paths all exist; the browser-side upload, probe-on-arrival and
+the bucket lifecycle rules do not. See [docs/HANDOVER.md](docs/HANDOVER.md) for
+the current state and [docs/roadmap/](docs/roadmap/) for what is next.
+
+**The web app is still mockups.** Every screen renders from
+`apps/web/src/lib/mock-data.ts`, and the API serves the same shapes from
+`apps/api/src/mishne/mock.py` behind `use_mocks` — which is refused outside
+`environment=local`.
 
 ## Rules that matter
 

@@ -278,15 +278,53 @@ class CreateAssetRequest(BaseModel):
     ingest_mode: IngestMode = "full_media"
 
 
+class UploadPart(BaseModel):
+    """One presigned PUT, and the slice of the file it covers.
+
+    The offsets are sent rather than left to be derived from `part_size` and the
+    index, because a resumed upload asks for some of the parts and not all of
+    them, and a client computing `(n - 1) * part_size` for a part it was handed
+    out of order uploads the wrong bytes to a URL that accepts them happily.
+    """
+
+    part_number: int
+    url: str
+    offset: int
+    length: int
+
+
 class PresignedUpload(BaseModel):
     asset_id: str
     upload_id: str
-    part_urls: list[str]
     part_size: int
+    total_parts: int
+    parts: list[UploadPart]
+    #: When these URLs stop working. A long upload outlives them, and the client
+    #: asks for the parts it has left rather than failing.
+    expires_in_s: int
+
+
+class ResumeUploadRequest(BaseModel):
+    """Re-mint URLs for the parts a client has not managed to send yet.
+
+    Empty means all of them, which is the after-a-refresh case. A client that
+    knows which parts it already sent asks for the rest.
+    """
+
+    part_numbers: list[int] = Field(default_factory=list)
+
+
+class CompletedPart(BaseModel):
+    part_number: int
+    etag: str
 
 
 class CompleteUploadRequest(BaseModel):
-    etags: list[str]
+    #: Every part, with the number S3 knows it by. Not a bare list of etags in
+    #: upload order: parts are uploaded concurrently and retried out of order,
+    #: and an etag matched to the wrong part number completes an upload whose
+    #: bytes are in the wrong places.
+    parts: list[CompletedPart]
 
 
 class EstimateJobRequest(BaseModel):

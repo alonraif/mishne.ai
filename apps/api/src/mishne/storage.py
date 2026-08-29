@@ -291,15 +291,26 @@ class Storage:
         return urls
 
     def complete_multipart(
-        self, ref: ObjectRef, upload_id: str, etags: list[str]
+        self, ref: ObjectRef, upload_id: str, parts: list[tuple[int, str]]
     ) -> None:
+        """Assemble the parts into an object.
+
+        Takes (part number, etag) pairs rather than etags in order. Parts are
+        uploaded concurrently and retried out of order, so "the third etag I
+        collected" and "part three" are not the same thing, and S3 will happily
+        complete an upload whose bytes are in the wrong places. Sorted here
+        because CompleteMultipartUpload requires ascending part numbers and
+        rejects the whole request if they are not — after every byte has been
+        sent.
+        """
         self.client.complete_multipart_upload(
             Bucket=ref.bucket,
             Key=ref.key,
             UploadId=upload_id,
             MultipartUpload={
                 "Parts": [
-                    {"PartNumber": i + 1, "ETag": tag} for i, tag in enumerate(etags)
+                    {"PartNumber": number, "ETag": tag}
+                    for number, tag in sorted(parts)
                 ]
             },
         )

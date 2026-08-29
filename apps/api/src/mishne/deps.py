@@ -44,6 +44,26 @@ def db(org_id: str = Depends(current_org)) -> Iterator[Session]:
         yield session
 
 
+def writable_db(
+    org_id: str = Depends(current_org),
+    settings: Settings = Depends(get_settings),
+) -> Iterator[Session]:
+    """A session for an endpoint that writes, and a clear refusal without one.
+
+    `use_mocks` serves fixtures from memory, and a fixture cannot be written to.
+    Without this guard the first write endpoint hit on a developer's machine
+    fails inside psycopg with a connection error, which reads as "the database
+    is down" rather than "this process is not talking to one".
+    """
+    if settings.use_mocks:
+        raise HTTPException(
+            503,
+            "this endpoint writes and the API is serving fixtures; set USE_MOCKS=false",
+        )
+    with session_for_org(org_id) as session:
+        yield session
+
+
 def serving_mocks(settings: Settings = Depends(get_settings)) -> bool:
     """Whether this process answers from fixtures.
 

@@ -23,7 +23,9 @@ media = [
     "ffmpeg-python>=0.2",
 ]
 solver = ["ortools>=9.11"]
-dev = ["pytest>=8.3", "httpx>=0.28", "ruff>=0.8", "mypy>=1.13"]
+# `moto` gives the storage tests a real S3 protocol implementation in-process,
+# so the suite never needs AWS credentials or a network.
+dev = ["pytest>=8.3", "httpx>=0.28", "ruff>=0.8", "mypy>=1.13", "moto[s3]>=5.0"]
 
 [build-system]
 requires = ["hatchling"]

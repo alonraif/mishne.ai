@@ -1,6 +1,6 @@
 # mishne.ai — state of the project
 
-*Last updated 2026-08-29 (B1: persistence).*
+*Last updated 2026-08-29 (B1 persistence; B2 storage, in progress).*
 
 **Read this first if you are picking the project up cold**, in a new session, on
 a new machine, or in a new account. It says what exists, what it does, what it
@@ -59,7 +59,14 @@ Verified on two pieces of real material:
   each table. `use_mocks: True` still serves fixtures and is refused outside
   `environment=local`. See `apps/api/migrations/README.md` before writing a
   second migration — the expand/contract rules are not optional.
-- **No object storage, no upload path.** The CLI reads local files.
+- ~~No object storage.~~ **S3, as of B2 — the server half.** Three buckets by
+  lifecycle, presigned multipart upload, and a `Workspace` that stages objects
+  to a worker's local disk because ffmpeg and pyaaf2 need real paths
+  (ADR-0013). The API mints the URLs, completes the upload and moves the asset
+  to `probing`. **Still missing in B2:** the browser-side resumable upload,
+  probe-on-arrival, `infra/s3_lifecycle.py`, and the code that reads
+  `asset_media_requirements` — the schema for linked AAFs exists, nothing
+  populates it.
 - **No orchestration.** `run.py` calls the stages in sequence, in process.
 - **No auth, no tenancy.** `org_id` is in the schema design, not in any code.
 - **No live billing.** `billing/credits.py` and `billing/ledger.py` model the
@@ -84,10 +91,13 @@ apps/api/                 the pipeline and the (mock-backed) API
     interchange/          MobIDs, FCPXML patch, round-trip validation
     timecode.py           rational rates, drop-frame, the proven conversion pair
     routers/, mock.py     FastAPI surface; fixtures behind use_mocks
+    storage.py            three buckets, the key scheme, presigned multipart
+    workspace.py          objects in, real files on disk, derived files back out
+    db/uploads.py         the upload lifecycle as writes
     db/                   models, session, query layer, seed script
   migrations/             Alembic — 0001 is the whole schema, and README.md
                           is the expand/contract contract
-  tests/                  90 tests
+  tests/                  170 tests
 apps/web/                 Next.js 15 mockups, Tailwind 4, shadcn/ui
 packages/shared/          types, timecode, billing, RTL direction — TS
 spikes/aaf-roundtrip/     Spike A: interchange, automated, passing
@@ -140,6 +150,7 @@ why the current shape is what it is.
 | [0010](adr/0010-spans-not-beats.md) | Selection chooses spans; boundaries gated on silence |
 | [0011](adr/0011-provider-agnostic-llm-routing.md) | Any vendor, chosen per task by policy |
 | [0012](adr/0012-two-environments-and-expand-contract-migrations.md) | Two environments; every migration is backward-compatible |
+| [0013](adr/0013-stage-media-to-local-disk.md) | Media is staged to a worker's disk, never mounted |
 
 ## Things that will bite you
 
@@ -171,6 +182,21 @@ Every one of these cost real time to find.
 - **large-v3 peaks around 4.6 GB.** It will be killed in a 4 GB container.
 - **A dataclass field with a default before a required one is a TypeError at
   import.** Caught twice in this codebase.
+- **A boto3 client built with the defaults signs with SigV2**, and every bucket
+  created after 2018 rejects it — at upload time, long after the code that chose
+  the signature returned. `storage.get_client` sets `s3v4` explicitly, which is
+  why the storage tests exercise that client rather than one they build.
+- **The part size the client slices with must be the one the server sent.** A
+  client that uses its own idea of a part size uploads bytes that do not line up
+  with the layout the completion is checked against, and S3 assembles them
+  without complaint.
+- **`projects` has no foreign key to `orgs`.** `org_id` is on every table by
+  design, not by reference, so deleting an org cascades nothing. Test teardown
+  and any future account deletion have to name each table.
+- **An asset's rate is a placeholder until stage 0 runs.** The columns are NOT
+  NULL and nothing knows the real value at upload time, so a row carries 1/1 —
+  conspicuous in a UI, absurd in arithmetic — and `probed_at IS NULL` is the
+  honest signal. Do not compute a duration from an unprobed asset.
 - **A superuser bypasses row-level security, silently.** So does a table owner
   unless the table is `FORCE`d. Point the API at `DATABASE_URL` instead of
   `APP_DATABASE_URL` and every policy stays in the schema and stops doing

@@ -127,4 +127,7 @@ def test_mocks_are_refused_outside_local(clear_caches) -> None:
     with pytest.raises(ValidationError):
         Settings(environment="staging", use_mocks=True)
     # And the combination that is fine.
-    assert Settings(environment="staging", use_mocks=False).use_mocks is False
+    # A staging Settings also needs a KMS key now — customer media is never
+    # unencrypted at rest outside a developer's machine (B2).
+    ok = Settings(environment="staging", use_mocks=False, s3_kms_key_id="alias/mishne-staging")
+    assert ok.use_mocks is False
