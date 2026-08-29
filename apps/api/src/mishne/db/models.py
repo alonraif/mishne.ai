@@ -140,6 +140,14 @@ class Asset(Base):
     # here; promoting them to columns would be two more things to keep in step
     # with a probe result that already has them.
     probe = sa.Column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    # The in-flight multipart upload, so an explicit cancel can abort it and
+    # stop paying for parts nobody can see. Cleared at completion. The lifecycle
+    # rule in infra/s3_lifecycle.py is the backstop for the ones nobody cancels.
+    upload_id = sa.Column(sa.Text)
+    # Why probing failed. Nullable and added after the fact, so an older release
+    # that knows nothing about it keeps inserting happily (ADR-0012).
+    error = sa.Column(JSONB)
+    probed_at = sa.Column(TS)
     created_at = sa.Column(TS, nullable=False, server_default=NOW)
     __table_args__ = (
         _ck("ck_assets_kind", "kind", vocab.ASSET_KINDS),
@@ -175,6 +183,54 @@ class SourceClip(Base):
     track_kind = sa.Column(sa.Text)
     track_index = sa.Column(sa.Integer)
     file_path = sa.Column(sa.Text)
+
+
+class AssetMediaRequirement(Base):
+    """A file a linked AAF references and does not contain.
+
+    An AAF is a sequence, not a container. An *embedded* one carries its essence
+    inside itself and is self-sufficient; a *linked* one is a few hundred
+    kilobytes of pointers at media sitting on an editor's SAN, and uploading it
+    alone gets you a transcript of silence. `aaf_ingest.parse` already notices
+    which clips it cannot resolve — this table is that finding, made durable, so
+    the UI can ask for exactly the missing files and the job can refuse to start
+    until they arrive.
+
+    Matching is on **basename**, because that is the only thing that survives
+    the trip: the absolute path inside the AAF describes a filesystem we will
+    never see, and `aaf_ingest._url_to_path` already falls back to a
+    same-directory basename match for exactly this reason. Materialising the
+    companions beside the AAF is therefore all the resolution that is needed —
+    the parser does the rest, unchanged.
+
+    A basename is not unique in principle. Two source files really can both be
+    called `A001.mxf`, and the honest answer is that the AAF gives us nothing
+    better to key on. `mob_id` is recorded so that a stricter check is possible
+    later without a second migration.
+    """
+
+    __tablename__ = "asset_media_requirements"
+    id = sa.Column(sa.Text, primary_key=True)
+    org_id = sa.Column(sa.Text, nullable=False)
+    asset_id = sa.Column(sa.Text, sa.ForeignKey("assets.id", ondelete="CASCADE"), nullable=False)
+    # The referenced file's basename, as the AAF spells it.
+    basename = sa.Column(sa.Text, nullable=False)
+    # Case- and separator-normalised, and the column the match is actually made
+    # on. Stored rather than computed per query so the unique constraint and the
+    # index agree with the lookup — a functional index and a hand-written
+    # `lower()` drift apart the first time somebody edits one of them.
+    match_key = sa.Column(sa.Text, nullable=False)
+    mob_id = sa.Column(sa.Text)
+    clip_name = sa.Column(sa.Text)
+    # How many clips on the timeline need this file. Drives the ordering of the
+    # "still needed" list: the file that unblocks forty clips is the one worth
+    # asking for first.
+    clip_count = sa.Column(sa.Integer, nullable=False, server_default=sa.text("1"))
+    satisfied_by_asset_id = sa.Column(sa.Text, sa.ForeignKey("assets.id", ondelete="SET NULL"))
+    satisfied_at = sa.Column(TS)
+    __table_args__ = (
+        sa.UniqueConstraint("asset_id", "match_key", name="uq_asset_media_req"),
+    )
 
 
 # ────────────────────────────────────────────────────────────────────── jobs
@@ -588,6 +644,18 @@ sa.Index("ix_projects_org_created", Project.__table__.c.org_id, Project.__table_
 sa.Index("ix_assets_org", Asset.__table__.c.org_id)
 sa.Index("ix_assets_project", Asset.__table__.c.project_id)
 sa.Index("ix_source_clips_asset", SourceClip.__table__.c.asset_id)
+sa.Index(
+    "ix_asset_media_requirements_asset",
+    AssetMediaRequirement.__table__.c.asset_id,
+)
+# The resolution lookup: given a freshly uploaded file, which linked AAFs in
+# this org were waiting for it? Leads with org_id because the policy filters
+# on it and an index that does not is not the access path.
+sa.Index(
+    "ix_asset_media_requirements_match",
+    AssetMediaRequirement.__table__.c.org_id,
+    AssetMediaRequirement.__table__.c.match_key,
+)
 sa.Index("ix_jobs_org_created", Job.__table__.c.org_id, Job.__table__.c.created_at)
 sa.Index("ix_jobs_project", Job.__table__.c.project_id)
 sa.Index("ix_job_assets_asset", JobAsset.__table__.c.asset_id)
@@ -616,6 +684,7 @@ ALL_TABLES = [
     "projects",
     "assets",
     "source_clips",
+    "asset_media_requirements",
     "jobs",
     "job_assets",
     "job_steps",

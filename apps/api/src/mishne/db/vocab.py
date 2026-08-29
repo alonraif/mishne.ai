@@ -15,8 +15,16 @@ ORG_TIERS = ("starter", "pro", "studio")
 USER_ROLES = ("owner", "member", "viewer")
 
 ASSET_KINDS = ("video", "aaf", "audio")
-INGEST_MODES = ("full_media", "aaf_embedded", "audio_only")
-ASSET_STATUSES = ("uploading", "probing", "ready", "failed")
+# `aaf_linked` is an AAF whose clips point at external media the customer has to
+# upload alongside it. `aaf_embedded` carries its essence inside the file and
+# needs nothing else. The distinction is not cosmetic: a linked AAF is not
+# ingestable on its own, and the difference decides whether an asset can go
+# straight to `ready`.
+INGEST_MODES = ("full_media", "aaf_embedded", "audio_only", "aaf_linked")
+# `awaiting_media` is a linked AAF that probed cleanly and is waiting for the
+# files it references. It is not `failed` — nothing is wrong — and it is not
+# `ready`, because a job started against it would transcribe silence.
+ASSET_STATUSES = ("uploading", "probing", "ready", "failed", "awaiting_media")
 
 JOB_MODES = ("ai", "manual", "hybrid")
 JOB_STATUSES = (

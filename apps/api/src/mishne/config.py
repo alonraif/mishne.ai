@@ -21,10 +21,40 @@ class Settings(BaseSettings):
     # See apps/api/migrations/README.md and infra/local-app-user.sql.
     app_database_url: str = "postgresql://mishne_local:mishne_local@localhost:5432/mishne"
 
+    # Three buckets by lifecycle, not one. Raw media is the customer's IP and
+    # expensive to keep; derived audio is reproducible and should not be kept;
+    # artifacts are the deliverable. A lifecycle rule is per bucket, and the
+    # three lifecycles differ by more than an order of magnitude in both
+    # directions. See infra/s3_lifecycle.py.
     s3_bucket_raw: str = "mishne-dev-raw"
     s3_bucket_derived: str = "mishne-dev-derived"
     s3_bucket_artifacts: str = "mishne-dev-artifacts"
     aws_region: str = "eu-west-1"
+
+    # Point boto3 at MinIO or moto instead of AWS. Empty everywhere but a
+    # developer's machine — the validator below refuses it in staging and
+    # production, because an endpoint override there means customer media is
+    # being written somewhere nobody audited.
+    s3_endpoint_url: str = ""
+
+    # The KMS key media is encrypted with at rest. Per environment, never
+    # shared: a staging key that can decrypt production objects makes the
+    # environment boundary decorative (ADR-0012). Empty means SSE-S3, which is
+    # what local MinIO and moto support.
+    s3_kms_key_id: str = ""
+
+    # Where a worker stages objects so ffmpeg and pyaaf2 get real file paths.
+    # This is the decision recorded in docs/adr/0013: media is downloaded to
+    # local disk, not mounted. The consequence is that a worker's disk must
+    # hold the largest asset it will ever be given plus its derived audio, and
+    # that number is an input to B3's worker sizing.
+    work_root: str = "/tmp/mishne"
+
+    # Refuse an upload larger than this. Not a technical limit — S3 takes 5 TiB
+    # — but the point at which a file is a conversation rather than a form
+    # submission, and a wrong number in a client request should not be able to
+    # commit us to storing a petabyte.
+    max_upload_bytes: int = 512 * 1024**3  # 512 GiB
 
     # Vendors. Never commit real keys — see .env.example.
     asr_provider: str = "mock"
@@ -55,6 +85,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"use_mocks=True is not permitted in environment={self.environment!r}. "
                 "Fixtures are for local development against docker-compose."
+            )
+        if self.s3_endpoint_url and self.environment != "local":
+            raise ValueError(
+                f"s3_endpoint_url is not permitted in environment={self.environment!r}. "
+                "An endpoint override outside local development means customer "
+                "media is being written to something other than the audited bucket."
+            )
+        if not self.s3_kms_key_id and self.environment != "local":
+            raise ValueError(
+                f"s3_kms_key_id is required in environment={self.environment!r}. "
+                "Customer media is under embargo often enough that "
+                "unencrypted-at-rest is not a state this system may reach."
             )
         return self
 

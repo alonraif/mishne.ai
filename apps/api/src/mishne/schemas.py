@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 Role = Literal["owner", "member", "viewer"]
 TierId = Literal["starter", "pro", "studio"]
 AssetKind = Literal["video", "aaf", "audio"]
-IngestMode = Literal["full_media", "aaf_embedded", "audio_only"]
-AssetStatus = Literal["uploading", "probing", "ready", "failed"]
+IngestMode = Literal["full_media", "aaf_embedded", "audio_only", "aaf_linked"]
+AssetStatus = Literal["uploading", "probing", "ready", "failed", "awaiting_media"]
 ArtifactKind = Literal["aaf", "fcpxml", "edl", "otio", "json"]
 NarrativeShape = Literal["chronological", "thematic", "inverted_pyramid", "q_and_a"]
 

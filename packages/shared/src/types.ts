@@ -39,8 +39,16 @@ export interface Project {
 /* ------------------------------------------------------------------ assets */
 
 export type AssetKind = "video" | "aaf" | "audio";
-export type IngestMode = "full_media" | "aaf_embedded" | "audio_only";
-export type AssetStatus = "uploading" | "probing" | "ready" | "failed";
+export type IngestMode = "full_media" | "aaf_embedded" | "audio_only" | "aaf_linked";
+export type AssetStatus =
+  | "uploading"
+  | "probing"
+  | "ready"
+  | "failed"
+  // A linked AAF that probed cleanly and is waiting for the media it
+  // references. Not an error state — the upload worked; the sequence simply
+  // does not carry its own essence.
+  | "awaiting_media";
 
 export interface Asset {
   id: string;

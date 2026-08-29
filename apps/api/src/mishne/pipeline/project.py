@@ -95,31 +95,77 @@ class AssetIngest:
         return speaker_id
 
 
-def asset_id_for(path: Path) -> str:
-    """A stable id for an upload.
+def asset_id_for(path: Path, content_hash: str | None = None) -> str:
+    """A stable id for an upload. Content-addressed.
 
-    Filename plus size — enough to be stable across runs and to notice when a
-    different file arrives under a name already used. A content hash would be
-    better and costs a full read of a very large file; revisit if collisions
-    ever matter.
+    This used to be filename plus size, with a comment saying a content hash was
+    the right answer and was deferred because it costs a full read of a very
+    large file. Real storage is where that stops being true: the browser has to
+    read every byte to upload them, so it hashes on the way past and sends the
+    digest with the request — `content_hash` is that digest, and no extra read
+    happens at all.
+
+    Why it matters more than tidiness. The id is the **cache key for stages
+    0-4**, transcription included. Under filename-plus-size, a re-export of the
+    same interview that happens to land on the same byte count — trivially
+    possible with a re-render — reads a cache built from different audio, and
+    the only symptom is a cut whose words do not match the picture. Under a
+    content hash that cannot happen, and the pleasant converse falls out for
+    free: the same rushes uploaded to two projects are transcribed once.
+
+    Without a digest (the concierge CLI, pointed at a local file) it is computed
+    here. That is one sequential read of the file, which is cheap next to
+    everything that follows it.
     """
-    stem = "".join(c if c.isalnum() else "_" for c in path.stem)[:40]
-    try:
-        return f"{stem}_{path.stat().st_size % 100000:05d}"
-    except OSError:
-        return stem
+    if content_hash is None:
+        from ..storage import sha256_file
+        content_hash = sha256_file(path)
+    return f"a_{content_hash.lower()[:24]}"
 
 
-def ingest(path: Path, work_dir: Path, language: str | None = None,
+class _DirWorkspace:
+    """A plain directory, wearing the `Workspace` shape.
+
+    `ingest` takes either a `Path` — the concierge CLI on one machine — or a
+    `mishne.workspace.Workspace`. Rather than branch on the type at four call
+    sites, the Path is wrapped once here. Deliberately duck-typed rather than
+    importing the protocol: `mishne.workspace` imports boto3, and the pipeline
+    has to keep running on a laptop with no cloud dependency at all.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.root = Path(path)
+
+    def asset_dir(self, asset_id: str) -> Path:
+        d = self.root / "assets" / asset_id
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def publish_asset(self, asset_id: str) -> None:
+        return None
+
+
+def ingest(path: Path, work_dir, language: str | None = None,
            provider: str = "faster-whisper", replay: Path | None = None,
            model: str = "base", model_path: str | None = None,
            assume_rate: Rate | None = None, diarize_models: Path | None = None,
-           on_progress=None) -> AssetIngest:
-    """Stages 0-4 plus speaker attribution for one asset. Cached on disk."""
+           on_progress=None, content_hash: str | None = None) -> AssetIngest:
+    """Stages 0-4 plus speaker attribution for one asset. Cached.
+
+    `path` is a real file on a real disk, always — ffmpeg takes argv and pyaaf2
+    seeks around inside structured storage, so neither can be handed a stream.
+    When the source lives in S3, `mishne.workspace` has already put it on local
+    disk and this function is none the wiser; see that module for why staging
+    beat mounting.
+
+    `work_dir` is either a `Path` (the concierge CLI) or a
+    `mishne.workspace.Workspace` (a worker), which is what lets the cached
+    ingest outlive the container that built it.
+    """
     path = Path(path)
-    aid = asset_id_for(path)
-    adir = work_dir / "assets" / aid
-    adir.mkdir(parents=True, exist_ok=True)
+    ws = work_dir if hasattr(work_dir, "asset_dir") else _DirWorkspace(Path(work_dir))
+    aid = asset_id_for(path, content_hash)
+    adir = ws.asset_dir(aid)
     say = on_progress or (lambda *_: None)
 
     cached = adir / "ingest.json"
@@ -205,6 +251,7 @@ def ingest(path: Path, work_dir: Path, language: str | None = None,
         warnings=warnings,
     )
     _save(result, cached)
+    ws.publish_asset(aid)
     return result
 
 
