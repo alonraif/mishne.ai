@@ -17,8 +17,10 @@ import {
   framesToSeconds,
   type Beat,
   type JobMode,
+  type Speaker,
   type Transcript,
 } from "@mishne/shared";
+import { SpeakerLegend, speakerColor } from "@/components/speaker-legend";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -65,6 +67,23 @@ export function CutEditor({
   const [order, setOrder] = useState<string[]>(mode === "manual" ? [] : aiOrder);
   const [speaker, setSpeaker] = useState("all");
   const [hideFlagged, setHideFlagged] = useState(true);
+  const [roster, setRoster] = useState<Speaker[]>(transcript.speakers);
+
+  const rename = (id: string, label: string) =>
+    setRoster((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, label, confirmed: label.length > 0 } : s
+      )
+    );
+
+  const speakerById = useMemo(
+    () => new Map(roster.map((s, i) => [s.id, { speaker: s, index: i }])),
+    [roster]
+  );
+  const nameOf = (id: string) =>
+    speakerById.get(id)?.speaker.label ||
+    speakerById.get(id)?.speaker.defaultLabel ||
+    id;
 
   const byId = useMemo(
     () => new Map(transcript.beats.map((b) => [b.id, b])),
@@ -108,24 +127,32 @@ export function CutEditor({
     });
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_400px]">
+    <div className="space-y-5">
+      <SpeakerLegend
+        speakers={roster}
+        attribution={transcript.attribution}
+        onRename={rename}
+      />
+
+      <div className="grid gap-5 lg:grid-cols-[1fr_400px]">
       {/* ------------------------------------------------ transcript pane */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <Filter className="size-3.5 text-muted-foreground" />
           <div className="flex gap-1">
-            {["all", ...transcript.speakers].map((s) => (
+            {[{ id: "all", label: "All speakers" },
+              ...roster.map((s) => ({ id: s.id, label: nameOf(s.id) }))].map((s) => (
               <button
-                key={s}
-                onClick={() => setSpeaker(s)}
+                key={s.id}
+                onClick={() => setSpeaker(s.id)}
                 className={cn(
                   "rounded-md px-2.5 py-1 text-xs transition-colors",
-                  speaker === s
+                  speaker === s.id
                     ? "bg-secondary text-secondary-foreground"
                     : "text-muted-foreground hover:bg-accent/50"
                 )}
               >
-                {s === "all" ? "All speakers" : s}
+                {s.label}
               </button>
             ))}
           </div>
@@ -178,8 +205,16 @@ export function CutEditor({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                    <span className="text-xs font-medium text-muted-foreground">
-                      {b.speaker}
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      <span
+                        className="size-2 shrink-0 rounded-full"
+                        style={{
+                          background: speakerColor(
+                            speakerById.get(b.speaker)?.index ?? 0
+                          ),
+                        }}
+                      />
+                      {nameOf(b.speaker)}
                     </span>
                     {b.flags.map((f) => (
                       <Badge
@@ -326,6 +361,7 @@ export function CutEditor({
         <p className="text-center text-xs text-muted-foreground">
           Cut points snap to silence and handles are added automatically.
         </p>
+      </div>
       </div>
     </div>
   );

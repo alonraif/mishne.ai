@@ -7,8 +7,10 @@ import {
   formatTimecode,
   framesToSeconds,
   type Beat,
+  type Speaker,
   type Transcript,
 } from "@mishne/shared";
+import { SpeakerLegend, speakerColor } from "@/components/speaker-legend";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -37,6 +39,21 @@ export function TranscriptViewer({ transcript }: { transcript: Transcript }) {
   const [mode, setMode] = useState<Mode>("all");
   const [speaker, setSpeaker] = useState<string>("all");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [roster, setRoster] = useState<Speaker[]>(transcript.speakers);
+
+  const rename = (id: string, label: string) =>
+    setRoster((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, label, confirmed: label.length > 0 } : s
+      )
+    );
+
+  const byId = useMemo(
+    () => new Map(roster.map((s, i) => [s.id, { speaker: s, index: i }])),
+    [roster]
+  );
+  const nameOf = (id: string) =>
+    byId.get(id)?.speaker.label || byId.get(id)?.speaker.defaultLabel || id;
 
   const { rate, dropFrame } = transcript;
 
@@ -57,6 +74,12 @@ export function TranscriptViewer({ transcript }: { transcript: Transcript }) {
 
   return (
     <div className="space-y-4">
+      <SpeakerLegend
+        speakers={roster}
+        attribution={transcript.attribution}
+        onRename={rename}
+      />
+
       {/* Summary */}
       <div className="grid gap-3 sm:grid-cols-4">
         <Stat label="Source" value={formatDuration(sourceS)} />
@@ -85,7 +108,7 @@ export function TranscriptViewer({ transcript }: { transcript: Transcript }) {
           onChange={setSpeaker}
           options={[
             { id: "all", label: "All speakers" },
-            ...transcript.speakers.map((s) => ({ id: s, label: s })),
+            ...roster.map((s) => ({ id: s.id, label: nameOf(s.id) })),
           ]}
         />
       </div>
@@ -98,6 +121,8 @@ export function TranscriptViewer({ transcript }: { transcript: Transcript }) {
             beat={b}
             rate={rate}
             dropFrame={dropFrame}
+            speakerName={nameOf(b.speaker)}
+            speakerIndex={byId.get(b.speaker)?.index ?? 0}
             open={openId === b.id}
             onToggle={() => setOpenId(openId === b.id ? null : b.id)}
           />
@@ -111,12 +136,16 @@ function BeatRow({
   beat,
   rate,
   dropFrame,
+  speakerName,
+  speakerIndex,
   open,
   onToggle,
 }: {
   beat: Beat;
   rate: Transcript["rate"];
   dropFrame: boolean;
+  speakerName: string;
+  speakerIndex: number;
   open: boolean;
   onToggle: () => void;
 }) {
@@ -161,13 +190,18 @@ function BeatRow({
         {/* Body */}
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex flex-wrap items-center gap-2">
-            <span
-              className={cn(
-                "text-xs font-medium",
-                beat.used ? "text-used-foreground" : "text-muted-foreground"
-              )}
-            >
-              {beat.speaker}
+            <span className="flex items-center gap-1.5 text-xs font-medium">
+              <span
+                className="size-2 shrink-0 rounded-full"
+                style={{ background: speakerColor(speakerIndex) }}
+              />
+              <span
+                className={
+                  beat.used ? "text-used-foreground" : "text-muted-foreground"
+                }
+              >
+                {speakerName}
+              </span>
             </span>
             {beat.flags.map((f) => (
               <Badge

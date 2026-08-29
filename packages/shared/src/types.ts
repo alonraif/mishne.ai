@@ -183,13 +183,50 @@ export interface Beat {
   rationale?: string;
 }
 
+/**
+ * A distinct voice in the source.
+ *
+ * Two things the product must not confuse:
+ *
+ * - **Attribution** (who spoke when) is automatic. On multi-track material it
+ *   is deterministic, from which microphone is loudest. On single-track it
+ *   needs diarization and is only ever 8-15% accurate at the boundaries.
+ * - **The name** is not automatic and never will be. Diarization returns
+ *   `Speaker_00`. A person supplies the name, and `confirmed` records that they
+ *   did. An unconfirmed name must never reach a delivered artifact — a
+ *   misattributed quote in a broadcast piece is a serious error, not a typo.
+ */
+export interface Speaker {
+  id: string;
+  /** "track" — from a dedicated microphone. "diarization" — inferred. */
+  source: "track" | "diarization";
+  /** What the UI shows until a human renames it: "Mic 2", "Speaker 1". */
+  defaultLabel: string;
+  /** The human-supplied name. Empty until someone types one. */
+  label: string;
+  confirmed: boolean;
+  trackIndex?: number;
+  wordCount: number;
+  speechMs: number;
+}
+
+export interface SpeakerAttribution {
+  speakers: Speaker[];
+  crosstalkWords: number;
+  unattributedWords: number;
+  /** False when crosstalk is high enough that labels should not be trusted. */
+  reliable: boolean;
+  notes: string[];
+}
+
 export interface Transcript {
   jobId: string;
   assetId: string;
   language: string;
   rate: Rate;
   dropFrame: boolean;
-  speakers: string[];
+  speakers: Speaker[];
+  attribution: SpeakerAttribution;
   beats: Beat[];
   sourceDurationFrames: number;
   cutDurationFrames: number;

@@ -18,6 +18,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-pipeline.txt
 | 1 · extract audio | `pipeline/steps/audio.py` | working |
 | 2 · transcribe | `pipeline/steps/transcribe.py`, `asr/` | working; needs a model |
 | 3 · silence map | `pipeline/steps/vad.py` | working, fully offline |
+| — · speaker attribution | `pipeline/steps/speakers.py` | working, 11 tests |
 | 4 · structure into beats | `pipeline/steps/structure.py` | working, 14 tests |
 
 ## What it produces
@@ -57,13 +58,34 @@ the exact `09:58:02:00` start timecode Spike A wrote, at 25/1, and VAD correctly
 found *no* speech in tone-only audio rather than hallucinating segments. The
 full 0–4 chain was exercised offline through the replay provider.
 
+## Speakers
+
+Two problems, routinely confused:
+
+**Attribution** — who spoke when — is automatic. On **multi-track** material it
+is deterministic and better than any model: each subject is on their own lav, so
+whoever is loudest on track 2 is the person wearing mic 2. Stage 1 already
+extracts per track, so this is arithmetic, not inference. Two details make it
+work: each track is normalised by its own speech level (otherwise the hottest
+mic wins every word), and a word is attributed only when the leader clears the
+runner-up by ~3.5 dB (otherwise bleed decides). Inside that margin it is flagged
+as crosstalk, and above 25% crosstalk the whole attribution is marked unreliable.
+
+**Naming** is not automatic and never will be. Diarization returns `Speaker_00`;
+no model knows it is Margret. Speakers carry `defaultLabel` ("Mic 2") until a
+person renames them in the UI, and `confirmed` records that they did. **An
+unconfirmed name must never reach a delivered artifact** — a misattributed quote
+in a broadcast piece is a serious error, not a typo.
+
 ## Known gaps
 
-- **No diarization.** faster-whisper has none, and speaker labels are left empty
-  rather than faked — one fabricated speaker would silently break the
-  speaker-change rule in stage 4 and `speaker_priority` in stage 7. A managed
-  provider or a separate diarization pass is needed before multi-speaker
-  material works properly.
+- **Single-track material has no diarization.** faster-whisper has none, so
+  every word goes to one speaker and the run says so explicitly rather than
+  inventing voices. Multi-speaker single-track needs a managed provider or a
+  pyannote pass; expect 8-15% DER, worse with crosstalk.
+- **A bleed-only track ties.** A mic that never carries its owner's voice has no
+  real speech to set a reference from, so its bleed becomes its own reference.
+  Flagged as crosstalk rather than guessed. Documented in tests/test_speakers.py.
 - **Retake detection is lexical**, using token-sequence similarity plus a
   phrase lexicon. It catches near-verbatim redelivery and announced retakes
   ("sorry, can I say that again"), which is most real cases. A paraphrased
