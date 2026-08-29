@@ -80,8 +80,12 @@ npm run api      # FastAPI on :8000
 
 ## Pipeline
 
-Stages 0–4 are implemented and runnable — see [apps/api/PIPELINE.md](apps/api/PIPELINE.md).
-Stages 5–12 remain stubs.
+**All twelve stages run.** `python apps/api/run.py rushes.mov --notes "..."`
+produces AAF, FCPXML, EDL, OTIO and a self-contained transcript page. English
+and Hebrew, with RTL throughout. See [apps/api/PIPELINE.md](apps/api/PIPELINE.md).
+
+Stage 8 (sequence review) is the one deliberate omission — it is a refinement,
+not a requirement, for a rough cut.
 
 ## Status
 

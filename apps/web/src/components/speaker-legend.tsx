@@ -105,6 +105,7 @@ export function SpeakerLegend({
                     className="group flex w-full items-center gap-1.5 text-left"
                   >
                     <span
+                      dir="auto"
                       className={cn(
                         "truncate text-sm",
                         sp.confirmed

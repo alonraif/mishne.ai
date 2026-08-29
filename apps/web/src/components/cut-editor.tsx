@@ -19,6 +19,7 @@ import {
   type JobMode,
   type Speaker,
   type Transcript,
+  directionFor,
 } from "@mishne/shared";
 import { SpeakerLegend, speakerColor } from "@/components/speaker-legend";
 import { Button } from "@/components/ui/button";
@@ -170,7 +171,7 @@ export function CutEditor({
           </button>
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1" dir={directionFor(transcript.language)}>
           {visible.map((b) => {
             const on = selected.has(b.id);
             const pos = order.indexOf(b.id);
@@ -235,6 +236,7 @@ export function CutEditor({
                     )}
                   </div>
                   <p
+                    dir="auto"
                     className={cn(
                       "text-sm leading-relaxed",
                       on ? "text-foreground" : "text-unused-foreground"
@@ -323,7 +325,7 @@ export function CutEditor({
                         {formatTimecode(b.startFrames, rate, dropFrame)} ·{" "}
                         {framesToSeconds(b.endFrames - b.startFrames, rate).toFixed(1)}s
                       </div>
-                      <p className="mt-0.5 line-clamp-2 text-xs leading-snug">{b.text}</p>
+                      <p dir="auto" className="mt-0.5 line-clamp-2 text-xs leading-snug">{b.text}</p>
                     </div>
                     <div className="flex shrink-0 flex-col opacity-0 transition-opacity group-hover:opacity-100">
                       <button

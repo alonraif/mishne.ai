@@ -168,10 +168,15 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
-  /* Timecode should never reflow as digits change */
+  /* Timecode must never reflow as digits change, and must never reorder
+     inside right-to-left text. The bidi isolation is the important half:
+     10:02:14:00 in an RTL paragraph reorders around the colons without it. */
   .tc {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
+    direction: ltr;
+    unicode-bidi: isolate;
+    display: inline-block;
   }
 }

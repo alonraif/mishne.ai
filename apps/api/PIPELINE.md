@@ -1,6 +1,49 @@
-# Pipeline stages 0–4
+# The pipeline
 
-Implemented and runnable. Media file in, structured beats out.
+**All twelve stages are implemented.** One command takes a media file to a
+delivered rough cut.
+
+```bash
+python run.py rushes.mov --notes "Ten minutes, tight. Lead on the closure."
+python run.py interview.mov --target 6m --language he --model large-v3
+python run.py rushes.mov --replay work/rushes_a1.asr.json   # no model needed
+```
+
+Produces, in `--out`: `.aaf`, `.fcpxml`, `.edl`, `.otio`, a self-contained
+`.transcript.html`, and a `.mishne.json` record of every decision. **Hand over
+the whole folder** — the transcript page is what earns an editor's trust.
+
+## Hebrew and right-to-left
+
+Hebrew is a first-class target and it breaks assumptions English-only code makes
+silently. No capitalisation, so any heuristic keyed on capital letters returns
+nothing quietly. Different filler and retake phrasing. And RTL layout with LTR
+runs inside it — a Hebrew transcript routinely contains Latin names, numerals
+and timecode.
+
+Three rules, learned from getting them wrong first:
+
+- Transcript text uses `dir="auto"` **per string**, because one sentence mixes
+  scripts. A blanket direction on the page does not handle it.
+- **Timecode is forced LTR with `unicode-bidi: isolate`.** `10:02:14:00` in an
+  RTL paragraph reorders around its colons without it, and timecode is exactly
+  what an editor scans for.
+- English UI strings inside an RTL container need `dir="auto"` too, or their
+  trailing full stop jumps to the front of the line.
+
+**Whisper needs a bigger model for Hebrew.** `base` is fine for English and poor
+for Hebrew; `medium` or `large-v3` is the realistic floor. `run.py` warns when
+the model is too small for the language.
+
+The Hebrew filler and retake lexicons are a first pass written without native
+review. The retake one already caught a real miss — `אפשר להגיד את זה שוב`, the
+commonest way of asking for another take, did not match the original fixed
+phrases and an announced retake reached the cut. Worth checking both against
+real material.
+
+## Stages 0–4 (ingest)
+
+Media file in, structured beats out.
 
 ```bash
 cd apps/api
@@ -20,6 +63,14 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-pipeline.txt
 | 3 · silence map | `pipeline/steps/vad.py` | working, fully offline |
 | — · speaker attribution | `pipeline/steps/speakers.py` | working, 11 tests |
 | 4 · structure into beats | `pipeline/steps/structure.py` | working, 14 tests |
+| 5 · compile brief | `pipeline/steps/brief.py` | working; LLM optional |
+| 6 · score beats | `pipeline/steps/score.py` | working; control + Claude |
+| 7 · solve selection | `pipeline/steps/select.py` | working, CP-SAT |
+| 8 · review sequence | — | not implemented |
+| 9 · refine cut points | `pipeline/steps/refine.py` | working |
+| 10 · assemble timeline | `pipeline/steps/assemble.py` | working |
+| 11 · emit artifacts | `pipeline/steps/emit.py` | working |
+| 12 · validate | `pipeline/steps/validate.py` | working |
 
 ## What it produces
 

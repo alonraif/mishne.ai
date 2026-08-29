@@ -222,6 +222,7 @@ export interface SpeakerAttribution {
 export interface Transcript {
   jobId: string;
   assetId: string;
+  /** ISO code. Drives text direction throughout the transcript UI. */
   language: string;
   rate: Rate;
   dropFrame: boolean;

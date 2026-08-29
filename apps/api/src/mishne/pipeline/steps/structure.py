@@ -55,7 +55,16 @@ RETAKE_SIGNAL = {
         r"|scratch that"
         r"|sorry,? again"
         r")\b", re.I),
-    "he": re.compile(r"(עוד פעם|שוב פעם|מהתחלה|בוא נעשה שוב)", re.I),
+    # Hebrew retake requests are usually a request verb followed by "again"
+    # with words in between, not a fixed phrase. Matching only the fixed forms
+    # missed "?אפשר להגיד את זה שוב" — the commonest phrasing there is — and let
+    # an announced retake into the cut. Still first-pass, written without native
+    # review; worth checking against real material.
+    "he": re.compile(
+        r"((אפשר|יכול|יכולה|בוא|בואי|תן לי|תני לי|אני רוצה|נסיון|ננסה)"
+        r"[^.?!]{0,25}(שוב|עוד פעם|מחדש|מהתחלה)"
+        r"|עוד פעם אחת|שוב פעם|מהתחלה|נתחיל מחדש|בוא נעשה שוב"
+        r"|סליחה[,\s]+(רגע|שוב))", re.I),
 }
 
 

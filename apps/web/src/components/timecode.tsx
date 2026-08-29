@@ -12,8 +12,14 @@ export function Timecode({
   dropFrame?: boolean;
   className?: string;
 }) {
+  // dir="ltr" and bidi isolation are load-bearing, not decoration. A timecode
+  // inside an RTL paragraph reorders around its colons without them, and
+  // timecode is the thing an editor is scanning for.
   return (
-    <span className={cn("tc text-timecode", className)}>
+    <span
+      dir="ltr"
+      className={cn("tc text-timecode [unicode-bidi:isolate]", className)}
+    >
       {formatTimecode(frames, rate, dropFrame)}
     </span>
   );

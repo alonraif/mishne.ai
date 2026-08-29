@@ -9,6 +9,7 @@ import {
   type Beat,
   type Speaker,
   type Transcript,
+  directionFor,
 } from "@mishne/shared";
 import { SpeakerLegend, speakerColor } from "@/components/speaker-legend";
 import { Badge } from "@/components/ui/badge";
@@ -113,8 +114,11 @@ export function TranscriptViewer({ transcript }: { transcript: Transcript }) {
         />
       </div>
 
-      {/* Beats */}
-      <div className="space-y-1.5">
+      {/* Beats.
+          The list flips for RTL content so the gutter and reading order land
+          where a Hebrew reader expects them. Individual strings still carry
+          dir="auto" — a transcript mixes scripts within one sentence. */}
+      <div className="space-y-1.5" dir={directionFor(transcript.language)}>
         {beats.map((b) => (
           <BeatRow
             key={b.id}
@@ -219,6 +223,7 @@ function BeatRow({
             )}
           </div>
           <p
+            dir="auto"
             className={cn(
               "text-sm leading-relaxed",
               beat.used ? "text-foreground" : "text-unused-foreground"
@@ -246,15 +251,18 @@ function BeatRow({
       </button>
 
       {open && beat.rationale && (
-        <div className="border-t border-border/60 px-3 py-3 pl-[132px]">
+        <div className="border-t border-border/60 px-3 py-3 ps-[132px]">
           <div className="flex gap-2 text-xs">
             <Quote className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-            <p className="text-muted-foreground">{beat.rationale}</p>
+            <p dir="auto" className="text-muted-foreground">{beat.rationale}</p>
           </div>
         </div>
       )}
       {open && !beat.rationale && (
-        <div className="border-t border-border/60 px-3 py-3 pl-[132px] text-xs text-muted-foreground">
+        <div
+          dir="auto"
+          className="border-t border-border/60 px-3 py-3 ps-[132px] text-xs text-muted-foreground"
+        >
           Not selected. Score fell below the threshold for the target duration.
         </div>
       )}
