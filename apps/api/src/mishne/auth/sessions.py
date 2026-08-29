@@ -29,10 +29,10 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Iterator
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session as DbSession

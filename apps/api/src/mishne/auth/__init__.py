@@ -10,9 +10,9 @@ from .providers import AuthError, AuthProvider, ExternalIdentity, get_provider
 from .sessions import COOKIE_NAME, Principal
 
 __all__ = [
+    "COOKIE_NAME",
     "AuthError",
     "AuthProvider",
-    "COOKIE_NAME",
     "ExternalIdentity",
     "Principal",
     "get_provider",
