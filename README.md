@@ -17,7 +17,15 @@ timestamps, the edit decisions are made on text, and the result is emitted as a
 timeline that references the original source media by timecode. This makes the
 expensive part of the problem cheap, fast, and — critically — explainable.
 
-## Documentation
+## Start here
+
+| Doc | What's in it |
+|---|---|
+| **[Handover](docs/HANDOVER.md)** | **What exists today, how to run it, where everything lives, and the traps.** Read this first. |
+| **[Roadmap to production](docs/roadmap/README.md)** | The ordered plan. Each workstream is a self-contained brief you can start in its own session. |
+| **[Migration](docs/MIGRATION.md)** | Moving the project to another account or machine. |
+
+## Design documentation
 
 | Doc | What's in it |
 |---|---|
@@ -41,6 +49,10 @@ expensive part of the problem cheap, fast, and — critically — explainable.
 | [0005](docs/adr/0005-audio-only-ingest-path.md) | Audio-only ingest as a first-class path |
 | [0006](docs/adr/0006-credit-hold-settle-ledger.md) | Credit ledger with hold and settle |
 | [0007](docs/adr/0007-selection-as-a-swappable-stage.md) | Selection is a swappable stage |
+| [0008](docs/adr/0008-assets-carry-their-own-coordinates.md) | Assets carry their own coordinates; no virtual timeline |
+| [0009](docs/adr/0009-diarization-per-source-region.md) | Diarize per source region, on ONNX, and admit uncertainty |
+| [0010](docs/adr/0010-spans-not-beats.md) | Selection chooses spans; every boundary is gated on silence |
+| [0011](docs/adr/0011-provider-agnostic-llm-routing.md) | Any vendor's model, chosen per task by policy |
 
 ## Three ways to cut
 

@@ -1,0 +1,177 @@
+# mishne.ai — state of the project
+
+*Last updated 2026-08-29.*
+
+**Read this first if you are picking the project up cold**, in a new session, on
+a new machine, or in a new account. It says what exists, what it does, what it
+does not do, and where everything lives. Then go to
+[roadmap/README.md](roadmap/README.md) for what to build next; each workstream
+there is written to be started in its own thread without this one.
+
+---
+
+## What the product is
+
+Content creators and broadcast professionals upload long raw video — or an AAF
+with embedded media — add production notes, and get back a **rough cut**: an
+A-roll assembly they open in their own NLE and finish by hand.
+
+It is deliberately **not** a fine-cut tool. It targets the heaviest lift in
+post: getting from three hours of rushes down to the ten minutes that will
+actually make the cut.
+
+**The AI never touches audio or video.** Speech is transcribed with accurate
+timestamps, every editorial decision is made on text, and an AAF is generated
+from the result. That constraint is the reason the output is frame-accurate and
+inspectable, and it should not be relaxed without a very good reason.
+
+---
+
+## Where it stands
+
+A **working concierge pipeline**. One command turns real footage into an
+editable rough cut with four interchange artifacts and a transcript page:
+
+```bash
+cd apps/api
+./setup.sh                                    # venv, checks interpreter + ffmpeg
+.venv/bin/python run.py ../../samples/SyncDaniel.aaf \
+  --language he --model-path ../../models/faster-whisper-large-v3 --target 40s
+```
+
+Verified on two pieces of real material:
+
+| | SyncDaniel.aaf (Hebrew) | Gugu interview (English) |
+|---|---|---|
+| Source | 3.7 min, 22-clip sequence, embedded essence | 25.7 min, single-file rushes |
+| Transcript | 407 words, large-v3, mean confidence 0.96 | 4542 words, large-v3 |
+| Beats | 23, median 8.1s | 61, median 27.3s |
+| Candidates | 25 | 232 |
+| Cut at target | 4 spans, 50s | 14 clips, median 10.2s |
+| Artifacts | AAF, FCPXML, EDL, OTIO — all validate | all validate |
+
+90 tests pass. Everything above runs on one machine with no cloud dependency.
+
+### What does *not* exist
+
+- **No database.** The FastAPI layer in `apps/api/src/mishne/routers/` serves
+  fixtures from `mock.py`. `use_mocks: True` in `config.py`.
+- **No object storage, no upload path.** The CLI reads local files.
+- **No orchestration.** `run.py` calls the stages in sequence, in process.
+- **No auth, no tenancy.** `org_id` is in the schema design, not in any code.
+- **No live billing.** `billing/credits.py` and `billing/ledger.py` model the
+  hold/settle design; nothing charges anyone.
+- **The web app is mockups.** Ten screens against fixtures in `src/lib/`, no API.
+- **No deployment of any kind.** No infra, no CI, no environments.
+
+---
+
+## Layout
+
+```
+apps/api/                 the pipeline and the (mock-backed) API
+  run.py                  the concierge CLI — all stages, one command
+  setup.sh                venv with interpreter/ffmpeg/adapter checks
+  src/mishne/
+    pipeline/steps/       the twelve stages, one file each
+    pipeline/project.py   multi-asset orchestration and the ingest cache
+    asr/                  transcription behind a provider Protocol
+    diarize/              single-track voice separation, ONNX
+    llm/                  four vendors behind one interface + routing
+    interchange/          MobIDs, FCPXML patch, round-trip validation
+    timecode.py           rational rates, drop-frame, the proven conversion pair
+    routers/, mock.py     FastAPI surface, currently fixtures
+  tests/                  90 tests
+apps/web/                 Next.js 15 mockups, Tailwind 4, shadcn/ui
+packages/shared/          types, timecode, billing, RTL direction — TS
+spikes/aaf-roundtrip/     Spike A: interchange, automated, passing
+spikes/selection-quality/ Spike B: harness built, no corpus yet
+docs/architecture/        00-07, the design
+docs/adr/                 0001-0011, the decisions and why
+models/                   Whisper + diarization weights (gitignored, 2.9 GB)
+samples/                  real test material (gitignored, 443 MB)
+```
+
+## The pipeline, stage by stage
+
+| # | Stage | File | Deterministic? |
+|---|---|---|---|
+| 0 | probe | `prepare.py` | yes |
+| 1 | audio extract | `audio.py` | yes |
+| 2 | transcribe | `transcribe.py` + `asr/` | model |
+| 3 | VAD | `vad.py` | yes |
+| 4 | structure into beats | `structure.py` | yes |
+| — | speakers | `speakers.py` + `diarize/` | yes on multi-track |
+| — | AAF ingest | `aaf_ingest.py` | yes |
+| 5 | brief | `brief.py` | model, with deterministic fallback |
+| 6 | propose spans | `propose.py` | gate is deterministic |
+| 7 | score | `score.py` | model |
+| 8 | select | `select.py` | **yes — CP-SAT solver** |
+| 9 | refine cut points | `refine.py` | **yes** |
+| 10 | assemble timeline | `assemble.py` | **yes** |
+| 11 | emit | `emit.py` | yes |
+| 12 | validate | `validate.py` | yes |
+
+The shape that matters: **models score and propose; a solver selects; arithmetic
+places the cuts.** A language model never decides a frame number.
+
+## The load-bearing decisions
+
+Read the ADRs before changing any of these — each records what went wrong and
+why the current shape is what it is.
+
+| ADR | Decision |
+|---|---|
+| [0001](adr/0001-otio-as-canonical-timeline.md) | OTIO is the record of truth; every format is a projection |
+| [0002](adr/0002-workflow-engine-not-agent-framework.md) | A workflow engine, not an agent framework |
+| [0003](adr/0003-managed-asr-behind-an-interface.md) | ASR behind a provider interface |
+| [0004](adr/0004-constraint-solver-for-selection.md) | A solver selects, weighted by duration |
+| [0005](adr/0005-audio-only-ingest-path.md) | Audio-only input must be told its rate |
+| [0006](adr/0006-credit-hold-settle-ledger.md) | Credits: append-only, hold then settle |
+| [0007](adr/0007-selection-as-a-swappable-stage.md) | Selection is swappable |
+| [0008](adr/0008-assets-carry-their-own-coordinates.md) | No virtual timeline; beats carry their asset |
+| [0009](adr/0009-diarization-per-source-region.md) | Diarize per source region; admit uncertainty |
+| [0010](adr/0010-spans-not-beats.md) | Selection chooses spans; boundaries gated on silence |
+| [0011](adr/0011-provider-agnostic-llm-routing.md) | Any vendor, chosen per task by policy |
+
+## Things that will bite you
+
+Every one of these cost real time to find.
+
+- **`use_empty_mob_ids=True` writes an AAF that cannot be relinked.** MobIDs are
+  the relink key. Attach them explicitly.
+- **FCPXML is the fragile format, not AAF.** Its OTIO adapter cannot write NTSC
+  rates without `interchange/fcpx_patch.py`, and patching must go through
+  `otio.adapters.from_name("fcpx_xml").module()` — patching the import does
+  nothing.
+- **EDL carries no frame rate.** Reading one back without `rate=` silently gives
+  24 fps.
+- **`09:58:00;00` is not a valid drop-frame timecode.** Use the conversion pair
+  in `timecode.py`; it has an exhaustive self-test.
+- **Whisper word timestamps are contiguous by construction.** Word gaps are not
+  a silence signal — use the VAD. This one invalidated a whole segmentation
+  model.
+- **ffprobe cannot read an AAF at all.** It is structured storage, not a media
+  container.
+- **In a real AAF the units are not uniform**: `start_time` in samples at 48 kHz
+  and `duration` in frames at 25, on the same object.
+- **AAF source position is timecode, not file offset.** Subtract the mob's
+  `StartTime` or the flattened audio is the right length and completely silent.
+- **The AAF writer rejects per-clip frame rates.** Mixed-rate projects must be
+  conformed to the sequence rate at assembly.
+- **Python 3.14 breaks OTIO** (`RuntimeError: bad any cast`) — wheels are
+  cp39-cp313. `setup.sh` picks a supported interpreter.
+- **large-v3 peaks around 4.6 GB.** It will be killed in a 4 GB container.
+- **A dataclass field with a default before a required one is a TypeError at
+  import.** Caught twice in this codebase.
+
+## The three open questions, and they are one question
+
+1. **Is the selection good enough to sell?** (Spike B, no corpus)
+2. **Are the span thresholds right?** (ADR-0010, chosen by inspecting two clips)
+3. **Which model is actually better per task?** (ADR-0011, compliance is
+   measured, taste is not)
+
+All three are answered by the same thing: **a corpus of raw material paired with
+the editor's own finished EDL.** That is the single highest-value asset the
+project does not have. See [roadmap/A1-selection-corpus.md](roadmap/A1-selection-corpus.md).
