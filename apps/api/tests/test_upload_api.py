@@ -301,19 +301,40 @@ def test_cancelling_an_upload_that_has_completed_is_a_conflict(api, owner):
 # ─────────────────────────────────────────────────────────────── tenancy and mocks
 
 
-def test_another_org_cannot_see_or_touch_this_ones_asset(api, owner):
+def test_another_org_cannot_see_or_touch_this_ones_asset(api, owner, other_tenant):
     http, _ = api
     created = create_asset(http, b"mine" * 100)
 
     other = http.post(
         f"/v1/assets/{created['asset_id']}/upload-urls",
         json={},
-        headers={"X-Org-Id": "org_someone_else"},
+        headers={"Authorization": f"Bearer {other_tenant}"},
     )
 
     # Not 403: an asset another tenant cannot see does not exist as far as they
-    # are concerned, and a 403 confirms the id is real.
+    # are concerned, and a 403 confirms the id is real. Nothing in the router
+    # filters by org — the empty result comes from the database.
     assert other.status_code == 404
+
+
+def test_a_request_with_no_session_is_refused_before_anything_else(api):
+    http, _ = api
+    resp = http.post(
+        f"/v1/projects/{PROJECT}/assets",
+        json={"filename": "a.mxf", "bytes": 10, "checksum": digest(b"a")},
+        headers={"Authorization": ""},
+    )
+    assert resp.status_code == 401
+
+
+def test_a_viewer_may_look_but_not_upload(api, viewer_token):
+    http, _ = api
+    resp = http.post(
+        f"/v1/projects/{PROJECT}/assets",
+        json={"filename": "a.mxf", "bytes": 10, "checksum": digest(b"a")},
+        headers={"Authorization": f"Bearer {viewer_token}"},
+    )
+    assert resp.status_code == 403
 
 
 def test_the_write_path_refuses_to_pretend_when_the_api_is_serving_fixtures(

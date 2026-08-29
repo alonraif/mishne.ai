@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 pytest.importorskip("sqlalchemy")
 TestClient = pytest.importorskip("fastapi.testclient").TestClient
 
-from conftest import requires_schema  # noqa: E402
+from conftest import mint_session, requires_schema  # noqa: E402
 
 pytestmark = requires_schema
 
@@ -61,6 +61,19 @@ def _client(clear, *, use_mocks: bool, app_url: str | None = None) -> TestClient
 
 
 @pytest.fixture
+def seeded_token(seeded, owner) -> str:
+    """A signed-in user in the seeded organisation.
+
+    Since B4 the org comes from the session and never from a header, so the
+    Postgres half of the parity check needs a real one. The fixtures half does
+    not: `use_mocks` is a local-only affordance with no tenant to establish.
+    """
+    from mishne import mock
+
+    return mint_session(owner, mock.ORG.id, mock.USER.id)
+
+
+@pytest.fixture
 def seeded(app_login: str, clear_caches):
     """A database holding exactly the fixtures."""
     import os
@@ -77,37 +90,44 @@ def seeded(app_login: str, clear_caches):
 
 
 @pytest.mark.parametrize("path", PATHS)
-def test_postgres_matches_the_fixtures(path: str, seeded, app_login: str, clear_caches) -> None:
+def test_postgres_matches_the_fixtures(
+    path: str, seeded_token: str, app_login: str, clear_caches
+) -> None:
     with _client(clear_caches, use_mocks=True) as mocked:
         expected = mocked.get(path)
     with _client(clear_caches, use_mocks=False, app_url=app_login) as live:
-        actual = live.get(path)
+        actual = live.get(path, headers={"Authorization": f"Bearer {seeded_token}"})
 
     assert expected.status_code == actual.status_code == 200, path
     assert actual.json() == expected.json(), path
 
 
-def test_another_org_sees_none_of_it(seeded, app_login: str, clear_caches) -> None:
+def test_another_org_sees_none_of_it(
+    seeded, other_tenant: str, app_login: str, clear_caches
+) -> None:
     """The API surface of the isolation test: a 404, not somebody else's project.
 
     Nothing in the router filters by org. The empty result comes from the
     database, which is the only place it can come from and still be true of
     every query written later.
+
+    The caller is a real signed-in owner of a real second organisation, not a
+    made-up org id — otherwise this proves that an unknown org sees nothing,
+    which is a much weaker statement.
     """
+    auth = {"Authorization": f"Bearer {other_tenant}"}
     with _client(clear_caches, use_mocks=False, app_url=app_login) as live:
-        assert live.get("/v1/projects", headers={"X-Org-Id": "org_someone_else"}).json() == []
-        assert (
-            live.get(
-                "/v1/projects/prj_harbour", headers={"X-Org-Id": "org_someone_else"}
-            ).status_code
-            == 404
-        )
-        assert (
-            live.get(
-                "/v1/jobs/job_2e57/transcript", headers={"X-Org-Id": "org_someone_else"}
-            ).status_code
-            == 404
-        )
+        assert live.get("/v1/projects", headers=auth).json() == []
+        assert live.get("/v1/projects/prj_harbour", headers=auth).status_code == 404
+        assert live.get("/v1/jobs/job_2e57/transcript", headers=auth).status_code == 404
+
+
+def test_an_unauthenticated_request_gets_nothing_at_all(
+    seeded, app_login: str, clear_caches
+) -> None:
+    with _client(clear_caches, use_mocks=False, app_url=app_login) as live:
+        assert live.get("/v1/projects").status_code == 401
+        assert live.get("/v1/jobs/job_2e57/transcript").status_code == 401
 
 
 def test_mocks_are_refused_outside_local(clear_caches) -> None:
@@ -129,5 +149,12 @@ def test_mocks_are_refused_outside_local(clear_caches) -> None:
     # And the combination that is fine.
     # A staging Settings also needs a KMS key now — customer media is never
     # unencrypted at rest outside a developer's machine (B2).
-    ok = Settings(environment="staging", use_mocks=False, s3_kms_key_id="alias/mishne-staging")
+    ok = Settings(
+        environment="staging",
+        use_mocks=False,
+        s3_kms_key_id="alias/mishne-staging",
+        # https, because the session cookie is the credential for every request
+        # and sending it in the clear is not a state this system may reach (B4).
+        app_origin="https://staging.mishne.ai",
+    )
     assert ok.use_mocks is False

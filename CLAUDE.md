@@ -36,16 +36,16 @@ infra/          docker-compose for local Postgres; Terraform later
 selection-quality spike reads. Stages 5–12 are still stubs.
 
 **The platform is being built underneath it.** B1 put in Postgres — twenty
-tables, `org_id` everywhere, RLS enabled and forced. B2 is in progress: object
-storage, presigned multipart upload and the workspace that gives ffmpeg and
-pyaaf2 real file paths all exist; the browser-side upload, probe-on-arrival and
-the bucket lifecycle rules do not. See [docs/HANDOVER.md](docs/HANDOVER.md) for
-the current state and [docs/roadmap/](docs/roadmap/) for what is next.
+tables, `org_id` everywhere, RLS enabled and forced. B2 added object storage:
+presigned multipart upload straight to S3, a resumable browser client, probe on
+arrival, and lifecycle rules. B4 added identity: signup, login, SSO behind a
+provider interface, roles, and an audit log. B3 — orchestration — is next. See
+[docs/HANDOVER.md](docs/HANDOVER.md) and [docs/roadmap/](docs/roadmap/).
 
-**The web app is still mockups.** Every screen renders from
-`apps/web/src/lib/mock-data.ts`, and the API serves the same shapes from
-`apps/api/src/mishne/mock.py` behind `use_mocks` — which is refused outside
-`environment=local`.
+**The ten screens are still mockups**, apart from upload, login and signup.
+They render from `apps/web/src/lib/mock-data.ts`, and the API serves the same
+shapes from `apps/api/src/mishne/mock.py` behind `use_mocks` — which is refused
+outside `environment=local`. Wiring them to the real API is C2.
 
 ## Rules that matter
 
@@ -60,7 +60,10 @@ text. IDs, durations, counts and status only. There is a log filter; do not rout
 around it.
 
 **`org_id` on every table**, including where it is derivable by join. Postgres RLS is
-the backstop, not the application layer.
+the backstop, not the application layer. The org comes from the request's
+session and is set on the transaction with `set_config(..., is_local => true)` —
+never session-level, or a pooled connection carries one tenant into the next
+request with no error message anywhere.
 
 **Media never transits the API.** Uploads go browser → S3 via presigned multipart.
 

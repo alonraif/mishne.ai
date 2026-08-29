@@ -367,6 +367,52 @@ class CompleteUploadRequest(BaseModel):
     parts: list[CompletedPart]
 
 
+# ─────────────────────────────────────────────────────────────────── identity
+
+
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+    org_name: str
+    name: str = ""
+    tier: TierId = "starter"
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class Member(BaseModel):
+    id: str
+    email: str
+    name: str
+    role: Role
+    #: Which mechanism this person signs in with. Empty for a user provisioned
+    #: before they have ever signed in.
+    auth_provider: str = ""
+
+
+class CreateMemberRequest(BaseModel):
+    email: str
+    name: str = ""
+    role: Role = "member"
+    #: Set now, or leave empty for an SSO organisation where the identity
+    #: provider is the only thing that authenticates anyone.
+    password: str = ""
+
+
+class UpdateMemberRequest(BaseModel):
+    role: Role
+
+
+class Session(BaseModel):
+    """Who the caller is, as the web app needs it on every page."""
+
+    user: Member
+    org: Org
+
+
 class EstimateJobRequest(BaseModel):
     asset_id: str
     target_duration_s: int

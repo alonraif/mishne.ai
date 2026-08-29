@@ -136,6 +136,9 @@ def clear_caches():
 #: seeded development data.
 ORG = "org_test_upload"
 PROJECT = "prj_test_upload"
+#: An owner and a viewer, so the role gates have something to refuse.
+OWNER_USER = "usr_test_owner"
+VIEWER_USER = "usr_test_viewer"
 BUCKETS = ("test-raw", "test-derived", "test-artifacts")
 
 #: The part size these tests run at. The production default is 64 MiB, which
@@ -164,6 +167,39 @@ def digest(blob: bytes) -> str:
     import hashlib
 
     return hashlib.sha256(blob).hexdigest()
+
+
+def mint_session(owner_engine, org_id: str, user_id: str, *, expired: bool = False) -> str:
+    """A signed-in browser, made directly.
+
+    Inserted through the owner connection rather than by calling `/auth/login`,
+    because most tests are not testing sign-in — they need a caller that exists.
+    The token still goes through the real resolution path on every request,
+    including the policy escape that reads it.
+    """
+    import hashlib
+    import secrets
+    from datetime import datetime, timedelta, timezone
+
+    token = secrets.token_urlsafe(24)
+    expires = datetime.now(timezone.utc) + (
+        timedelta(seconds=-1) if expired else timedelta(days=1)
+    )
+    with owner_engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO sessions (id, org_id, user_id, token_hash, expires_at) "
+                "VALUES (:i, :o, :u, :h, :e)"
+            ),
+            {
+                "i": f"ses_{secrets.token_hex(6)}",
+                "o": org_id,
+                "u": user_id,
+                "h": hashlib.sha256(token.encode()).hexdigest(),
+                "e": expires,
+            },
+        )
+    return token
 
 
 def create_asset(http, blob: bytes, filename: str = "A002.mxf") -> dict:
@@ -217,6 +253,7 @@ def tenant(owner):
         # org and the teardown has to name each table. Assets do cascade from
         # their project.
         conn.execute(sa.text("DELETE FROM projects WHERE org_id = :o"), {"o": ORG})
+        conn.execute(sa.text("DELETE FROM users WHERE org_id = :o"), {"o": ORG})
         conn.execute(sa.text("DELETE FROM orgs WHERE id = :o"), {"o": ORG})
         conn.execute(
             sa.text(
@@ -229,14 +266,31 @@ def tenant(owner):
             sa.text("INSERT INTO projects (id, org_id, name) VALUES (:p, :o, 'Upload test')"),
             {"p": PROJECT, "o": ORG},
         )
+        conn.execute(
+            sa.text(
+                "INSERT INTO users (id, org_id, email, name, role, auth_provider) VALUES "
+                "(:owner, :o, :owner_email, 'Test Owner', 'owner', 'local'), "
+                "(:viewer, :o, :viewer_email, 'Test Viewer', 'viewer', 'local')"
+            ),
+            {
+                "owner": OWNER_USER,
+                "viewer": VIEWER_USER,
+                "o": ORG,
+                "owner_email": f"{OWNER_USER}@example.test",
+                "viewer_email": f"{VIEWER_USER}@example.test",
+            },
+        )
     yield
     with owner.begin() as conn:
         conn.execute(sa.text("DELETE FROM projects WHERE org_id = :o"), {"o": ORG})
+        # sessions and credentials cascade from users; users do not cascade from
+        # the org, because org_id is a column and not a reference.
+        conn.execute(sa.text("DELETE FROM users WHERE org_id = :o"), {"o": ORG})
         conn.execute(sa.text("DELETE FROM orgs WHERE id = :o"), {"o": ORG})
 
 
 @pytest.fixture
-def api(tenant, app_login, monkeypatch, clear_caches):
+def api(tenant, owner, app_login, monkeypatch, clear_caches):
     """The app, talking to Postgres as a role RLS actually applies to, and to moto."""
     if _S3_MISSING:
         pytest.skip(_S3_MISSING)
@@ -267,7 +321,52 @@ def api(tenant, app_login, monkeypatch, clear_caches):
         from mishne.main import app
 
         with TestClient(app) as http:
-            http.headers.update({"X-Org-Id": ORG})
+            # A real session, resolved through the real policy escape on every
+            # request. The bearer form rather than a cookie only because a test
+            # client has no cookie jar worth maintaining; the code path after
+            # the token is read is identical.
+            http.headers.update(
+                {"Authorization": f"Bearer {mint_session(owner, ORG, OWNER_USER)}"}
+            )
             yield http, client
     storage.get_client.cache_clear()
     storage.get_storage.cache_clear()
+
+
+@pytest.fixture
+def viewer_token(tenant, owner) -> str:
+    """A signed-in viewer: reads and downloads, uploads nothing."""
+    return mint_session(owner, ORG, VIEWER_USER)
+
+
+@pytest.fixture
+def other_tenant(owner):
+    """A second organisation with its own signed-in owner.
+
+    Cross-tenant tests need a caller that genuinely exists somewhere else: a
+    made-up org id proves only that the org is unknown, not that the isolation
+    holds against a real session.
+    """
+    other_org = "org_test_other"
+    other_user = "usr_test_other"
+    with owner.begin() as conn:
+        conn.execute(sa.text("DELETE FROM users WHERE org_id = :o"), {"o": other_org})
+        conn.execute(sa.text("DELETE FROM orgs WHERE id = :o"), {"o": other_org})
+        conn.execute(
+            sa.text(
+                "INSERT INTO orgs (id, name, tier, retention_days) "
+                "VALUES (:o, 'Somebody else', 'starter', 30)"
+            ),
+            {"o": other_org},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO users (id, org_id, email, name, role, auth_provider) "
+                "VALUES (:u, :o, :e, 'Other Owner', 'owner', 'local')"
+            ),
+            {"u": other_user, "o": other_org, "e": f"{other_user}@example.test"},
+        )
+    yield mint_session(owner, other_org, other_user)
+    with owner.begin() as conn:
+        conn.execute(sa.text("DELETE FROM users WHERE org_id = :o"), {"o": other_org})
+        conn.execute(sa.text("DELETE FROM orgs WHERE id = :o"), {"o": other_org})

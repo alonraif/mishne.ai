@@ -82,14 +82,70 @@ class User(Base):
     # The IdP's subject. Null until B4 wires real identity.
     external_id = sa.Column(sa.Text)
     role = sa.Column(sa.Text, nullable=False)
+    # Which mechanism authenticated this user. Nullable and added after the
+    # fact, so a release that knows nothing about it keeps inserting (ADR-0012).
+    auth_provider = sa.Column(sa.Text)
     created_at = sa.Column(TS, nullable=False, server_default=NOW)
     __table_args__ = (
         _ck("ck_users_role", "role", vocab.USER_ROLES),
+        sa.CheckConstraint(
+            "auth_provider IS NULL OR "
+            + vocab.check("auth_provider", vocab.AUTH_PROVIDERS),
+            name="ck_users_auth_provider",
+        ),
         sa.UniqueConstraint("org_id", "email", name="uq_users_org_email"),
     )
 
 
 # ──────────────────────────────────────────────────────────── projects, assets
+
+
+class UserCredential(Base):
+    """How a user proves who they are, when the answer is a password.
+
+    Separate from `users` because a password is not an attribute of a person but
+    one way of authenticating them: an org on SSO has users with no row here at
+    all, and revoking a credential must not delete an account.
+
+    `password_hash` is the full encoded form — algorithm, parameters, salt and
+    digest — so the cost parameters can be raised later without invalidating
+    every existing password.
+    """
+
+    __tablename__ = "user_credentials"
+    id = sa.Column(sa.Text, primary_key=True)
+    org_id = sa.Column(sa.Text, nullable=False)
+    user_id = sa.Column(
+        sa.Text, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    password_hash = sa.Column(sa.Text, nullable=False)
+    updated_at = sa.Column(TS, nullable=False, server_default=NOW)
+    __table_args__ = (sa.UniqueConstraint("user_id", name="uq_user_credentials_user"),)
+
+
+class Session(Base):
+    """One signed-in browser.
+
+    The token itself is never stored — only its SHA-256. A dump of this table is
+    then a list of session ids rather than a set of working credentials, for the
+    same reason a password is not stored either.
+
+    Sessions are revoked rather than deleted: "when did this session end, and
+    was it a logout or an expiry" is a question a security review asks.
+    """
+
+    __tablename__ = "sessions"
+    id = sa.Column(sa.Text, primary_key=True)
+    org_id = sa.Column(sa.Text, nullable=False)
+    user_id = sa.Column(
+        sa.Text, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash = sa.Column(sa.Text, nullable=False)
+    created_at = sa.Column(TS, nullable=False, server_default=NOW)
+    last_seen_at = sa.Column(TS, nullable=False, server_default=NOW)
+    expires_at = sa.Column(TS, nullable=False)
+    revoked_at = sa.Column(TS)
+    __table_args__ = (sa.UniqueConstraint("token_hash", name="uq_sessions_token_hash"),)
 
 
 class Project(Base):
@@ -640,6 +696,7 @@ class AuditLog(Base):
 # expand-only and costs a single CONCURRENTLY build.
 
 sa.Index("ix_users_org", User.__table__.c.org_id)
+sa.Index("ix_sessions_user", Session.__table__.c.org_id, Session.__table__.c.user_id)
 sa.Index("ix_projects_org_created", Project.__table__.c.org_id, Project.__table__.c.created_at)
 sa.Index("ix_assets_org", Asset.__table__.c.org_id)
 sa.Index("ix_assets_project", Asset.__table__.c.project_id)
@@ -681,6 +738,8 @@ ALL_TABLES = [
     "orgs",
     "org_balances",
     "users",
+    "user_credentials",
+    "sessions",
     "projects",
     "assets",
     "source_clips",

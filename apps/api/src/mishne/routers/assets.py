@@ -21,13 +21,14 @@ until stage 0 has read it.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
-from .. import storage
+from .. import audit, storage
 from ..config import Settings, get_settings
 from ..db import repository, requirements as reqs, uploads
-from ..deps import current_org, writable_db
+from ..auth.sessions import Principal
+from ..deps import current_principal, require_write, writable_db
 from ..logging import get_logger
 from ..schemas import (
     Asset,
@@ -98,7 +99,8 @@ def _presign(
 async def create_asset(
     project_id: str,
     body: CreateAssetRequest,
-    org_id: str = Depends(current_org),
+    request: Request,
+    principal: Principal = Depends(require_write),
     s: Session = Depends(writable_db),
     settings: Settings = Depends(get_settings),
 ) -> PresignedUpload:
@@ -109,6 +111,7 @@ async def create_asset(
     the same row and the same key rather than a second orphaned upload paying
     for parts nobody will complete.
     """
+    org_id = principal.org_id
     checksum = _checksum(body.checksum)
     if body.bytes < 0:
         raise HTTPException(422, "bytes must not be negative")
@@ -196,6 +199,11 @@ async def create_asset(
         bytes=body.bytes,
         parts=storage.part_count(body.bytes, part_size),
     )
+    audit.record(
+        s, org_id, audit.UPLOAD_STARTED, resource_type="asset", resource_id=asset_id,
+        actor_user_id=principal.user_id, ip=audit.client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return _presign(
         obj,
         ref,
@@ -212,7 +220,7 @@ async def create_asset(
 async def resume_upload(
     asset_id: str,
     body: ResumeUploadRequest,
-    org_id: str = Depends(current_org),
+    principal: Principal = Depends(require_write),
     s: Session = Depends(writable_db),
     settings: Settings = Depends(get_settings),
 ) -> PresignedUpload:
@@ -224,6 +232,7 @@ async def resume_upload(
     layout is recomputed from the stored size, so the parts a client already
     sent are still exactly the parts it thinks it sent.
     """
+    org_id = principal.org_id
     row = uploads.get_row(s, org_id, asset_id)
     if row is None:
         raise HTTPException(404, "asset not found")
@@ -244,7 +253,7 @@ async def resume_upload(
 @router.get("/assets/{asset_id}/upload-parts", response_model=UploadState)
 async def upload_parts(
     asset_id: str,
-    org_id: str = Depends(current_org),
+    principal: Principal = Depends(require_write),
     s: Session = Depends(writable_db),
     settings: Settings = Depends(get_settings),
 ) -> UploadState:
@@ -255,6 +264,7 @@ async def upload_parts(
     it managed to send. This is the API asking on its behalf, and it is what
     makes a resume cost only the parts that are actually missing.
     """
+    org_id = principal.org_id
     row = uploads.get_row(s, org_id, asset_id)
     if row is None:
         raise HTTPException(404, "asset not found")
@@ -280,7 +290,8 @@ async def upload_parts(
 async def complete_upload(
     asset_id: str,
     body: CompleteUploadRequest,
-    org_id: str = Depends(current_org),
+    request: Request,
+    principal: Principal = Depends(require_write),
     s: Session = Depends(writable_db),
     settings: Settings = Depends(get_settings),
 ) -> Asset:
@@ -290,6 +301,7 @@ async def complete_upload(
     stage 0 has read it, and an asset that says `ready` is one a job may be
     started against.
     """
+    org_id = principal.org_id
     row = uploads.get_row(s, org_id, asset_id)
     if row is None:
         raise HTTPException(404, "asset not found")
@@ -324,6 +336,11 @@ async def complete_upload(
         reqs.refresh_status(s, org_id, waiting)
 
     log.info("upload_completed", asset_id=asset_id, bytes=row.bytes, parts=expected)
+    audit.record(
+        s, org_id, audit.UPLOAD_COMPLETED, resource_type="asset", resource_id=asset_id,
+        actor_user_id=principal.user_id, ip=audit.client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     asset = repository.get_asset(s, org_id, asset_id)
     if asset is None:  # pragma: no cover - the row was read two statements ago
         raise HTTPException(404, "asset not found")
@@ -333,7 +350,8 @@ async def complete_upload(
 @router.delete("/assets/{asset_id}/upload", status_code=204)
 async def abort_upload(
     asset_id: str,
-    org_id: str = Depends(current_org),
+    request: Request,
+    principal: Principal = Depends(require_write),
     s: Session = Depends(writable_db),
     settings: Settings = Depends(get_settings),
 ) -> Response:
@@ -343,6 +361,7 @@ async def abort_upload(
     for the ones nobody cancels; this is the one the user cancelled, and it
     should not wait seven days.
     """
+    org_id = principal.org_id
     row = uploads.get_row(s, org_id, asset_id)
     if row is None:
         raise HTTPException(404, "asset not found")
@@ -356,6 +375,11 @@ async def abort_upload(
         except Exception:  # noqa: BLE001 - already gone is the desired state
             log.info("abort_upload_failed", asset_id=asset_id)
     uploads.delete_asset(s, org_id, asset_id)
+    audit.record(
+        s, org_id, audit.UPLOAD_CANCELLED, resource_type="asset", resource_id=asset_id,
+        actor_user_id=principal.user_id, ip=audit.client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     log.info("upload_aborted", asset_id=asset_id)
     return Response(status_code=204)
 
@@ -363,7 +387,7 @@ async def abort_upload(
 @router.get("/assets/{asset_id}/requirements", response_model=AssetRequirements)
 async def asset_requirements(
     asset_id: str,
-    org_id: str = Depends(current_org),
+    principal: Principal = Depends(current_principal),
     s: Session = Depends(writable_db),
 ) -> AssetRequirements:
     """What this sequence is still waiting for, and what has arrived.
@@ -372,6 +396,7 @@ async def asset_requirements(
     rows: a linked AAF is a thing that exists after a probe, and there is no
     fixture for it.
     """
+    org_id = principal.org_id
     row = uploads.get_row(s, org_id, asset_id)
     if row is None:
         raise HTTPException(404, "asset not found")

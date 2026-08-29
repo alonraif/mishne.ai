@@ -56,6 +56,28 @@ class Settings(BaseSettings):
     # commit us to storing a petabyte.
     max_upload_bytes: int = 512 * 1024**3  # 512 GiB
 
+    # ── identity (B4) ──────────────────────────────────────────────────────
+    #
+    # Which provider answers "who is this?". `local` is email and password in
+    # our own database — what a developer's machine and the test suite use, and
+    # a real path for a single-editor customer. `workos` is the hosted provider
+    # docs/architecture/04-security.md names, and the one that carries SAML SSO
+    # and SCIM. See docs/adr/0015.
+    auth_provider: Literal["local", "workos"] = "local"
+
+    workos_api_key: str = ""
+    workos_client_id: str = ""
+    # Either pins the sign-in to one customer's connection or organisation. Left
+    # empty, WorkOS's own hosted picker decides.
+    workos_connection_id: str = ""
+    workos_organization_id: str = ""
+
+    # Where the web app is served from. The session cookie and the CORS policy
+    # are both scoped to it, and the SSO callback returns the browser there.
+    # Credentialed CORS cannot use a wildcard, which is the correct outcome:
+    # the origins that may drive this API are named.
+    app_origin: str = "http://localhost:3000"
+
     # Vendors. Never commit real keys — see .env.example.
     asr_provider: str = "mock"
     asr_api_key: str = ""
@@ -92,6 +114,20 @@ class Settings(BaseSettings):
                 "An endpoint override outside local development means customer "
                 "media is being written to something other than the audited bucket."
             )
+        if self.auth_provider == "workos" and not (
+            self.workos_api_key and self.workos_client_id
+        ):
+            raise ValueError(
+                "auth_provider='workos' needs WORKOS_API_KEY and WORKOS_CLIENT_ID. "
+                "A process that boots without them serves an API nobody can sign "
+                "in to, and the first symptom is a support ticket."
+            )
+        if self.environment != "local" and self.app_origin.startswith("http://"):
+            raise ValueError(
+                f"app_origin={self.app_origin!r} is not https. The session cookie "
+                "is the credential for every request; sending it in the clear is "
+                "not a state this system may reach."
+            )
         if not self.s3_kms_key_id and self.environment != "local":
             raise ValueError(
                 f"s3_kms_key_id is required in environment={self.environment!r}. "
@@ -99,6 +135,17 @@ class Settings(BaseSettings):
                 "unencrypted-at-rest is not a state this system may reach."
             )
         return self
+
+
+    @property
+    def cookie_secure(self) -> bool:
+        """`Secure` everywhere but a developer's machine.
+
+        Not configurable: a session cookie without it is sent over plain HTTP by
+        any redirect an attacker can cause, and "we turned it off to debug
+        staging" is exactly how that happens.
+        """
+        return self.environment != "local"
 
 
 @lru_cache

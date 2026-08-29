@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 
+from ..auth.sessions import Principal
 from ..billing import CREDIT_PACKS, TIERS
+from ..deps import require_owner
 from ..schemas import LedgerEntry, Org, PurchaseCreditsRequest
 from ..store import Store, get_store
 
@@ -47,7 +49,9 @@ async def get_ledger(
 
 
 @router.post("/purchase", status_code=201)
-async def purchase_credits(body: PurchaseCreditsRequest) -> dict:
+async def purchase_credits(
+    body: PurchaseCreditsRequest, _: Principal = Depends(require_owner)
+) -> dict:
     """Create a Stripe checkout session. Credits are granted on webhook, not here."""
     raise HTTPException(501, "not implemented")
 

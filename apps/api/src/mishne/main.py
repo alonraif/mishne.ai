@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .logging import configure as configure_logging
-from .routers import assets, billing, jobs, projects
+from .routers import assets, auth, billing, jobs, org, projects
 
 configure_logging()
 settings = get_settings()
@@ -14,14 +14,19 @@ app = FastAPI(
     description="Raw footage to editable rough cut.",
 )
 
+# Credentialed CORS cannot use a wildcard — the browser refuses it — which is
+# the correct outcome: the origins that may drive this API with a session cookie
+# are named, per environment.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[settings.app_origin],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
+app.include_router(org.router)
 app.include_router(projects.router)
 app.include_router(assets.router)
 app.include_router(jobs.router)

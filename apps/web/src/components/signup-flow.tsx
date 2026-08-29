@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check, Sparkles } from "lucide-react";
 import { CREDIT_PACKS, TIERS, type CreditPackId, type TierId } from "@mishne/shared";
 import { Button } from "@/components/ui/button";
@@ -10,14 +10,53 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const STEPS = ["Account", "Plan", "Credits"] as const;
 
 export function SignupFlow() {
+  const router = useRouter();
   const [step, setStep] = useState(0);
   const [tier, setTier] = useState<TierId>("pro");
   const [pack, setPack] = useState<CreditPackId>("pack_100");
+  const [name, setName] = useState("");
+  const [orgName, setOrgName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // The account is created at the end of the flow, not at the end of step one:
+  // the tier is part of the organisation record (ADR-0006), so an account made
+  // before it is chosen would have to be corrected by a second write that can
+  // fail on its own.
+  //
+  // Credits are NOT bought here. That is Stripe, and it is C1 — a pack is
+  // chosen and then nothing charges anyone, which is exactly what the billing
+  // module models today.
+  const createAccount = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await api("/v1/auth/signup", {
+        method: "POST",
+        json: { email, password, org_name: orgName, name, tier },
+      });
+      router.push("/projects");
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError && caught.status !== 0
+          ? caught.detail
+          : "could not reach the server"
+      );
+      setBusy(false);
+      setStep(0);
+    }
+  };
+
+  const accountComplete =
+    name.trim() !== "" && orgName.trim() !== "" && email.includes("@") && password.length >= 12;
 
   const selectedPack = CREDIT_PACKS.find((p) => p.id === pack)!;
   const selectedTier = TIERS[tier];
@@ -55,16 +94,48 @@ export function SignupFlow() {
           <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
           <div className="grid gap-2">
             <Label htmlFor="name">Your name</Label>
-            <Input id="name" placeholder="Alon Raif" />
+            <Input
+              id="name"
+              placeholder="Alon Raif"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="org">Company or studio</Label>
-            <Input id="org" placeholder="Northline Post" />
+            <Input
+              id="org"
+              placeholder="Northline Post"
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+            />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="email">Work email</Label>
-            <Input id="email" type="email" placeholder="you@studio.tv" />
+            <Input
+              id="email"
+              type="email"
+              autoComplete="username"
+              placeholder="you@studio.tv"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
           </div>
+          <div className="grid gap-2">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              At least 12 characters. Length is the only rule — a passphrase beats
+              a short password with a symbol in it.
+            </p>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
       )}
 
@@ -207,14 +278,15 @@ export function SignupFlow() {
           <ArrowLeft /> Back
         </Button>
         {step < 2 ? (
-          <Button onClick={() => setStep((s) => s + 1)}>
+          <Button
+            onClick={() => setStep((s) => s + 1)}
+            disabled={step === 0 && !accountComplete}
+          >
             Continue <ArrowRight />
           </Button>
         ) : (
-          <Button asChild>
-            <Link href="/projects">
-              <Check /> Create account
-            </Link>
+          <Button onClick={() => void createAccount()} disabled={busy}>
+            <Check /> {busy ? "Creating…" : "Create account"}
           </Button>
         )}
       </div>

@@ -13,6 +13,10 @@ from __future__ import annotations
 
 ORG_TIERS = ("starter", "pro", "studio")
 USER_ROLES = ("owner", "member", "viewer")
+# How a user authenticated. `local` is email and password, which is what a
+# developer's machine and the test suite use; `workos` is the hosted identity
+# provider the security design names, and the one that carries SAML and SCIM.
+AUTH_PROVIDERS = ("local", "workos")
 
 ASSET_KINDS = ("video", "aaf", "audio")
 # `aaf_linked` is an AAF whose clips point at external media the customer has to

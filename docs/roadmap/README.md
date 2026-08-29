@@ -37,12 +37,12 @@ Media Composer will not take it, the platform has nothing to deliver.
 **Phase B prompts**, one session each — B1 first, then B2 and B4 in parallel,
 then B3:
 
-| Workstream | Prompt | Needs |
-|---|---|---|
-| B1 persistence | [B-SESSION-PROMPT.md](B-SESSION-PROMPT.md) | — |
-| B2 storage | [B2-SESSION-PROMPT.md](B2-SESSION-PROMPT.md) | B1 |
-| B4 auth | [B4-SESSION-PROMPT.md](B4-SESSION-PROMPT.md) | B1 |
-| B3 orchestration | [B3-SESSION-PROMPT.md](B3-SESSION-PROMPT.md) | B1, B2 |
+| Workstream | Prompt | Needs | State |
+|---|---|---|---|
+| B1 persistence | [B-SESSION-PROMPT.md](B-SESSION-PROMPT.md) | — | **done** |
+| B2 storage | [B2-SESSION-PROMPT.md](B2-SESSION-PROMPT.md) | B1 | **done** |
+| B4 auth | [B4-SESSION-PROMPT.md](B4-SESSION-PROMPT.md) | B1 | **done** |
+| B3 orchestration | [B3-SESSION-PROMPT.md](B3-SESSION-PROMPT.md) | B1, B2 | **next** |
 | [B2](B2-storage-and-upload.md) | S3, multipart upload, presigned URLs | B1 |
 | [B3](B3-orchestration.md) | Step Functions, workers, the step contract | B1, B2 |
 | [B4](B4-auth-and-tenancy.md) | Accounts, orgs, session, tenant isolation | B1 |
@@ -80,4 +80,7 @@ A1 and A2 are the ones that matter.
 | Multi-asset projects | **Works.** |
 | LLM routing, four vendors | **Works.** Compliance measured; taste not. |
 | Selection quality | **Unmeasured.** No corpus. |
-| Persistence, storage, orchestration, auth, billing, web | **Not built.** |
+| Persistence (Postgres, RLS) | **Works.** Twenty tables, isolation proved at the database. |
+| Storage and upload | **Works.** Resumable direct-to-S3, probe on arrival, lifecycle rules. |
+| Auth and tenancy | **Works.** Sessions, roles, audit log, WorkOS behind an interface. |
+| Orchestration, billing, the ten screens | **Not built.** B3, C1, C2. |

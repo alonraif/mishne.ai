@@ -1,6 +1,6 @@
 # mishne.ai — state of the project
 
-*Last updated 2026-08-29 (B1 persistence; B2 storage, in progress).*
+*Last updated 2026-08-29 (B1 persistence, B2 storage, B4 auth and tenancy).*
 
 **Read this first if you are picking the project up cold**, in a new session, on
 a new machine, or in a new account. It says what exists, what it does, what it
@@ -59,16 +59,17 @@ Verified on two pieces of real material:
   each table. `use_mocks: True` still serves fixtures and is refused outside
   `environment=local`. See `apps/api/migrations/README.md` before writing a
   second migration — the expand/contract rules are not optional.
-- ~~No object storage.~~ **S3, as of B2 — the server half.** Three buckets by
-  lifecycle, presigned multipart upload, and a `Workspace` that stages objects
-  to a worker's local disk because ffmpeg and pyaaf2 need real paths
-  (ADR-0013). The API mints the URLs, completes the upload and moves the asset
-  to `probing`. **Still missing in B2:** the browser-side resumable upload,
-  probe-on-arrival, `infra/s3_lifecycle.py`, and the code that reads
-  `asset_media_requirements` — the schema for linked AAFs exists, nothing
-  populates it.
+- ~~No object storage, no upload path.~~ **Both, as of B2.** Three buckets by
+  lifecycle, presigned multipart upload, a resumable browser client that
+  survives a closed laptop, probe-on-arrival, lifecycle and CORS rules in
+  `infra/`, and linked AAFs that ask for the media they reference (ADR-0014).
+  Media never transits the API and probing does not run in it.
 - **No orchestration.** `run.py` calls the stages in sequence, in process.
-- **No auth, no tenancy.** `org_id` is in the schema design, not in any code.
+- ~~No auth, no tenancy.~~ **Both, as of B4.** Signup, login, logout, SSO
+  through WorkOS behind a provider interface, sessions in an httpOnly cookie,
+  three roles, and an audit log. The org on a request comes from the session and
+  never from a header; `app.org_id` is set per transaction and the policies do
+  the isolation. See ADR-0015 and `tests/test_pool_isolation.py`.
 - **No live billing.** `billing/credits.py` and `billing/ledger.py` model the
   hold/settle design; nothing charges anyone.
 - **The web app is mockups.** Ten screens against fixtures in `src/lib/`, no API.
@@ -91,13 +92,15 @@ apps/api/                 the pipeline and the (mock-backed) API
     interchange/          MobIDs, FCPXML patch, round-trip validation
     timecode.py           rational rates, drop-frame, the proven conversion pair
     routers/, mock.py     FastAPI surface; fixtures behind use_mocks
+    auth/                 providers, sessions, password hashing
+    audit.py              who did what, append-only
     storage.py            three buckets, the key scheme, presigned multipart
     workspace.py          objects in, real files on disk, derived files back out
     db/uploads.py         the upload lifecycle as writes
     db/                   models, session, query layer, seed script
   migrations/             Alembic — 0001 is the whole schema, and README.md
                           is the expand/contract contract
-  tests/                  170 tests
+  tests/                  238 tests
 apps/web/                 Next.js 15 mockups, Tailwind 4, shadcn/ui
 packages/shared/          types, timecode, billing, RTL direction — TS
 spikes/aaf-roundtrip/     Spike A: interchange, automated, passing
@@ -151,6 +154,8 @@ why the current shape is what it is.
 | [0011](adr/0011-provider-agnostic-llm-routing.md) | Any vendor, chosen per task by policy |
 | [0012](adr/0012-two-environments-and-expand-contract-migrations.md) | Two environments; every migration is backward-compatible |
 | [0013](adr/0013-stage-media-to-local-disk.md) | Media is staged to a worker's disk, never mounted |
+| [0014](adr/0014-linked-aaf-companions.md) | A linked AAF is accepted, and asks for the media it references |
+| [0015](adr/0015-identity-behind-a-provider-interface.md) | Identity behind a provider interface; one email is one person |
 
 ## Things that will bite you
 
@@ -182,6 +187,19 @@ Every one of these cost real time to find.
 - **large-v3 peaks around 4.6 GB.** It will be killed in a 4 GB container.
 - **A dataclass field with a default before a required one is a TypeError at
   import.** Caught twice in this codebase.
+- **The org on a request comes from the session, never from a header.** The
+  `X-Org-Id` header B1 used is gone; it survives only where `use_mocks` is on,
+  which `Settings` refuses outside `environment=local`.
+- **An audit row written on a failing request is rolled back with it.** A failed
+  login is the case that matters, and `audit.record_even_if_the_request_fails`
+  is the one that opens its own transaction.
+- **`inet` rejects a hostname.** A test client sends `testclient` as its
+  address, an unparseable `X-Forwarded-For` is attacker-supplied, and writing
+  either into `audit_log.ip` raises — failing the upload the customer was
+  making, for the sake of a log row.
+- **`projects`, `users` and `sessions` carry `org_id` but no foreign key to
+  `orgs`.** Nothing cascades from an org, so deleting a tenant — and any test
+  teardown — has to name each table.
 - **A boto3 client built with the defaults signs with SigV2**, and every bucket
   created after 2018 rejects it — at upload time, long after the code that chose
   the signature returned. `storage.get_client` sets `s3v4` explicitly, which is

@@ -1,9 +1,5 @@
-import Link from "next/link";
 import { Logo } from "@/components/logo";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
+import { LoginForm } from "@/components/login-form";
 
 export default function LoginPage() {
   return (
@@ -18,32 +14,7 @@ export default function LoginPage() {
             </p>
           </div>
 
-          <div className="space-y-4">
-            <div className="grid gap-2">
-              <Label htmlFor="email">Work email</Label>
-              <Input id="email" type="email" placeholder="you@studio.tv" />
-            </div>
-            <Button className="w-full" asChild>
-              <Link href="/projects">Continue</Link>
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Separator className="flex-1" />
-            <span className="text-xs text-muted-foreground">or</span>
-            <Separator className="flex-1" />
-          </div>
-
-          <Button variant="outline" className="w-full">
-            Continue with SSO
-          </Button>
-
-          <p className="text-center text-sm text-muted-foreground">
-            No account?{" "}
-            <Link href="/signup" className="text-foreground underline underline-offset-4">
-              Create one
-            </Link>
-          </p>
+          <LoginForm />
         </div>
       </div>
 

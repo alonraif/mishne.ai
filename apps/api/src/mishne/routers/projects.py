@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
+from ..auth.sessions import Principal
+from ..deps import require_write
 from ..schemas import Asset, CreateProjectRequest, Job, Project
 from ..store import Store, get_store
 
@@ -12,7 +14,9 @@ async def list_projects(store: Store = Depends(get_store)) -> list[Project]:
 
 
 @router.post("/projects", response_model=Project, status_code=201)
-async def create_project(body: CreateProjectRequest) -> Project:
+async def create_project(
+    body: CreateProjectRequest, _: Principal = Depends(require_write)
+) -> Project:
     raise HTTPException(501, "not implemented")
 
 

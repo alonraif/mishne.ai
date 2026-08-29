@@ -8,7 +8,9 @@ never trust a client-supplied price.
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from ..auth.sessions import Principal
 from ..billing import TIERS, estimate_job
+from ..deps import require_write
 from ..schemas import (
     Artifact,
     CreateJobRequest,
@@ -49,7 +51,9 @@ async def estimate(
 
 
 @router.post("/jobs", response_model=Job, status_code=202)
-async def create_job(body: CreateJobRequest) -> Job:
+async def create_job(
+    body: CreateJobRequest, _: Principal = Depends(require_write)
+) -> Job:
     """Accept a job.
 
     Recompute the estimate, verify the client's approved_cap matches, place a
@@ -69,7 +73,7 @@ async def get_job(job_id: str, store: Store = Depends(get_store)) -> Job:
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=Job)
-async def cancel_job(job_id: str) -> Job:
+async def cancel_job(job_id: str, _: Principal = Depends(require_write)) -> Job:
     """Cancel and release the whole hold."""
     raise HTTPException(501, "not implemented")
 
@@ -88,7 +92,9 @@ async def get_transcript(job_id: str, store: Store = Depends(get_store)) -> Tran
 
 
 @router.post("/jobs/{job_id}/cut", response_model=Job)
-async def submit_cut(job_id: str, body: SubmitCutRequest) -> Job:
+async def submit_cut(
+    job_id: str, body: SubmitCutRequest, _: Principal = Depends(require_write)
+) -> Job:
     """Submit a user-authored cut for manual or hybrid jobs.
 
     The ordered beat ids stand in for the solver's output. Stages 9-12 —
