@@ -98,6 +98,11 @@ class SourceClip:
     origin: int
     tl_in: int           # frames along the AAF timeline
     tl_out: int
+    #: The locator as the AAF spells it, kept whether or not it resolved. When
+    #: it did not, this is the only description of the file the customer has to
+    #: upload, and B2's `asset_media_requirements` is built from it. Defaulted
+    #: because it is additive: every existing construction call still works.
+    target_url: str | None = None
 
     @property
     def frames(self) -> int:
@@ -248,7 +253,7 @@ def parse(path: Path) -> AAFSource:
                 media_path=media, embedded_mob_id=emb,
                 src_in=src_start, src_out=src_start + src_len,
                 src_rate=src_rate, origin=origins.get(mob_id, 0),
-                tl_in=tl_pos, tl_out=tl_pos + dur,
+                tl_in=tl_pos, tl_out=tl_pos + dur, target_url=url,
             ))
             idx += 1
             tl_pos += dur

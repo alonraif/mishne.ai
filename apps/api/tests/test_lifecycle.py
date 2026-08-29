@@ -1,0 +1,174 @@
+"""Bucket lifecycle rules, including the one that stops a silent bill.
+
+Parts of an abandoned multipart upload do not appear in the console, are not
+returned by ListObjects, and are billed until something aborts them. The rule
+that does that is the whole reason this file exists; the expiry rules are
+checked alongside it because they are applied by the same code.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
+
+boto3 = pytest.importorskip("boto3")
+moto = pytest.importorskip("moto")
+
+REGION = "eu-west-1"
+
+# infra/ is not a package and is deliberately not importable as one — it is a
+# deployment script that happens to be Python.
+_INFRA = Path(__file__).resolve().parents[3] / "infra"
+
+
+def _load(name: str):
+    spec = importlib.util.spec_from_file_location(name, _INFRA / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+lifecycle = _load("s3_lifecycle")
+cors = _load("s3_cors")
+
+
+@pytest.fixture
+def client(monkeypatch):
+    for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+        monkeypatch.setenv(name, "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", REGION)
+    with moto.mock_aws():
+        c = boto3.client("s3", region_name=REGION)
+        for bucket in ("test-raw", "test-derived", "test-artifacts"):
+            c.create_bucket(
+                Bucket=bucket, CreateBucketConfiguration={"LocationConstraint": REGION}
+            )
+        yield c
+
+
+def _ids(client, bucket) -> set[str]:
+    return {r["ID"] for r in lifecycle.current(client, bucket)}
+
+
+def test_every_bucket_aborts_incomplete_multipart_uploads(client):
+    for which, bucket in (("raw", "test-raw"), ("derived", "test-derived"),
+                          ("artifacts", "test-artifacts")):
+        lifecycle.apply(client, bucket, which)
+        rules = {r["ID"]: r for r in lifecycle.current(client, bucket)}
+        abort = rules["abort-incomplete-multipart-uploads"]
+        assert abort["Status"] == "Enabled"
+        assert abort["AbortIncompleteMultipartUpload"]["DaysAfterInitiation"] == 7
+
+
+def test_the_deliverable_outlives_the_media_it_was_cut_from(client):
+    lifecycle.apply(client, "test-raw", "raw")
+    lifecycle.apply(client, "test-artifacts", "artifacts")
+
+    raw = {r["ID"]: r for r in lifecycle.current(client, "test-raw")}
+    artifacts = {r["ID"]: r for r in lifecycle.current(client, "test-artifacts")}
+
+    assert (
+        artifacts["expire-artifacts"]["Expiration"]["Days"]
+        > raw["expire-raw-media"]["Expiration"]["Days"]
+    )
+
+
+def test_derived_files_go_first_because_they_are_rebuildable(client):
+    lifecycle.apply(client, "test-derived", "derived")
+    lifecycle.apply(client, "test-artifacts", "artifacts")
+    derived = {r["ID"]: r for r in lifecycle.current(client, "test-derived")}
+    artifacts = {r["ID"]: r for r in lifecycle.current(client, "test-artifacts")}
+    assert (
+        derived["expire-derived"]["Expiration"]["Days"]
+        < artifacts["expire-artifacts"]["Expiration"]["Days"]
+    )
+
+
+def test_old_versions_are_expired_too(client):
+    # Versioning is on, so an expiry leaves a delete marker and a noncurrent
+    # version that keeps costing money on its own.
+    lifecycle.apply(client, "test-raw", "raw")
+    rules = {r["ID"]: r for r in lifecycle.current(client, "test-raw")}
+    assert rules["expire-raw-media"]["NoncurrentVersionExpiration"]["NoncurrentDays"] > 0
+
+
+def test_applying_twice_changes_nothing_the_second_time(client):
+    assert lifecycle.apply(client, "test-raw", "raw") is True
+    assert lifecycle.apply(client, "test-raw", "raw") is False
+
+
+def test_a_rule_that_is_not_in_this_file_is_removed(client):
+    # PutBucketLifecycleConfiguration replaces rather than merges, and this file
+    # is the source of truth. A rule added by hand in the console vanishes on
+    # the next deploy, which is intended and worth being sure of.
+    client.put_bucket_lifecycle_configuration(
+        Bucket="test-raw",
+        LifecycleConfiguration={
+            "Rules": [
+                {"ID": "someone-did-this-by-hand", "Status": "Enabled",
+                 "Filter": {"Prefix": ""}, "Expiration": {"Days": 1}}
+            ]
+        },
+    )
+    lifecycle.apply(client, "test-raw", "raw")
+    assert "someone-did-this-by-hand" not in _ids(client, "test-raw")
+
+
+def test_apply_all_reports_what_it_changed(client):
+    changed = lifecycle.apply_all(
+        client,
+        {"raw": "test-raw", "derived": "test-derived", "artifacts": "test-artifacts"},
+    )
+    assert changed == {"test-raw": True, "test-derived": True, "test-artifacts": True}
+    assert lifecycle.apply_all(
+        client,
+        {"raw": "test-raw", "derived": "test-derived", "artifacts": "test-artifacts"},
+    ) == {"test-raw": False, "test-derived": False, "test-artifacts": False}
+
+
+def test_an_unknown_bucket_role_is_refused_rather_than_left_unprotected(client):
+    with pytest.raises(ValueError):
+        lifecycle.rules_for("scratch")
+
+
+# ─────────────────────────────────────────────────────────────────────── CORS
+
+
+def test_the_etag_is_exposed_or_no_upload_can_ever_be_completed(client):
+    # Every part uploads perfectly, the ETag is invisible to script, and the
+    # completion fails with the whole file already sent. This one header is the
+    # difference.
+    cors.apply(client, "test-raw", "raw", ["https://app.example.tv"])
+    rules = cors.current(client, "test-raw")
+    assert rules[0]["ExposeHeaders"] == ["ETag"]
+
+
+def test_the_upload_bucket_takes_puts_and_the_others_do_not(client):
+    cors.apply(client, "test-raw", "raw", ["https://app.example.tv"])
+    cors.apply(client, "test-artifacts", "artifacts", ["https://app.example.tv"])
+
+    assert "PUT" in cors.current(client, "test-raw")[0]["AllowedMethods"]
+    assert "PUT" not in cors.current(client, "test-artifacts")[0]["AllowedMethods"]
+
+
+def test_origins_are_named_never_a_wildcard(client):
+    cors.apply(client, "test-raw", "raw", ["https://app.example.tv"])
+    assert cors.current(client, "test-raw")[0]["AllowedOrigins"] == ["https://app.example.tv"]
+    for which in ("raw", "derived", "artifacts"):
+        assert "*" not in cors.rules_for(which, ["https://app.example.tv"])[0]["AllowedOrigins"]
+
+
+def test_applying_cors_twice_changes_nothing_the_second_time(client):
+    origins = ["https://app.example.tv"]
+    assert cors.apply(client, "test-raw", "raw", origins) is True
+    assert cors.apply(client, "test-raw", "raw", origins) is False
+
+
+def test_the_preflight_is_cached_long_enough_for_a_thousand_parts(client):
+    # A 60 GB upload is ~960 parts. Preflighting each one is 960 extra round
+    # trips on a link that is already the bottleneck.
+    assert cors.rules_for("raw", ["https://app.example.tv"])[0]["MaxAgeSeconds"] >= 3600

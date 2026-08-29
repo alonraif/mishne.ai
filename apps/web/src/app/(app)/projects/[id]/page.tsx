@@ -1,25 +1,37 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Plus, Upload, FileVideo, FileAudio, Layers } from "lucide-react";
+import { ArrowLeft, Plus, FileVideo, FileAudio, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AssetUpload } from "@/components/asset-upload";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
+import { AssetStatusBadge } from "@/components/asset-status-badge";
 import { Timecode } from "@/components/timecode";
 import {
   assetsForProject,
   jobsForProject,
   projectById,
 } from "@/lib/mock-data";
-import { formatBytes, formatCredits, formatDuration, framesToSeconds } from "@mishne/shared";
+import {
+  formatBytes,
+  formatCredits,
+  formatDuration,
+  framesToSeconds,
+  type IngestMode,
+} from "@mishne/shared";
 
 const KIND_ICON = { video: FileVideo, audio: FileAudio, aaf: Layers } as const;
 
-const INGEST_LABEL = {
+const INGEST_LABEL: Record<IngestMode, string> = {
   full_media: "Full media",
   audio_only: "Audio only",
   aaf_embedded: "AAF + embedded",
-} as const;
+  // A sequence that points at media it does not contain. The customer has to
+  // upload the referenced files too, and the asset waits in `awaiting_media`
+  // until they arrive.
+  aaf_linked: "AAF + linked",
+};
 
 export default async function ProjectPage({
   params,
@@ -51,9 +63,7 @@ export default async function ProjectPage({
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline">
-              <Upload /> Upload
-            </Button>
+            <AssetUpload projectId={id} />
             <Button asChild>
               <Link href={`/projects/${id}/new`}>
                 <Plus /> New rough cut
@@ -92,13 +102,7 @@ export default async function ProjectPage({
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Badge variant="muted">{INGEST_LABEL[a.ingestMode]}</Badge>
-                  {a.status === "uploading" ? (
-                    <Badge variant="outline" className="border-stage-active/40 text-stage-active">
-                      Uploading 61%
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline">Ready</Badge>
-                  )}
+                  <AssetStatusBadge status={a.status} />
                 </div>
               </Card>
             );

@@ -127,10 +127,16 @@ def create_asset(
     bucket: str,
     key: str,
     upload_id: str,
+    rate: tuple[int, int] | None = None,
 ) -> None:
-    """The row for an upload that is about to start."""
+    """The row for an upload that is about to start.
+
+    `rate` is the declared sequence rate for an audio-only upload, which is the
+    one case where the file cannot tell us and the caller must (ADR-0005).
+    Everything else gets the placeholder until probe runs.
+    """
     a = m.Asset.__table__
-    num, den = UNPROBED_RATE
+    num, den = rate or UNPROBED_RATE
     s.execute(
         sa.insert(a).values(
             id=asset_id,

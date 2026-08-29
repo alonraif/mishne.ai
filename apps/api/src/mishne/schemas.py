@@ -276,6 +276,29 @@ class CreateAssetRequest(BaseModel):
     bytes: int
     checksum: str
     ingest_mode: IngestMode = "full_media"
+    #: The sequence rate, for an audio-only upload. Required there and ignored
+    #: everywhere else: audio carries no frame rate, and guessing one silently
+    #: is how a cut ends up a frame out everywhere (ADR-0005). For video and
+    #: AAF the file is authoritative and probe reads it.
+    rate: Rate | None = None
+
+
+class MediaRequirement(BaseModel):
+    """A file a linked AAF references and does not contain."""
+
+    basename: str
+    #: How many clips on the timeline need it. The list is ordered by this: the
+    #: file that unblocks forty clips is the one worth asking for first.
+    clip_count: int
+    satisfied: bool
+    satisfied_by_asset_id: str | None = None
+
+
+class AssetRequirements(BaseModel):
+    asset_id: str
+    status: AssetStatus
+    outstanding: int
+    requirements: list[MediaRequirement] = Field(default_factory=list)
 
 
 class UploadPart(BaseModel):
@@ -317,6 +340,23 @@ class ResumeUploadRequest(BaseModel):
 class CompletedPart(BaseModel):
     part_number: int
     etag: str
+
+
+class UploadedPart(BaseModel):
+    part_number: int
+    etag: str
+    size: int
+
+
+class UploadState(BaseModel):
+    """What S3 already holds for an upload in flight, so a resume sends the rest."""
+
+    asset_id: str
+    upload_id: str
+    part_size: int
+    total_parts: int
+    total_bytes: int
+    uploaded: list[UploadedPart] = Field(default_factory=list)
 
 
 class CompleteUploadRequest(BaseModel):

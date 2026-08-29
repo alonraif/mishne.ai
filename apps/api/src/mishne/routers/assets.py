@@ -26,16 +26,20 @@ from sqlalchemy.orm import Session
 
 from .. import storage
 from ..config import Settings, get_settings
-from ..db import repository, uploads
+from ..db import repository, requirements as reqs, uploads
 from ..deps import current_org, writable_db
 from ..logging import get_logger
 from ..schemas import (
     Asset,
+    AssetRequirements,
     CompleteUploadRequest,
     CreateAssetRequest,
+    MediaRequirement,
     PresignedUpload,
     ResumeUploadRequest,
+    UploadedPart,
     UploadPart,
+    UploadState,
 )
 from ..store import Store, get_store
 
@@ -116,6 +120,20 @@ async def create_asset(
     if not uploads.project_exists(s, org_id, project_id):
         raise HTTPException(404, "project not found")
 
+    kind, ingest_mode = uploads.kind_and_mode(body.filename)
+    declared_rate: tuple[int, int] | None = None
+    if kind == "audio":
+        # Audio carries no frame rate. Probe cannot find one, and a guess is a
+        # cut that is a frame out everywhere (ADR-0005), so it is asked for
+        # here — the one moment the caller definitely knows it.
+        if body.rate is None or body.rate.num <= 0 or body.rate.den <= 0:
+            raise HTTPException(
+                422,
+                "an audio-only upload must declare the sequence rate: "
+                "there is none in the file",
+            )
+        declared_rate = (body.rate.num, body.rate.den)
+
     asset_id = uploads.asset_row_id(project_id, checksum)
     existing = uploads.get_row(s, org_id, asset_id)
     if existing is not None and existing.status != "uploading":
@@ -133,18 +151,27 @@ async def create_asset(
     part_size = storage.choose_part_size(body.bytes)
 
     if existing is not None:
-        # A retry. The old multipart upload, if there is one, is abandoned:
-        # its parts are invisible in the console and billed until something
-        # aborts them.
+        # A retry, or a browser coming back to a file it was part-way through.
+        # The existing multipart upload is KEPT if S3 still has it: the parts
+        # already sent are hours of somebody's evening, and starting again
+        # because the page was refreshed is the difference between a resumable
+        # upload and one that merely says it is. `GET /upload-parts` is how the
+        # client finds out what survived.
+        upload_id = ""
         if existing.upload_id:
             try:
-                obj.abort_multipart(ref, existing.upload_id)
-            except Exception:  # noqa: BLE001 - an already-gone upload is fine
-                log.info("abort_stale_upload_failed", asset_id=asset_id)
-        upload_id = obj.initiate_multipart(ref)
-        uploads.restart_upload(s, org_id, asset_id, upload_id)
+                obj.list_parts(ref, existing.upload_id)
+                upload_id = existing.upload_id
+            except Exception:  # noqa: BLE001 - gone, expired, or aborted
+                log.info("stale_upload_discarded", asset_id=asset_id)
+                try:
+                    obj.abort_multipart(ref, existing.upload_id)
+                except Exception:  # noqa: BLE001 - already gone is the goal
+                    pass
+        if not upload_id:
+            upload_id = obj.initiate_multipart(ref)
+            uploads.restart_upload(s, org_id, asset_id, upload_id)
     else:
-        kind, ingest_mode = uploads.kind_and_mode(body.filename)
         upload_id = obj.initiate_multipart(ref)
         uploads.create_asset(
             s,
@@ -159,6 +186,7 @@ async def create_asset(
             bucket=ref.bucket,
             key=ref.key,
             upload_id=upload_id,
+            rate=declared_rate,
         )
 
     log.info(
@@ -213,6 +241,41 @@ async def resume_upload(
     )
 
 
+@router.get("/assets/{asset_id}/upload-parts", response_model=UploadState)
+async def upload_parts(
+    asset_id: str,
+    org_id: str = Depends(current_org),
+    s: Session = Depends(writable_db),
+    settings: Settings = Depends(get_settings),
+) -> UploadState:
+    """What S3 already has. The other half of resuming.
+
+    A browser that was closed mid-upload knows nothing when it comes back, and a
+    presigned URL grants one operation on one object — so it cannot ask S3 what
+    it managed to send. This is the API asking on its behalf, and it is what
+    makes a resume cost only the parts that are actually missing.
+    """
+    row = uploads.get_row(s, org_id, asset_id)
+    if row is None:
+        raise HTTPException(404, "asset not found")
+    if row.status != "uploading" or not row.upload_id:
+        raise HTTPException(409, f"asset is {row.status}; there is no upload in flight")
+    part_size = storage.choose_part_size(row.bytes)
+    held = storage.Storage(settings).list_parts(
+        storage.ObjectRef(bucket=row.s3_bucket, key=row.s3_key), row.upload_id
+    )
+    return UploadState(
+        asset_id=asset_id,
+        upload_id=row.upload_id,
+        part_size=part_size,
+        total_parts=storage.part_count(row.bytes, part_size),
+        total_bytes=row.bytes,
+        uploaded=[
+            UploadedPart(part_number=n, etag=tag, size=size) for n, tag, size in held
+        ],
+    )
+
+
 @router.post("/assets/{asset_id}/complete", response_model=Asset)
 async def complete_upload(
     asset_id: str,
@@ -252,6 +315,14 @@ async def complete_upload(
         raise HTTPException(502, "could not complete the upload; retry or cancel it")
 
     uploads.mark_uploaded(s, org_id, asset_id)
+
+    # A file just landed: which sequences in this org were waiting for it? This
+    # is one indexed lookup, not media work, so it belongs on this request —
+    # the alternative is a customer who has uploaded everything and still sees
+    # "waiting for media" until something else happens to run.
+    for waiting in reqs.satisfy(s, org_id, asset_id, row.filename):
+        reqs.refresh_status(s, org_id, waiting)
+
     log.info("upload_completed", asset_id=asset_id, bytes=row.bytes, parts=expected)
     asset = repository.get_asset(s, org_id, asset_id)
     if asset is None:  # pragma: no cover - the row was read two statements ago
@@ -287,6 +358,38 @@ async def abort_upload(
     uploads.delete_asset(s, org_id, asset_id)
     log.info("upload_aborted", asset_id=asset_id)
     return Response(status_code=204)
+
+
+@router.get("/assets/{asset_id}/requirements", response_model=AssetRequirements)
+async def asset_requirements(
+    asset_id: str,
+    org_id: str = Depends(current_org),
+    s: Session = Depends(writable_db),
+) -> AssetRequirements:
+    """What this sequence is still waiting for, and what has arrived.
+
+    A read, on the writable session, because it is only meaningful against real
+    rows: a linked AAF is a thing that exists after a probe, and there is no
+    fixture for it.
+    """
+    row = uploads.get_row(s, org_id, asset_id)
+    if row is None:
+        raise HTTPException(404, "asset not found")
+    rows = reqs.for_asset(s, org_id, asset_id)
+    return AssetRequirements(
+        asset_id=asset_id,
+        status=row.status,
+        outstanding=sum(1 for r in rows if r.satisfied_by_asset_id is None),
+        requirements=[
+            MediaRequirement(
+                basename=r.basename,
+                clip_count=r.clip_count,
+                satisfied=r.satisfied_by_asset_id is not None,
+                satisfied_by_asset_id=r.satisfied_by_asset_id,
+            )
+            for r in rows
+        ],
+    )
 
 
 @router.get("/assets/{asset_id}", response_model=Asset)

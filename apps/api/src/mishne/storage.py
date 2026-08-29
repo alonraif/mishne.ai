@@ -150,6 +150,25 @@ def artifact_key(org_id: str, job_id: str, name: str) -> str:
     return f"orgs/{org_id}/jobs/{job_id}/artifacts/{name}"
 
 
+def parse_source_key(key: str) -> tuple[str, str, str] | None:
+    """(org, project, asset) from a source key, or None if it is not one.
+
+    The inverse of `source_key`, and the reason an S3 event notification needs
+    no database lookup to know what arrived. Strict on purpose: anything that
+    does not match the scheme exactly returns None rather than a best guess,
+    because the caller acts on the result by writing to that org's rows.
+    """
+    parts = key.split("/")
+    if len(parts) != 7:
+        return None
+    orgs, org_id, projects, project_id, assets, asset_id, leaf = parts
+    if (orgs, projects, assets, leaf) != ("orgs", "projects", "assets", "source"):
+        return None
+    if not (org_id and project_id and asset_id):
+        return None
+    return org_id, project_id, asset_id
+
+
 def org_prefix(org_id: str) -> str:
     """Everything one tenant stores in a bucket. The unit of a deletion request."""
     return f"orgs/{org_id}/"
@@ -314,6 +333,23 @@ class Storage:
                 ]
             },
         )
+
+    def list_parts(self, ref: ObjectRef, upload_id: str) -> list[tuple[int, str, int]]:
+        """The parts S3 already holds for an in-flight upload.
+
+        This is what makes a resume survive a closed laptop rather than only a
+        dropped connection. The browser cannot ask S3 directly — a presigned URL
+        grants one operation on one object — so the API asks on its behalf, and
+        the client re-sends only what is missing.
+        """
+        parts: list[tuple[int, str, int]] = []
+        paginator = self.client.get_paginator("list_parts")
+        for page in paginator.paginate(
+            Bucket=ref.bucket, Key=ref.key, UploadId=upload_id
+        ):
+            for part in page.get("Parts", []):
+                parts.append((part["PartNumber"], part["ETag"], part["Size"]))
+        return sorted(parts)
 
     def abort_multipart(self, ref: ObjectRef, upload_id: str) -> None:
         """Stop paying for an abandoned upload.
