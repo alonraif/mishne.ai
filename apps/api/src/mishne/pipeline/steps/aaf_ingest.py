@@ -24,6 +24,34 @@ relinks *silently* in the project it came from — no relink dialog, no locating
 files. Spike A established that the MobID is the relink key; this is where we get
 real ones instead of synthesising them.
 
+## Units are not uniform, and this will catch you
+
+A real AAF mixes rates *within one clip object*. In a 25 fps sequence with
+48 kHz production audio, OTIO reports:
+
+    source_range.start_time   in SAMPLES at 48000
+    source_range.duration     in FRAMES  at 25
+
+Start comes from the source mob (sample rate); duration comes from the sequence
+component (edit rate). Treating either as the other silently scales every cut by
+1920x. Each clip therefore carries its own `src_rate`, and conversions go
+through seconds rather than assuming a shared unit.
+
+## Source position is timecode, not a file offset
+
+The start OTIO reports is a position in the *source's timecode space* — a field
+recorder's running clock, often tens of thousands of seconds. The essence file
+begins at that mob's own `StartTime`, so:
+
+    offset into the file  =  reported start  −  mob StartTime
+
+Skip that subtraction and every seek lands far past the end of a 35-second WAV,
+ffmpeg returns nothing, and the flattened audio comes out the right length and
+completely silent. Which is exactly what happened the first time.
+
+Both coordinates are kept. The file offset is for reading audio; the timecode
+position is what the output references, and it is what makes the result relink.
+
 ## Two resolution modes
 
 - **Linked** — clips reference external files. Fast, but the files must be
@@ -60,14 +88,28 @@ class SourceClip:
     mob_id: str
     media_path: Path | None
     embedded_mob_id: str | None
-    src_in: int          # frames into the source media
+    # Source position in the SOURCE's own units — samples for production audio,
+    # frames for picture. Never assume these are timeline frames.
+    src_in: int
     src_out: int
+    src_rate: float
+    # The mob's own timecode origin. Subtract it from src_in to get a byte
+    # position in the essence; keep src_in itself for output references.
+    origin: int
     tl_in: int           # frames along the AAF timeline
     tl_out: int
 
     @property
     def frames(self) -> int:
+        """Length on the timeline, in timeline frames."""
         return self.tl_out - self.tl_in
+
+    @property
+    def src_in_seconds(self) -> float:
+        """Seconds into the essence FILE — origin removed."""
+        if not self.src_rate:
+            return 0.0
+        return max(0.0, (self.src_in - self.origin) / self.src_rate)
 
     @property
     def resolved(self) -> bool:
@@ -162,6 +204,7 @@ def parse(path: Path) -> AAFSource:
                      "media references for audio.")
 
     embedded_ids = _embedded_mob_ids(path)
+    origins = _mob_origins(path)
     aaf_dir = path.parent
     clips: list[SourceClip] = []
     missing: list[str] = []
@@ -191,11 +234,20 @@ def parse(path: Path) -> AAFSource:
                 missing.append(f"{child.name}: {url or 'no locator'}")
 
             sr = child.source_range
+            # start_time and duration can carry DIFFERENT rates on the same
+            # object. Take each from its own.
+            src_rate = float(sr.start_time.rate)
+            src_start = round(sr.start_time.value)
+            # Express the clip's source extent in source units, derived from the
+            # timeline duration in seconds rather than from duration.value —
+            # which is in edit-rate frames, not source units.
+            src_len = round(dur / rate_fps * src_rate)
+
             clips.append(SourceClip(
                 index=idx, name=child.name or f"clip_{idx}", mob_id=mob_id,
                 media_path=media, embedded_mob_id=emb,
-                src_in=round(sr.start_time.value),
-                src_out=round(sr.start_time.value + sr.duration.value),
+                src_in=src_start, src_out=src_start + src_len,
+                src_rate=src_rate, origin=origins.get(mob_id, 0),
                 tl_in=tl_pos, tl_out=tl_pos + dur,
             ))
             idx += 1
@@ -204,6 +256,9 @@ def parse(path: Path) -> AAFSource:
     start_tc = round(timeline.global_start_time.value) \
         if timeline.global_start_time else 0
 
+    if embedded_ids:
+        notes.append(f"{len(embedded_ids)} embedded essence stream(s) — "
+                     f"self-contained AAF, no external media needed.")
     if missing:
         notes.append(
             f"{len(missing)} of {len(clips)} clips could not be resolved to "
@@ -217,6 +272,32 @@ def parse(path: Path) -> AAFSource:
     )
 
 
+def _mob_origins(path: Path) -> dict[str, int]:
+    """Each source mob's timecode origin, keyed by mob id.
+
+    This is the value that turns a timecode position into a file offset. In this
+    material every clip sat exactly 576000 samples (12 s) past its origin —
+    Avid's standard consolidation handle.
+    """
+    origins: dict[str, int] = {}
+    try:
+        import aaf2
+
+        f = aaf2.open(str(path), "r")
+        try:
+            for sm in f.content.sourcemobs():
+                for slot in sm.slots:
+                    seg = getattr(slot, "segment", None)
+                    if seg is not None and hasattr(seg, "keys") \
+                            and "StartTime" in seg:
+                        origins[str(sm.mob_id)] = int(seg["StartTime"].value)
+        finally:
+            f.close()
+    except Exception:  # noqa: BLE001
+        pass
+    return origins
+
+
 def _embedded_mob_ids(path: Path) -> set[str]:
     try:
         import aaf2
@@ -228,19 +309,37 @@ def _embedded_mob_ids(path: Path) -> set[str]:
 
 
 def extract_embedded(path: Path, out_dir: Path) -> dict[str, Path]:
-    """Write embedded essence streams out to files. Returns {mob_id: path}."""
+    """Write embedded essence streams out as files. Returns {mob_id: path}.
+
+    For WAVE essence the stream is already a complete RIFF file, header
+    included, so this is a straight copy rather than a rebuild.
+    """
     import aaf2
 
     out_dir.mkdir(parents=True, exist_ok=True)
     written: dict[str, Path] = {}
-    with aaf2.open(str(path), "r") as f:
+    f = aaf2.open(str(path), "r")
+    try:
         for ed in f.content.essencedata:
             mob_id = str(ed.mob_id)
-            target = out_dir / f"essence_{mob_id.split('.')[-1][:16]}.raw"
-            with ed.open("r") as src, open(target, "wb") as dst:
-                while chunk := src.read(1 << 20):
+            stem = mob_id.replace(":", "_").replace(".", "_")[-20:]
+            stream = ed.open("r")
+            head = bytes(stream.read(12))
+            ext = ".wav" if head[:4] == b"RIFF" else ".raw"
+            target = out_dir / f"essence_{stem}{ext}"
+            if target.exists() and target.stat().st_size > 1024:
+                written[mob_id] = target
+                continue
+            with open(target, "wb") as dst:
+                dst.write(head)
+                while True:
+                    chunk = stream.read(1 << 20)
+                    if not chunk:
+                        break
                     dst.write(chunk)
             written[mob_id] = target
+    finally:
+        f.close()
     return written
 
 
@@ -260,21 +359,34 @@ def flatten_audio(source: AAFSource, out_dir: Path) -> Path:
     parts: list[Path] = []
     cursor = 0
 
+    # Embedded essence has to come out of the container before ffmpeg can read
+    # it. Done once, cached on disk, because a long sequence references the
+    # same streams many times.
+    essence: dict[str, Path] = {}
+    if source.embedded:
+        essence = extract_embedded(source.path, out_dir / "essence")
+
     for clip in source.clips:
         if clip.tl_in > cursor:
             parts.append(_silence(out_dir, len(parts),
                                   (clip.tl_in - cursor) / fps))
         seg = out_dir / f"_seg_{clip.index:05d}.wav"
-        if clip.resolved:
+        media = clip.media_path
+        if media is None and clip.embedded_mob_id:
+            media = essence.get(clip.embedded_mob_id)
+
+        if media is not None and media.exists():
+            # Seek in SECONDS, computed from the clip's own source rate. Using
+            # the timeline fps here would be wrong by the ratio between them.
             proc = subprocess.run(
                 ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-                 "-ss", f"{clip.src_in / fps:.6f}",
+                 "-ss", f"{clip.src_in_seconds:.6f}",
                  "-t", f"{clip.frames / fps:.6f}",
-                 "-i", str(clip.media_path),
+                 "-i", str(media),
                  "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE),
                  "-c:a", "pcm_s16le", str(seg)],
                 capture_output=True, text=True)
-            if proc.returncode != 0 or not seg.exists():
+            if proc.returncode != 0 or not seg.exists() or seg.stat().st_size < 100:
                 seg = _silence(out_dir, clip.index, clip.frames / fps)
         else:
             seg = _silence(out_dir, clip.index, clip.frames / fps)
@@ -311,12 +423,17 @@ def map_to_source(source: AAFSource, tl_in: int,
     becomes more than one clip in the output — which is correct: those frames
     genuinely come from different sources.
     """
+    fps = source.rate.fps
     out: list[tuple[SourceClip, int, int]] = []
     for clip in source.clips:
         lo = max(tl_in, clip.tl_in)
         hi = min(tl_out, clip.tl_out)
         if lo >= hi:
             continue
-        offset = lo - clip.tl_in
-        out.append((clip, clip.src_in + offset, clip.src_in + offset + (hi - lo)))
+        # Timeline frames -> seconds -> the source's own units. Going straight
+        # from frames to source units is the 1920x error.
+        offset_units = round((lo - clip.tl_in) / fps * clip.src_rate)
+        length_units = round((hi - lo) / fps * clip.src_rate)
+        src_in = clip.src_in + offset_units
+        out.append((clip, src_in, src_in + length_units))
     return out

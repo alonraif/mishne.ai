@@ -106,6 +106,21 @@ def build_from_aaf(cuts: list[Cut], source: AAFSource,
     timeline.tracks.append(v_track)
     timeline.tracks.append(a_track)
 
+    # Source positions are converted to SEQUENCE FRAMES here.
+    #
+    # Production audio arrives at 48 kHz, so a clip's source range is in
+    # samples. Carrying that into the output looks fine in AAF and FCPXML —
+    # both round-trip it happily — and then EDL fails, because CMX3600 is
+    # frame-based and cannot express a sample position at all. The first
+    # attempt produced source durations of -1,127,040 frames.
+    #
+    # A rough cut is a video edit: the timeline is 25 fps, stage 9 has already
+    # quantised every cut point to frames, and the handles are six frames wide.
+    # Sub-frame audio precision is not meaningful here, and frame positions are
+    # the only thing all four formats agree on.
+    def to_frames(units: int, src_rate: float) -> int:
+        return round(units / src_rate * fps) if src_rate else int(units)
+
     # available_range describes the MEDIA, not the clip.
     #
     # An AAF holds one source mob per MobID. Several output clips routinely
@@ -119,15 +134,20 @@ def build_from_aaf(cuts: list[Cut], source: AAFSource,
     extents: dict[str, tuple[int, int]] = {}
     for c in source.clips:
         key = c.mob_id or c.name
-        lo, hi = extents.get(key, (c.src_in, c.src_out))
-        extents[key] = (min(lo, c.src_in), max(hi, c.src_out))
+        lo_f = to_frames(c.src_in, c.src_rate)
+        hi_f = to_frames(c.src_out, c.src_rate)
+        lo, hi = extents.get(key, (lo_f, hi_f))
+        extents[key] = (min(lo, lo_f), max(hi, hi_f))
 
     order = 0
     for cut in sorted(cuts, key=lambda c: c.order_idx):
         tl_in = cut.src_in - source.start_tc_frames
         tl_out = cut.src_out - source.start_tc_frames
 
-        for clip, src_in, src_out in map_to_source(source, tl_in, tl_out):
+        for clip, src_in_units, src_out_units in map_to_source(
+                source, tl_in, tl_out):
+            src_in = to_frames(src_in_units, clip.src_rate)
+            src_out = to_frames(src_out_units, clip.src_rate)
             if src_out <= src_in:
                 continue
             for track in (v_track, a_track):

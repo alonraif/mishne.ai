@@ -70,6 +70,32 @@ instead of synthesised ones.
 A selection spanning a join in the original sequence becomes **two clips**, each
 referencing its own source. Those frames genuinely come from different media.
 
+### Three things a real AAF taught us
+
+Verified against a production AAF: a 3m42s Israeli TV interview, 22 embedded
+audio clips from a multi-track field recorder, 25 fps.
+
+**Units are not uniform within one clip object.** OTIO reports
+`source_range.start_time` in samples at 48000 and `source_range.duration` in
+frames at 25 — start comes from the source mob, duration from the sequence
+component. Treating either as the other scales everything by 1920x. Each clip
+carries its own `src_rate` and conversions go through seconds.
+
+**Source position is timecode, not a file offset.** The reported start is a
+position in the field recorder's running clock — tens of thousands of seconds.
+The essence begins at that mob's `StartTime`, so the file offset is
+`start − StartTime`. Without it every seek lands past the end of a 35-second WAV
+and the flattened audio comes out **the right length and completely silent** —
+which is what happened first. In this material the offset was 576000 samples
+(12 s) on every clip: Avid's standard consolidation handle.
+
+**Output source positions must be sequence frames.** Carrying sample positions
+through looks fine in AAF and FCPXML, which round-trip them happily, and then
+EDL fails — CMX3600 is frame-based and cannot express a sample position. The
+first attempt produced a source duration of −1,127,040 frames. A rough cut is a
+video edit; stage 9 has already quantised to frames and the handles are six
+frames wide, so sub-frame audio precision buys nothing.
+
 ## Stages 0–4 (ingest)
 
 Media file in, structured beats out.
