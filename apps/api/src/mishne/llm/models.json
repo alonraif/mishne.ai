@@ -1,0 +1,37 @@
+{
+  "_comment": [
+    "Model catalog. DATA, not code — replace this file without a release.",
+    "Prices are USD per million tokens, as every vendor quotes them.",
+    "Verified against vendor pricing pages on 2026-08-29; see sources below.",
+    "",
+    "'tier' is the only editorial judgement here and it is deliberately coarse:",
+    "  frontier - the vendor's best reasoning model",
+    "  mid      - the workhorse: good judgement, materially cheaper",
+    "  fast     - cheap and quick; fine for mechanical work, not for taste",
+    "A model absent from this file is still usable — the router will run it and",
+    "record its cost as unknown rather than refusing."
+  ],
+  "_sources": {
+    "anthropic": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "openai": "https://developers.openai.com/api/docs/pricing",
+    "google": "https://ai.google.dev/gemini-api/docs/pricing",
+    "xai": "https://docs.x.ai/docs/models"
+  },
+  "_verified": "2026-08-29",
+  "models": [
+    {"id": "claude-opus-5",        "provider": "anthropic", "tier": "frontier", "in": 5.00, "out": 25.00, "context": 1000000},
+    {"id": "claude-sonnet-5",      "provider": "anthropic", "tier": "mid",      "in": 2.00, "out": 10.00, "context": 1000000},
+    {"id": "claude-sonnet-4-6",    "provider": "anthropic", "tier": "mid",      "in": 3.00, "out": 15.00, "context": 1000000},
+    {"id": "claude-haiku-4-5",     "provider": "anthropic", "tier": "fast",     "in": 1.00, "out": 5.00,  "context": 1000000},
+
+    {"id": "gpt-5.6-sol",          "provider": "openai",    "tier": "frontier", "in": 2.00, "out": 10.00, "context": 400000},
+    {"id": "gpt-5.6-terra",        "provider": "openai",    "tier": "mid",      "in": 1.00, "out": 6.00,  "context": 400000},
+    {"id": "gpt-5.6-luna",         "provider": "openai",    "tier": "fast",     "in": 0.10, "out": 0.60,  "context": 400000},
+
+    {"id": "gemini-3.1-pro-preview","provider": "google",   "tier": "frontier", "in": 2.00, "out": 12.00, "context": 1000000},
+    {"id": "gemini-3.7-flash",     "provider": "google",    "tier": "mid",      "in": 0.75, "out": 3.75,  "context": 1000000},
+    {"id": "gemini-3.5-flash-lite","provider": "google",    "tier": "fast",     "in": 0.30, "out": 2.50,  "context": 1000000},
+
+    {"id": "grok-4.6",             "provider": "xai",       "tier": "frontier", "in": 2.00, "out": 6.00,  "context": 500000}
+  ]
+}

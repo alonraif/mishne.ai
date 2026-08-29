@@ -166,44 +166,36 @@ SYSTEM = (
 
 
 def compile_with_llm(notes: str, target_duration_s: int | None = None,
-                     model: str = "claude-sonnet-4-5", **overrides) -> EditBrief:
-    """Compile with Claude. Falls back to the deterministic compiler on failure.
+                     router=None, **overrides) -> EditBrief:
+    """Compile with a language model, whichever the router chose.
 
-    The fallback is not defensive padding: a brief is cheap to compile badly and
-    expensive to fail on, and a job that refuses to start because a vendor was
-    briefly unavailable is worse than one that runs with documented defaults.
+    Falls back to the deterministic compiler on any failure. That is not
+    defensive padding: a brief is cheap to compile badly and expensive to fail
+    on, and a job that refuses to start because a vendor was briefly unavailable
+    is worse than one that runs with documented defaults — which the
+    clarifications then state out loud.
     """
-    import json
-
-    import anthropic
-
     base = compile_deterministic(notes, target_duration_s, **overrides)
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if router is None or not router.available_for("brief"):
         base.clarifications.append(
-            "Compiled without a language model (no ANTHROPIC_API_KEY) — "
+            "Compiled without a language model (no vendor API key) — "
             "structure and tone come from keyword matching only."
         )
         return base
 
     try:
-        client = anthropic.Anthropic()
-        msg = client.messages.create(
-            model=model, max_tokens=1500, system=SYSTEM,
-            messages=[{"role": "user", "content": (
-                f"Production notes:\n\"\"\"\n{notes}\n\"\"\"\n\n"
-                + (f"Target length: {target_duration_s} seconds.\n\n"
-                   if target_duration_s else "")
-                + "Return ONLY JSON with keys: target_duration_s, "
-                  "duration_tolerance_s, tone (array), narrative_shape (one of "
-                  f"{list(NARRATIVE_SHAPES)}), must_include (array), "
-                  "must_exclude (array), speaker_priority (array), pacing "
-                  "('tight'|'breathing'), keep_filler (bool), clarifications "
-                  "(array of strings)."
-            )}],
-        )
-        text = re.sub(r"^```(?:json)?|```$", "", msg.content[0].text.strip(),
-                      flags=re.M).strip()
-        data = json.loads(text)
+        completion = router.complete(
+            "brief", system=SYSTEM, max_tokens=1500,
+            user=(f"Production notes:\n\"\"\"\n{notes}\n\"\"\"\n\n"
+                  + (f"Target length: {target_duration_s} seconds.\n\n"
+                     if target_duration_s else "")
+                  + "Return ONLY JSON with keys: target_duration_s, "
+                    "duration_tolerance_s, tone (array), narrative_shape (one "
+                    f"of {list(NARRATIVE_SHAPES)}), must_include (array), "
+                    "must_exclude (array), speaker_priority (array), pacing "
+                    "('tight'|'breathing'), keep_filler (bool), clarifications "
+                    "(array of strings)."))
+        data = completion.json()
     except Exception as exc:  # noqa: BLE001
         base.clarifications.append(
             f"Language-model brief compilation failed ({type(exc).__name__}); "
@@ -225,7 +217,7 @@ def compile_with_llm(notes: str, target_duration_s: int | None = None,
 
 
 def compile_brief(notes: str, target_duration_s: int | None = None,
-                  use_llm: bool = True, **overrides) -> EditBrief:
+                  use_llm: bool = True, router=None, **overrides) -> EditBrief:
     if use_llm:
-        return compile_with_llm(notes, target_duration_s, **overrides)
+        return compile_with_llm(notes, target_duration_s, router, **overrides)
     return compile_deterministic(notes, target_duration_s, **overrides)

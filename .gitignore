@@ -55,3 +55,6 @@ samples/*
 # Model weights — downloaded, never committed
 models/*
 !models/README.md
+
+# TypeScript incremental build cache
+*.tsbuildinfo

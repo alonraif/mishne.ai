@@ -108,10 +108,14 @@ source_clips   (id, org_id, asset_id, mob_id, tape_name,
                 src_tc_in_frames, src_tc_out_frames,
                 track_kind, track_index, file_path)
 
-jobs           (id, org_id, project_id, asset_id, status,
+jobs           (id, org_id, project_id, status,
                 notes_raw, brief jsonb,
                 model_versions jsonb,                    -- asr, llm, prompt versions
                 cost_cents, started_at, finished_at, error jsonb)
+
+job_assets     (job_id, asset_id, order_idx,             -- a job draws on many
+                primary key (job_id, asset_id))          -- assets; an asset
+                                                         -- feeds many jobs
 
 job_steps      (id, org_id, job_id, name, status, attempt,
                 input_ref, output_ref, started_at, finished_at, error jsonb)
@@ -123,14 +127,17 @@ words          (id, org_id, transcript_id, source_clip_id, idx,
                 text, start_ns bigint, end_ns bigint,
                 confidence real, speaker text)
 
-beats          (id, org_id, transcript_id, idx, source_clip_id,
+beats          (id, org_id, transcript_id, asset_id, idx, source_clip_id,
                 start_ns bigint, end_ns bigint, speaker,
                 text, flags text[], embedding vector(1024))
+
+speaker_links  (id, org_id, project_id, canonical_speaker_id,
+                asset_id, speaker_id, confirmed_by, confirmed_at)
 
 beat_scores    (id, org_id, job_id, beat_id, scores jsonb,
                 depends_on uuid[], rationale text, cluster_id uuid)
 
-selections     (id, org_id, job_id, beat_id, order_idx,
+selections     (id, org_id, job_id, beat_id, asset_id, order_idx,
                 src_tc_in_frames, src_tc_out_frames, reason text)
 
 artifacts      (id, org_id, job_id, kind,                -- aaf | fcpxml | edl | otio | json
@@ -147,6 +154,28 @@ millions, which Postgres handles without concern, and it buys full-text search a
 precise range queries. The canonical raw ASR response still lives in S3; this table
 is the query surface, not the record of truth. Partition by `transcript_id` if it
 ever becomes a problem, which it likely will not.
+
+`job_assets` — the join table that makes a project a project. Footage arrives over
+weeks and one finished piece is cut from several sessions, so a job draws on many
+assets and an asset feeds many jobs. Both halves matter: the many-to-one direction
+is what lets an editor cut three pieces from one interview, and the one-to-many
+direction is what lets them cut one piece from three days of rushes. `order_idx` is
+the upload order, which is all "chronological" can honestly mean for material shot
+on different days — beats carry their own asset's local timing and there is
+deliberately no global timeline. See `apps/api/src/mishne/pipeline/project.py`.
+
+`transcripts.asset_id` (not `job_id`) — transcription is the expensive step and it
+belongs to the *asset*. An upload transcribed today is re-used by a job next month
+at no cost, which is the whole economics of separated uploads. `beats.asset_id` is
+denormalised from the transcript for the same reason it exists in the pipeline: a
+beat's timing is local to its own file and is meaningless without it.
+
+`speaker_links` — the same person recorded on two days is two speakers until a human
+says otherwise. Attribution knows which microphone a voice came down and nothing at
+all about whether Tuesday's track 1 is Friday's track 1. Guessing reads as
+intelligence right up until it puts words in the wrong mouth in a delivered cut,
+where nobody can tell it happened. So the merge is a row a person creates, and
+`confirmed_by` records who.
 
 `beats.embedding` — pgvector, for redundancy clustering. Avoids introducing a second
 datastore for a workload measured in hundreds of vectors per job.
@@ -169,7 +198,7 @@ POST   /v1/projects/{id}/assets          -> presigned multipart upload
 POST   /v1/assets/{id}/complete
 GET    /v1/assets/{id}                   -> probe result, ready state
 
-POST   /v1/jobs                          -> {asset_id, notes, target_duration_s}
+POST   /v1/jobs                          -> {asset_ids[], notes, target_duration_s}
 GET    /v1/jobs/{id}
 GET    /v1/jobs/{id}/events              -> SSE progress stream
 POST   /v1/jobs/{id}/cancel

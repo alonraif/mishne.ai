@@ -219,3 +219,68 @@ def attribute_from_files(words: list[Word], track_paths: dict[int, Path],
                          hop_ms: int = HOP_MS) -> Attribution:
     envelopes = {i: track_envelope(p, hop_ms) for i, p in track_paths.items()}
     return attribute(words, envelopes, hop_ms=hop_ms)
+
+
+def attribute_from_diarization(words: list[Word], result) -> Attribution:
+    """Attribution for single-track material, from a diarization result.
+
+    The multi-track path above is arithmetic and always right: each person has a
+    microphone, and the loudest one is whoever is talking. One track has none of
+    that, and until now the answer was a single speaker marked reliable — which
+    on a three-way conversation put every line in one mouth and said so
+    confidently. This is the honest replacement.
+
+    What comes back is still *separation*, never identity: "three distinct
+    voices", not who they are. Naming stays a thing a person does, and
+    `confirmed` stays False until they do it.
+    """
+    speakers: dict[str, Speaker] = {}
+    unassigned = 0
+
+    for w in words:
+        sid = result.speaker_at(w.start_ms, w.end_ms)
+        if not sid:
+            unassigned += 1
+            w.speaker = w.speaker or "SPK"
+            continue
+        sp = speakers.get(sid)
+        if sp is None:
+            sp = speakers[sid] = Speaker(
+                id=sid, source="diarization",
+                default_label=f"Speaker {len(speakers) + 1}")
+        w.speaker = sid
+        sp.word_count += 1
+        sp.speech_ms += w.duration_ms
+
+    att = Attribution(
+        speakers=sorted(speakers.values(), key=lambda s: -s.speech_ms),
+        unattributed_words=unassigned,
+        reliable=result.reliable,
+        notes=list(result.notes),
+    )
+    if unassigned:
+        pct = 100 * unassigned / max(1, len(words))
+        att.notes.append(
+            f"{unassigned} words ({pct:.0f}%) fell outside every detected turn "
+            f"and carry no speaker.")
+        if pct > 20:
+            att.reliable = False
+    return att
+
+
+def single_track_unseparated(words: list[Word]) -> Attribution:
+    """One track and no diarizer: say so, rather than inventing a speaker.
+
+    The previous behaviour reported one speaker with `reliable=True`. On
+    material with three people in it that is not a simplification, it is a false
+    statement the UI then renders as fact next to every line.
+    """
+    for w in words:
+        w.speaker = w.speaker or "SPK"
+    return Attribution(
+        speakers=[],
+        reliable=False,
+        notes=["Single audio track and no diarization — voices were never "
+               "separated. Every line is unattributed; the speaker legend has "
+               "nothing to show."],
+    )

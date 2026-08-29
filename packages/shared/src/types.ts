@@ -125,7 +125,16 @@ export interface JobStep {
 export interface Job {
   id: string;
   projectId: string;
-  assetId: string;
+  /**
+   * Every upload this cut draws on, in upload order.
+   *
+   * A project accumulates footage over weeks and one finished piece is cut from
+   * several sessions, so this is a list and the order is meaningful: it is what
+   * "chronological" means for material shot on different days. Beats carry
+   * their own asset's local timing and there is no global timeline, so nothing
+   * in the UI may show a position without knowing which asset it belongs to.
+   */
+  assetIds: string[];
   mode: JobMode;
   status: JobStatus;
   notesRaw: string;
@@ -172,6 +181,12 @@ export type BeatFlag =
 export interface Beat {
   id: string;
   idx: number;
+  /**
+   * Which upload this beat came from. `startFrames` is local to that asset's
+   * own reel and rate — two beats with the same number are not the same moment
+   * unless they share an assetId.
+   */
+  assetId: string;
   speaker: string;
   startFrames: number;
   endFrames: number;
@@ -208,6 +223,17 @@ export interface Speaker {
   trackIndex?: number;
   wordCount: number;
   speechMs: number;
+  /**
+   * The uploads this voice was heard in — more than one only after a human has
+   * merged them.
+   *
+   * The same person recorded on two days arrives as two speakers, because
+   * attribution knows which microphone a voice came down and nothing about
+   * whether Tuesday's track 1 is Friday's track 1. The legend shows them apart,
+   * suffixed with the reel, and offers the merge. Guessing would read as
+   * intelligence right up until it puts words in the wrong mouth.
+   */
+  assetIds: string[];
 }
 
 export interface SpeakerAttribution {
@@ -219,13 +245,28 @@ export interface SpeakerAttribution {
   notes: string[];
 }
 
-export interface Transcript {
-  jobId: string;
+/** One upload as the transcript UI needs to see it: its own reel, its own rate. */
+export interface TranscriptAsset {
   assetId: string;
-  /** ISO code. Drives text direction throughout the transcript UI. */
-  language: string;
+  filename: string;
   rate: Rate;
   dropFrame: boolean;
+  startTcFrames: number;
+  durationFrames: number;
+  /** ISO code. A project can mix languages; direction is decided per asset. */
+  language: string;
+}
+
+export interface Transcript {
+  jobId: string;
+  /**
+   * Every upload in the cut. Timecodes are formatted against the entry matching
+   * the beat's own `assetId` — never against a single job-wide rate, which is
+   * how a two-camera cut ends up displaying timecodes that do not exist.
+   */
+  assets: TranscriptAsset[];
+  /** The language most of the material is in; drives overall text direction. */
+  language: string;
   speakers: Speaker[];
   attribution: SpeakerAttribution;
   beats: Beat[];
@@ -298,4 +339,24 @@ export interface LedgerEntry {
   balanceAfter: number;
   description: string;
   createdAt: string;
+}
+
+
+/**
+ * The reel a beat belongs to.
+ *
+ * Every timecode in the UI must be formatted against this, never against a
+ * job-wide rate: a project can mix a 25 fps studio reel with a 23.976 pickup,
+ * and formatting one against the other's rate produces timecodes that look
+ * right and do not exist. Falls back to the first asset so a malformed fixture
+ * renders rather than throws.
+ */
+export function assetOf(
+  transcript: Transcript,
+  beat: Pick<Beat, "assetId">
+): TranscriptAsset {
+  return (
+    transcript.assets.find((a) => a.assetId === beat.assetId) ??
+    transcript.assets[0]
+  );
 }

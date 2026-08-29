@@ -27,8 +27,17 @@ class Selection:
     score: float
 
 
-def solve(beats: list[Beat], scores: dict[str, float], brief) -> list[Selection]:
-    """Choose beats to fill the target duration with the best material."""
+def solve(beats: list[Beat], scores: dict[str, float], brief,
+          asset_order: dict[str, int] | None = None) -> list[Selection]:
+    """Choose beats to fill the target duration with the best material.
+
+    `asset_order` maps asset id to its position in the project, and is what
+    "chronological" means once a cut draws on several uploads. Beats carry their
+    own asset's local timing — there is deliberately no global timeline (see
+    pipeline/project.py) — so ordering across assets is `(asset, start)`, which
+    is the only honest reading of chronology for material shot on different
+    days. Empty for a single-asset job, where it changes nothing.
+    """
     from ortools.sat.python import cp_model
 
     eligible = [b for b in beats if scores.get(b.id, 0) > 0]
@@ -46,6 +55,26 @@ def solve(beats: list[Beat], scores: dict[str, float], brief) -> list[Selection]
     model.Add(duration <= target_ms + tol_ms)
 
     by_id = {b.id: b for b in eligible}
+
+    # Non-overlap. Beats never overlapped, so this constraint did not exist and
+    # did not need to. Candidate spans do: stage 6 offers the same long answer
+    # trimmed three ways, and picking two of them would play the overlapping
+    # seconds twice. Disjoint spans from one parent are fine and often wanted —
+    # keep the opening and the payoff, drop the middle — so the test is on time,
+    # not on parentage.
+    #
+    # Quadratic in the candidate count, which is why stage 6 caps spans per
+    # beat. Sorting first lets the inner loop stop early instead of comparing
+    # every pair in the job.
+    ordered = sorted(eligible, key=lambda b: (b.asset_id, b.start_ms))
+    clashes = 0
+    for i, a in enumerate(ordered):
+        for c in ordered[i + 1:]:
+            if c.asset_id != a.asset_id or c.start_ms >= a.end_ms:
+                break
+            model.Add(pick[a.id] + pick[c.id] <= 1)
+            clashes += 1
+    solve.overlap_constraints = clashes
 
     # Dependency closure: a payoff without its setup reads as a non-sequitur.
     for b in eligible:
@@ -72,14 +101,15 @@ def solve(beats: list[Beat], scores: dict[str, float], brief) -> list[Selection]
     status = solver.Solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        return _greedy(eligible, scores, target_ms, tol_ms)
+        return _greedy(eligible, scores, target_ms, tol_ms, asset_order or {})
 
     chosen = [by_id[bid] for bid, var in pick.items() if solver.Value(var)]
-    return _order(chosen, scores, brief)
+    return _order(chosen, scores, brief, asset_order or {})
 
 
 def _greedy(beats: list[Beat], scores: dict[str, float],
-            target_ms: int, tol_ms: int) -> list[Selection]:
+            target_ms: int, tol_ms: int,
+            asset_order: dict[str, int] | None = None) -> list[Selection]:
     """Fallback when the duration window cannot be hit exactly.
 
     Usually means the available beat lengths cannot sum into the window — a very
@@ -95,23 +125,38 @@ def _greedy(beats: list[Beat], scores: dict[str, float],
         used += b.duration_ms
         if used >= target_ms - tol_ms:
             break
+    key = _source_key(asset_order or {})
     return [Selection(b, i, scores.get(b.id, 0))
-            for i, b in enumerate(sorted(chosen, key=lambda x: x.start_ms))]
+            for i, b in enumerate(sorted(chosen, key=key))]
 
 
-def _order(beats: list[Beat], scores: dict[str, float], brief) -> list[Selection]:
+def _source_key(asset_order: dict[str, int]):
+    """Sort key for "where this came from", across one asset or many.
+
+    A beat's `start_ms` is local to its own upload, so on its own it would
+    interleave three separate interviews into nonsense. Asset position comes
+    first; within an asset, nothing changes.
+    """
+    return lambda b: (asset_order.get(b.asset_id, 0), b.start_ms, b.end_ms)
+
+
+def _order(beats: list[Beat], scores: dict[str, float], brief,
+           asset_order: dict[str, int] | None = None) -> list[Selection]:
     """Put the selection into cut order according to the brief's shape."""
     shape = brief.narrative_shape
+    src = _source_key(asset_order or {})
 
     if shape == "inverted_pyramid":
         ordered = sorted(beats, key=lambda b: -scores.get(b.id, 0))
     elif shape == "thematic":
         # No topic model yet, so group by speaker and keep source order within
         # each group. An honest approximation; real clustering is stage 6 work.
-        ordered = sorted(beats, key=lambda b: (b.speaker, b.start_ms))
+        # Grouping by speaker deliberately crosses assets: the same person in
+        # two sessions is one thread, provided the speakers have been merged.
+        ordered = sorted(beats, key=lambda b: (b.speaker, *src(b)))
     else:
         # chronological and q_and_a both preserve source order; q_and_a relies
         # on questions and answers already being adjacent in the source.
-        ordered = sorted(beats, key=lambda b: b.start_ms)
+        ordered = sorted(beats, key=src)
 
     return [Selection(b, i, scores.get(b.id, 0)) for i, b in enumerate(ordered)]

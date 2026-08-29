@@ -27,7 +27,9 @@ export default async function JobPage({
   if (!job) notFound();
 
   const project = projectById(job.projectId)!;
-  const asset = assetById(job.assetId)!;
+  // A job draws on every upload the editor chose, not one. Naming only the
+  // first would quietly hide half of what the cut is made from.
+  const assets = job.assetIds.map((a) => assetById(a)!).filter(Boolean);
   const artifacts = artifactsForJob(job.id);
   const done = job.steps.filter((s) => s.status === "done").length;
   const pct = Math.round((done / job.steps.length) * 100);
@@ -45,7 +47,9 @@ export default async function JobPage({
           <h1 className="tc text-2xl font-semibold tracking-tight">{job.id}</h1>
           <StatusBadge status={job.status} />
         </div>
-        <p className="mt-1 truncate text-sm text-muted-foreground">{asset.filename}</p>
+        <p className="mt-1 truncate text-sm text-muted-foreground" dir="ltr">
+          {assets.map((a) => a.filename).join(" · ")}
+        </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">

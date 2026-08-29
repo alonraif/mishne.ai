@@ -6,9 +6,11 @@ import {
   formatDuration,
   formatTimecode,
   framesToSeconds,
+  assetOf,
   type Beat,
   type Speaker,
   type Transcript,
+  type TranscriptAsset,
   directionFor,
 } from "@mishne/shared";
 import { SpeakerLegend, speakerColor } from "@/components/speaker-legend";
@@ -56,7 +58,9 @@ export function TranscriptViewer({ transcript }: { transcript: Transcript }) {
   const nameOf = (id: string) =>
     byId.get(id)?.speaker.label || byId.get(id)?.speaker.defaultLabel || id;
 
-  const { rate, dropFrame } = transcript;
+  // No job-wide rate. A beat's timecode is only meaningful against its own
+  // reel, and a project routinely mixes rates.
+  const multiAsset = transcript.assets.length > 1;
 
   const beats = useMemo(
     () =>
@@ -70,8 +74,11 @@ export function TranscriptViewer({ transcript }: { transcript: Transcript }) {
   );
 
   const usedCount = transcript.beats.filter((b) => b.used).length;
-  const sourceS = framesToSeconds(transcript.sourceDurationFrames, rate);
-  const cutS = framesToSeconds(transcript.cutDurationFrames, rate);
+  // Totals are seconds, converted per reel upstream. Dividing a frame count by
+  // one asset's rate would misreport a mixed-rate project by whole seconds.
+  const seqRate = transcript.assets[0].rate;
+  const sourceS = framesToSeconds(transcript.sourceDurationFrames, seqRate);
+  const cutS = framesToSeconds(transcript.cutDurationFrames, seqRate);
 
   return (
     <div className="space-y-4">
@@ -123,8 +130,8 @@ export function TranscriptViewer({ transcript }: { transcript: Transcript }) {
           <BeatRow
             key={b.id}
             beat={b}
-            rate={rate}
-            dropFrame={dropFrame}
+            asset={assetOf(transcript, b)}
+            showReel={multiAsset}
             speakerName={nameOf(b.speaker)}
             speakerIndex={byId.get(b.speaker)?.index ?? 0}
             open={openId === b.id}
@@ -138,22 +145,22 @@ export function TranscriptViewer({ transcript }: { transcript: Transcript }) {
 
 function BeatRow({
   beat,
-  rate,
-  dropFrame,
+  asset,
+  showReel,
   speakerName,
   speakerIndex,
   open,
   onToggle,
 }: {
   beat: Beat;
-  rate: Transcript["rate"];
-  dropFrame: boolean;
+  asset: TranscriptAsset;
+  showReel: boolean;
   speakerName: string;
   speakerIndex: number;
   open: boolean;
   onToggle: () => void;
 }) {
-  const dur = framesToSeconds(beat.endFrames - beat.startFrames, rate);
+  const dur = framesToSeconds(beat.endFrames - beat.startFrames, asset.rate);
   return (
     <div
       className={cn(
@@ -170,11 +177,23 @@ function BeatRow({
         {/* Gutter */}
         <div className="flex w-[92px] shrink-0 flex-col items-start gap-1 pt-0.5">
           <span className="tc text-[11px] text-timecode">
-            {formatTimecode(beat.startFrames, rate, dropFrame)}
+            {formatTimecode(beat.startFrames, asset.rate, asset.dropFrame)}
           </span>
           <span className="text-[11px] text-muted-foreground/70">
             {dur.toFixed(1)}s
           </span>
+          {/* Which reel. Without it a two-source cut shows two timecodes that
+              look like one continuous reel and are not. dir="ltr" because a
+              filename must not flip inside a Hebrew transcript. */}
+          {showReel && (
+            <span
+              dir="ltr"
+              className="truncate text-[10px] text-muted-foreground/60 max-w-[92px]"
+              title={asset.filename}
+            >
+              {asset.filename}
+            </span>
+          )}
         </div>
 
         {/* Used marker */}

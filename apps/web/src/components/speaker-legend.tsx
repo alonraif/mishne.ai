@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Mic, Pencil, TriangleAlert, Waves } from "lucide-react";
+import { Check, Link2, Mic, Pencil, TriangleAlert, Waves } from "lucide-react";
 import type { Speaker, SpeakerAttribution } from "@mishne/shared";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,27 +28,43 @@ function talkTime(ms: number) {
 }
 
 /**
- * Speaker legend with editable names.
+ * Speaker legend with editable names, and merging across uploads.
  *
  * The pipeline can work out *how many* voices there are and which is which. It
  * cannot know their names — so this is where a person supplies them, and the
  * `confirmed` flag records that they did. Until then the row shows what was
  * actually detected ("Mic 2"), never a guess dressed up as a fact.
+ *
+ * The same limit applies across uploads, and harder. Attribution knows which
+ * microphone a voice came down and nothing about whether Tuesday's track 1 is
+ * Friday's track 1, so the same person recorded twice arrives as two rows. That
+ * looks like a shortcoming and is the safe direction to be wrong in: a merge a
+ * person makes is one click, and a merge the machine invents puts words in the
+ * wrong mouth in a delivered cut where nobody can see it happened.
  */
 export function SpeakerLegend({
   speakers,
   attribution,
   onRename,
+  onMerge,
   className,
 }: {
   speakers: Speaker[];
   attribution: SpeakerAttribution;
   onRename: (id: string, label: string) => void;
+  /** Fold `otherId` into `canonicalId` — the same person on two shoot days. */
+  onMerge?: (canonicalId: string, otherId: string) => void;
   className?: string;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
+  const [merging, setMerging] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const unnamed = speakers.filter((s) => !s.confirmed).length;
+  // Only worth offering when the material spans more than one upload.
+  const canMerge =
+    !!onMerge &&
+    speakers.length > 1 &&
+    new Set(speakers.flatMap((s) => s.assetIds)).size > 1;
 
   const commit = (id: string) => {
     onRename(id, draft.trim());
@@ -73,7 +89,7 @@ export function SpeakerLegend({
             <div
               key={sp.id}
               className={cn(
-                "flex items-center gap-2.5 rounded-md border p-2.5",
+                "group flex items-center gap-2.5 rounded-md border p-2.5",
                 sp.confirmed ? "border-border" : "border-dashed border-border"
               )}
             >
@@ -133,8 +149,52 @@ export function SpeakerLegend({
                   )}
                   <span>·</span>
                   <span className="tc">{talkTime(sp.speechMs)}</span>
+                  {sp.assetIds.length > 1 && (
+                    <>
+                      <span>·</span>
+                      <span title="merged across uploads">
+                        {sp.assetIds.length} uploads
+                      </span>
+                    </>
+                  )}
                 </div>
+
+                {merging === sp.id && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {speakers
+                      .filter((o) => o.id !== sp.id)
+                      .map((o) => (
+                        <button
+                          key={o.id}
+                          onClick={() => {
+                            onMerge?.(sp.id, o.id);
+                            setMerging(null);
+                          }}
+                          className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:bg-accent"
+                          dir="auto"
+                        >
+                          {o.label || o.defaultLabel}
+                        </button>
+                      ))}
+                    <button
+                      onClick={() => setMerging(null)}
+                      className="px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                    >
+                      cancel
+                    </button>
+                  </div>
+                )}
               </div>
+
+              {canMerge && merging !== sp.id && (
+                <button
+                  onClick={() => setMerging(sp.id)}
+                  title="Same person as another row"
+                  className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 focus:opacity-100"
+                >
+                  <Link2 className="size-3.5" />
+                </button>
+              )}
 
               {sp.confirmed ? (
                 <Check className="size-3.5 shrink-0 text-used" />

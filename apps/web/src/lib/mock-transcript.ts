@@ -17,6 +17,7 @@ import {
   type Speaker,
   type SpeakerAttribution,
   type Transcript,
+  type TranscriptAsset,
 } from "@mishne/shared";
 
 const F = 25;
@@ -40,13 +41,44 @@ type Seed = [
  * microphone it came from. A mock where every speaker already has a name would
  * imply the system works names out on its own, which it does not and cannot.
  */
+/**
+ * Two uploads, and deliberately not at the same rate.
+ *
+ * The interview was shot in the studio at 25 and the pickup on location at
+ * 23.976, which is an entirely ordinary thing to find in one project and the
+ * case every timecode in the UI has to survive. A fixture where both reels
+ * match would let a job-wide rate look correct forever.
+ */
+const ASSETS: TranscriptAsset[] = [
+  {
+    assetId: "ast_9d41", filename: "harbour_interview_A.mxf",
+    rate: RATE_25, dropFrame: false,
+    startTcFrames: tc(10, 0, 0), durationFrames: 267_750, language: "en",
+  },
+  {
+    assetId: "ast_2b77", filename: "harbour_pickup_B.mov",
+    rate: { num: 24_000, den: 1001 }, dropFrame: false,
+    startTcFrames: Math.round(14.5 * 3600 * 23.976), durationFrames: 43_200,
+    language: "en",
+  },
+];
+
+/**
+ * Margret was recorded on both days, and the pipeline could not know that —
+ * attribution knows which microphone a voice came down, not who was in front of
+ * it a week earlier. Somebody merged her, which is why she carries two assets
+ * and the others carry one.
+ */
 const SPEAKERS: Speaker[] = [
   { id: "T1", source: "track", defaultLabel: "Mic 1", label: "Margret Olsen",
-    confirmed: true, trackIndex: 1, wordCount: 412, speechMs: 214_000 },
+    confirmed: true, trackIndex: 1, wordCount: 412, speechMs: 214_000,
+    assetIds: ["ast_9d41", "ast_2b77"] },
   { id: "T2", source: "track", defaultLabel: "Mic 2", label: "Jonas Berg",
-    confirmed: true, trackIndex: 2, wordCount: 268, speechMs: 151_000 },
+    confirmed: true, trackIndex: 2, wordCount: 268, speechMs: 151_000,
+    assetIds: ["ast_9d41"] },
   { id: "T3", source: "track", defaultLabel: "Mic 3", label: "",
-    confirmed: false, trackIndex: 3, wordCount: 47, speechMs: 22_000 },
+    confirmed: false, trackIndex: 3, wordCount: 47, speechMs: 22_000,
+    assetIds: ["ast_9d41"] },
 ];
 
 const ATTRIBUTION: SpeakerAttribution = {
@@ -100,9 +132,14 @@ function durationFrames(text: string): number {
   return Math.round(Math.max(MIN_BEAT_SECONDS, words / WORDS_PER_SECOND) * F);
 }
 
+// The last four seeds are the pickup shoot. Their frame numbers are local to
+// that reel, which is the whole point: 02:15:00:00 on B is not 02:15:00:00 on A.
+const PICKUP_FROM = SEEDS.length - 4;
+
 const beats: Beat[] = SEEDS.map(([start, speaker, text, used, score, flags, rationale], i) => ({
   id: `beat_${String(i + 1).padStart(3, "0")}`,
   idx: i,
+  assetId: ASSETS[i >= PICKUP_FROM ? 1 : 0].assetId,
   speaker,
   startFrames: start,
   endFrames: start + durationFrames(text),
@@ -123,10 +160,8 @@ const cutDurationFrames = beats
 
 export const mockTranscript: Transcript = {
   jobId: "job_8f23",
-  assetId: "ast_9d41",
+  assets: ASSETS,
   language: "en",
-  rate: RATE_25,
-  dropFrame: false,
   speakers: SPEAKERS,
   attribution: ATTRIBUTION,
   beats,

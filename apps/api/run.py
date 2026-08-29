@@ -2,8 +2,14 @@
 """mishne.ai — raw footage to an editable rough cut, in one command.
 
     python run.py rushes.mov --notes "Ten minutes, tight. Lead on the closure."
+    python run.py day1.mov day2.mov day3.mov --target 10m
     python run.py interview.mov --target 6m --language he --model large-v3
     python run.py rushes.mov --replay work/rushes_a1.asr.json   # no model needed
+
+Several media arguments are one job drawing on several uploads, which is how
+media projects actually arrive — footage over weeks, one finished piece. Each
+upload is transcribed once and cached; adding a fourth reel next month re-uses
+the three already done.
 
 Produces, in --out:
 
@@ -27,10 +33,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from mishne.language import is_rtl_language, warn_model_for_language  # noqa: E402
+from mishne.llm import Router  # noqa: E402
+from mishne.llm import catalog as llm_catalog, providers as llm_providers  # noqa: E402
+from mishne.pipeline import project  # noqa: E402
 from mishne.pipeline.steps import (  # noqa: E402
-    aaf_ingest, assemble, audio as audio_step, brief as brief_step, emit,
-    prepare, refine, score as score_step, select, speakers as speakers_step,
-    structure, transcript_page, transcribe, validate, vad,
+    assemble, brief as brief_step, emit, propose, refine,
+    score as score_step, select, transcript_page, validate,
 )
 from mishne.timecode import Rate, frames_to_tc  # noqa: E402
 
@@ -39,16 +47,24 @@ G, Y, R, D, B, X = ("\033[32m", "\033[33m", "\033[31m", "\033[2m",
 
 
 def parse_target(text: str | None) -> int | None:
-    if not text:
+    return brief_step.parse_duration(text) if text else None
+
+
+def assume_rate(value: float | None) -> Rate | None:
+    if not value:
         return None
-    return brief_step.parse_duration(text)
+    num, den = ((24000, 1001) if abs(value - 23.976) < .01 else
+                (30000, 1001) if abs(value - 29.97) < .01 else
+                (int(value), 1))
+    return Rate(num, den)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("media", type=Path)
+    ap.add_argument("media", type=Path, nargs="+",
+                    help="one or more uploads — all of them feed one cut")
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--notes", default="", help="production notes, free text")
     ap.add_argument("--target", help="target length, e.g. 10m, 90s, 1:30")
@@ -57,17 +73,32 @@ def main() -> int:
     ap.add_argument("--model-path", help="local model directory (offline)")
     ap.add_argument("--replay", type=Path, help="stored .asr.json to reuse")
     ap.add_argument("--scorer", default="auto",
-                    choices=["auto", "heuristic", "claude"])
+                    choices=["auto", "heuristic", "model", "claude"],
+                    help="'claude' is kept as an alias for 'model'")
+    ap.add_argument("--policy", default="balanced",
+                    choices=["quality", "balanced", "cost"],
+                    help="how to choose a model when several keys are set")
+    ap.add_argument("--spans", default="auto",
+                    choices=["auto", "model", "claude", "enumerate", "none"],
+                    help="propose cuts inside long beats (default: auto)")
     ap.add_argument("--rate", type=float, help="frame rate for audio-only input")
     ap.add_argument("--handles", type=int, default=6, help="handle frames")
+    ap.add_argument("--diarize", type=Path, metavar="DIR",
+                    help="model dir for single-track voice separation")
+    ap.add_argument("--merge-speakers", action="append", default=[],
+                    metavar="A:SPK1=B:SPK2",
+                    help="two voices in different uploads are one person")
     args = ap.parse_args()
 
-    out = args.out or args.media.parent / f"{args.media.stem}_roughcut"
+    first = args.media[0]
+    out = args.out or first.parent / f"{first.stem}_roughcut"
     out.mkdir(parents=True, exist_ok=True)
     work = out / "work"
     t0 = time.time()
 
-    print(f"\n{'=' * 68}\n mishne.ai — {args.media.name}\n{'=' * 68}")
+    title = (first.name if len(args.media) == 1
+             else f"{first.name} + {len(args.media) - 1} more")
+    print(f"\n{'=' * 68}\n mishne.ai — {title}\n{'=' * 68}")
 
     # Report the model actually being used. Warning about the unused --model
     # default while --model-path points at large-v3 is worse than saying
@@ -76,155 +107,187 @@ def main() -> int:
     if (msg := warn_model_for_language(effective_model, args.language)):
         print(f" {Y}{msg}{X}\n")
 
-    is_aaf = args.media.suffix.lower() == ".aaf"
-    aaf: aaf_ingest.AAFSource | None = None
+    if args.replay and len(args.media) > 1:
+        print(f" {R}--replay holds one stored transcript and cannot serve "
+              f"several uploads.{X}")
+        return 1
 
-    # 0 -------------------------------------------------------------------
-    assume = None
-    if args.rate:
-        num, den = ((24000, 1001) if abs(args.rate - 23.976) < .01 else
-                    (30000, 1001) if abs(args.rate - 29.97) < .01 else
-                    (int(args.rate), 1))
-        assume = Rate(num, den)
-    if is_aaf:
-        # ffprobe cannot read an AAF; it is structured storage, not a media
-        # container. The sequence is parsed instead, and its timeline becomes
-        # the source everything downstream works against.
-        aaf = aaf_ingest.parse(args.media)
-        kind = "embedded essence" if aaf.embedded else "linked media"
-        print(f"  0 probe        AAF · {aaf.rate} · {len(aaf.clips)} clips · "
-              f"{aaf.duration_s / 60:.1f} min · {kind}")
-        for note in aaf.notes:
-            print(f"                 {D}{note}{X}")
-        for miss in aaf.missing[:5]:
-            print(f"                 {Y}unresolved: {miss}{X}")
-        if not aaf.resolved_clips and not aaf.embedded:
-            print(f"\n  {R}No clip in this AAF resolves to media.{X}")
-            print(f"  {Y}The AAF names paths that do not exist on this machine. "
-                  f"Put the media\n  beside the AAF, or supply it at the paths "
-                  f"the sequence expects.{X}")
+    router = Router(policy=args.policy)
+    keys = llm_providers.available()
+    if keys:
+        picks = []
+        for task in ("brief", "spans", "score"):
+            plan = router.plan(task)
+            picks.append(f"{task}→{plan[0].provider}/{plan[0].id}"
+                         if plan else f"{task}→none")
+        print(f" {D}llm  {'+'.join(keys)} · {args.policy} · "
+              f"{'  '.join(picks)}{X}")
+        if (when := llm_catalog.verified_on()):
+            print(f" {D}     catalog prices verified {when}; "
+                  f"MISHNE_MODEL_CATALOG overrides{X}")
+    else:
+        print(f" {Y}no vendor API key — deterministic path only. Set any of "
+              f"ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, "
+              f"XAI_API_KEY.{X}")
+
+    # 0-4, per asset, cached ------------------------------------------------
+    assets: list[project.AssetIngest] = []
+    for i, media in enumerate(args.media):
+        if not media.exists():
+            print(f"  {R}{media} does not exist{X}")
             return 1
-        flat = aaf_ingest.flatten_audio(aaf, work)
-        info = prepare.probe(flat, assume_rate=aaf.rate)
-        info.start_tc_frames = aaf.start_tc_frames
-        info.duration_frames = aaf.duration_frames
-        print(f"  1 audio        flattened {len(aaf.clips)} clips to one track")
-        tracks = audio_step.extract(info, work)
-    else:
-        info = prepare.probe(args.media, assume_rate=assume)
-        print(f"  0 probe        {info.codec} · {info.rate} · "
-              f"start {info.start_tc} · {info.duration_s / 60:.1f} min · "
-              f"{len(info.audio)} audio")
-        tracks = audio_step.extract(info, work)
-        print(f"  1 audio        {len(tracks)} track(s) extracted")
+        tag = f"{i + 1}/{len(args.media)}" if len(args.media) > 1 else "  "
+        print(f"\n {B}{tag} {media.name}{X}")
+        try:
+            ing = project.ingest(
+                media, work, language=args.language,
+                replay=args.replay, model=args.model,
+                model_path=args.model_path, assume_rate=assume_rate(args.rate),
+                diarize_models=args.diarize,
+                on_progress=lambda m: print(f"      {D}{m}{X}"))
+        except Exception as exc:  # noqa: BLE001
+            print(f"      {R}{type(exc).__name__}: {exc}{X}")
+            if "model" in str(exc).lower() or "connect" in str(exc).lower():
+                print(f"\n  {Y}If this is a network error the Whisper model "
+                      f"could not be downloaded.\n  Allowlist huggingface.co, "
+                      f"or fetch it once and pass --model-path.{X}")
+            return 1
+        durs = sorted(b.duration_ms for b in ing.beats)
+        median_s = (durs[len(durs) // 2] / 1000) if durs else 0
+        kind = "already cut" if ing.is_sequence else "rushes"
+        print(f"      {ing.rate} · start {frames_to_tc(ing.start_tc_frames, ing.rate)}"
+              f" · {ing.duration_s / 60:.1f} min · {ing.language} · {kind}")
+        print(f"      {len(ing.beats)} beats · median {median_s:.1f}s")
+        for w in ing.warnings:
+            print(f"      {Y}{w}{X}")
+        assets.append(ing)
 
-    if not tracks:
-        print(f"  {R}no audio streams — nothing to cut{X}")
+    beats = [b for a in assets for b in a.beats]
+    order = project.asset_order(assets)
+    ctxs = project.contexts(assets)
+    if not beats:
+        print(f"\n  {R}nothing transcribed — nothing to cut{X}")
         return 1
 
-    # 3 -------------------------------------------------------------------
-    speech = vad.build(tracks[0].path)
-    sp_ms = sum(e - s for s, e in speech.speech)
-    print(f"  3 vad          {len(speech.speech)} segments · "
-          f"{sp_ms / 60000:.1f} min speech")
-
-    # 2 -------------------------------------------------------------------
-    if args.replay:
-        kwargs, provider = {"path": args.replay}, "replay"
-    else:
-        kwargs = {"model": args.model, "model_path": args.model_path}
-        provider = "faster-whisper"
-    try:
-        asr = transcribe.run(tracks[0].path, work, provider=provider,
-                             language=args.language, **kwargs)
-    except Exception as exc:
-        print(f"  2 transcribe   {R}{type(exc).__name__}: {exc}{X}")
-        print(f"\n  {Y}If this is a network error the Whisper model could not "
-              f"be downloaded.\n  Allowlist huggingface.co, or fetch it once "
-              f"and pass --model-path.{X}")
-        return 1
-    lang = asr.language
-    print(f"  2 transcribe   {len(asr.words)} words · {lang} · {asr.model}")
+    # Language of the job is the language of most of its material. Mixed-
+    # language projects are real, and the brief has to pick one.
+    lang = max({a.language for a in assets},
+               key=lambda L: sum(a.duration_s for a in assets
+                                 if a.language == L))
+    if len({a.language for a in assets}) > 1:
+        print(f"\n {Y}uploads are not all in the same language — "
+              f"briefing in {lang}{X}")
     if is_rtl_language(lang):
-        print(f"                 {D}right-to-left language — transcript page "
-              f"renders RTL{X}")
+        print(f" {D}right-to-left language — transcript page renders RTL{X}")
 
-    # speakers -------------------------------------------------------------
-    attribution = speakers_step.attribute_from_files(
-        asr.words, {t.track_index: t.path for t in tracks})
-    names = {s.id: s.display for s in attribution.speakers}
-    print(f"    speakers     {len(attribution.speakers)} · "
-          f"{', '.join(names.values())}"
-          + ("" if attribution.reliable else f"  {Y}unreliable{X}"))
+    # speakers ---------------------------------------------------------------
+    try:
+        merges = project.parse_merges(args.merge_speakers)
+    except ValueError as exc:
+        print(f"  {R}{exc}{X}")
+        return 1
+    speakers = project.unify_speakers(assets, merges)
+    names = {s.id: s.display for s in speakers}
+    if speakers:
+        print(f"\n    speakers     {len(speakers)} · {', '.join(names.values())}")
+    else:
+        print(f"\n    speakers     {Y}not separated{X}")
+    for a in assets:
+        for n in a.attribution.notes:
+            print(f"                 {D}{n}{X}")
+        if not a.attribution.reliable and a.attribution.speakers:
+            print(f"                 {Y}speaker labels on {a.path.name} are "
+                  f"not reliable — check before trusting the cut{X}")
+    if len(assets) > 1 and not merges:
+        print(f"                 {D}the same person in two uploads is two "
+              f"speakers here. --merge-speakers to join them.{X}")
 
-    # 4 -------------------------------------------------------------------
-    beats = structure.build(asr.words, speech, language=lang,
-                            loudness_lufs=tracks[0].integrated_lufs)
-    print(f"  4 structure    {len(beats)} beats · "
-          f"{sum(1 for b in beats if b.flags)} flagged")
-    for w in getattr(structure.build, "warnings", []):
-        print(f"                 {Y}{w}{X}")
-
-    # 5 -------------------------------------------------------------------
+    # 5 ----------------------------------------------------------------------
     ed = brief_step.compile_brief(
         args.notes, parse_target(args.target),
-        use_llm=(args.scorer != "heuristic"), language=lang,
+        use_llm=(args.scorer != "heuristic"), router=router, language=lang,
         handle_frames=args.handles)
     print(f"  5 brief        target {ed.target_duration_s}s ±"
           f"{ed.duration_tolerance_s}s · {ed.narrative_shape}")
     for c in ed.clarifications:
         print(f"                 {D}{c}{X}")
 
-    # 6 -------------------------------------------------------------------
-    scorer = score_step.get_scorer(args.scorer)
-    scores = scorer.score(beats, ed)
-    scores = score_step.apply_disqualifiers(beats, scores, ed.keep_filler)
+    # 6 ----------------------------------------------------------------------
+    # Candidate spans. A long block becomes several offers, every boundary
+    # gated on real silence — see steps/propose.py for why that gate is the
+    # point of the stage.
+    speech_by_asset = {a.asset_id: a.speech for a in assets}
+    proposer = (None if args.spans == "none"
+                else propose.get_proposer(args.spans, router))
+    candidates = propose.build(beats, speech_by_asset.get, ed, proposer)
+    carved = getattr(propose.build, "carved", 0)
+    if carved:
+        longest = max((b.duration_ms for b in beats), default=0) / 1000
+        print(f"  6 spans        {len(candidates)} candidates from "
+              f"{len(beats)} beats · {carved} carved out of long blocks "
+              f"(longest was {longest:.0f}s)")
+        if proposer is None:
+            print(f"                 {D}enumerated between cut points — no "
+                  f"judgement about which span is a thought. Set any vendor "
+                  f"API key for that.{X}")
+
+    scorer = score_step.get_scorer(args.scorer, router)
+    scores = scorer.score(candidates, ed)
+    scores = score_step.apply_disqualifiers(candidates, scores, ed.keep_filler)
     live = sum(1 for v in scores.values() if v > 0)
-    print(f"  6 score        {scorer.name} · {live} of {len(beats)} eligible")
+    print(f"  7 score        {scorer.name} · {live} of {len(candidates)} eligible")
     if scorer.name == "heuristic":
         print(f"                 {Y}control scorer — proves the plumbing, not "
               f"the cut. Do not show this to an editor as the product.{X}")
 
-    # 7 -------------------------------------------------------------------
-    picks = select.solve(beats, scores, ed)
+    # 7 ----------------------------------------------------------------------
+    picks = select.solve(candidates, scores, ed, order)
     if not picks:
         print(f"  7 select       {R}nothing selected — target may be "
               f"unreachable with the available material{X}")
         return 1
     picked_s = sum(p.beat.duration_ms for p in picks) / 1000
-    print(f"  7 select       {len(picks)} beats · {picked_s:.0f}s "
-          f"({picked_s - ed.target_duration_s:+.0f}s vs target)")
+    used_assets = {p.beat.asset_id for p in picks}
+    spread = ("" if len(assets) == 1
+              else f" · from {len(used_assets)} of {len(assets)} uploads")
+    trimmed = sum(1 for p in picks if p.beat.kind != "beat")
+    print(f"  8 select       {len(picks)} spans · {picked_s:.0f}s "
+          f"({picked_s - ed.target_duration_s:+.0f}s vs target){spread}"
+          + (f" · {trimmed} cut inside a beat" if trimmed else ""))
+    # The failure that made a "forty second cut" the first forty seconds
+    # verbatim. Nothing errored; the beats were simply too big to choose from.
+    med = sorted(b.duration_ms for b in candidates)[len(candidates) // 2] / 1000
+    if med > ed.target_duration_s / 4:
+        print(f"                 {Y}beats average {med:.0f}s against a "
+              f"{ed.target_duration_s:.0f}s target — too few pieces to shape a "
+              f"cut. This will be a chop, not an edit.{X}")
 
-    # 9 -------------------------------------------------------------------
-    cuts = refine.refine(picks, speech, info.rate, info.start_tc_frames,
-                         info.duration_frames, handle_frames=ed.handle_frames)
+    # 9 ----------------------------------------------------------------------
+    cuts = refine.refine_multi(picks, ctxs, handle_frames=ed.handle_frames)
     warned = sum(1 for c in cuts if c.warnings)
     print(f"  9 refine       {len(cuts)} clips"
           + (f" · {warned} with notes" if warned else ""))
 
-    # 10 ------------------------------------------------------------------
-    if aaf is not None:
-        timeline = assemble.build_from_aaf(
-            cuts, aaf, name=f"{args.media.stem}_roughcut")
-        emitted = len(list(timeline.tracks[0].find_clips()))
-        extra = ("" if emitted == len(cuts)
-                 else f" · {emitted - len(cuts)} split across source joins")
-    else:
-        timeline = assemble.build(cuts, args.media, info.rate,
-                                  info.start_tc_frames, info.duration_frames,
-                                  audio_tracks=len(tracks),
-                                  name=f"{args.media.stem}_roughcut")
-        extra = ""
-    total = sum(c.frames for c in cuts)
-    print(f" 10 assemble     {total} frames · {total / info.rate.fps:.1f}s · "
-          f"record {frames_to_tc(round(timeline.global_start_time.value), info.rate)}"
+    # 10 ---------------------------------------------------------------------
+    refs = project.asset_refs(assets)
+    stem = first.stem if len(args.media) == 1 else f"{first.stem}_project"
+    timeline = assemble.build_multi(cuts, refs, name=f"{stem}_roughcut")
+    seq_rate = assets[0].rate
+    emitted = len(list(timeline.tracks[0].find_clips()))
+    extra = ("" if emitted == len(cuts)
+             else f" · {emitted - len(cuts)} split across source joins")
+    total = sum(c.frames / ctxs[c.asset_id].rate.fps for c in cuts)
+    print(f" 10 assemble     {emitted} clips · {total:.1f}s · "
+          f"record {frames_to_tc(round(timeline.global_start_time.value), seq_rate)}"
           f"{extra}")
-    if aaf is not None:
+    for w in assemble.warnings_for(refs):
+        print(f"                 {Y}{w}{X}")
+    if any(a.is_aaf for a in assets):
         print(f"                 {D}source mob IDs inherited — this will "
               f"relink in the original project{X}")
 
-    # 11 ------------------------------------------------------------------
-    artifacts = emit.emit(timeline, out, args.media.stem)
+    # 11 ---------------------------------------------------------------------
+    artifacts = emit.emit(timeline, out, stem)
     for a in artifacts:
         if a.ok:
             print(f" 11 emit         {G}{a.fmt:7}{X} {a.bytes:>9,} B  "
@@ -232,8 +295,8 @@ def main() -> int:
         else:
             print(f" 11 emit         {R}{a.fmt:7} {a.error}{X}")
 
-    # 12 ------------------------------------------------------------------
-    checks = validate.validate(timeline, artifacts, info.rate)
+    # 12 ---------------------------------------------------------------------
+    checks = validate.validate(timeline, artifacts, seq_rate)
     failed = [c for c in checks if not c.ok]
     for c in checks:
         mark = f"{G}pass{X}" if c.ok else f"{R}FAIL{X}"
@@ -245,27 +308,51 @@ def main() -> int:
             if c.error:
                 print(f"                   {R}{c.error}{X}")
 
-    # transcript ----------------------------------------------------------
-    page = transcript_page.render(
-        beats, cuts, ed, info.rate, info.start_tc_frames,
-        info.duration_frames, names, args.media.name, lang,
-        out / f"{args.media.stem}.transcript.html")
+    # transcript -------------------------------------------------------------
+    asset_names = {a.asset_id: a.path.name for a in assets}
+    transcript_page.render(
+        beats, cuts, ed, seq_rate, assets[0].start_tc_frames,
+        assets[0].duration_frames, names, title, lang,
+        out / f"{stem}.transcript.html",
+        contexts=ctxs, asset_names=asset_names)
 
-    (out / f"{args.media.stem}.mishne.json").write_text(json.dumps({
-        "media": args.media.name,
-        "rate": {"num": info.rate.num, "den": info.rate.den,
-                 "dropFrame": info.rate.drop_frame},
+    (out / f"{stem}.mishne.json").write_text(json.dumps({
+        "assets": [{
+            "assetId": a.asset_id, "media": a.path.name,
+            "rate": {"num": a.rate.num, "den": a.rate.den,
+                     "dropFrame": a.rate.drop_frame},
+            "startTc": frames_to_tc(a.start_tc_frames, a.rate),
+            "durationFrames": a.duration_frames, "language": a.language,
+            "isAaf": a.is_aaf, "beats": len(a.beats),
+        } for a in assets],
         "language": lang,
         "brief": ed.to_dict(),
         "scorer": scorer.name,
-        "speakers": attribution.to_dict(),
-        "cuts": [{"beatId": c.beat_id, "order": c.order_idx,
-                  "tcIn": frames_to_tc(c.src_in, info.rate),
-                  "tcOut": frames_to_tc(c.src_out, info.rate),
-                  "frames": c.frames, "speaker": names.get(c.speaker, c.speaker),
-                  "score": round(c.score, 1), "rationale": c.rationale,
-                  "warnings": c.warnings, "text": c.text} for c in cuts],
+        # The reproducibility contract. A job that fell over to a second vendor
+        # mid-way was produced by both, and this has to say so.
+        "modelVersions": router.ledger.models_used(),
+        "llmCalls": [c.to_dict() for c in router.ledger.calls],
+        "llmCostUsd": round(router.ledger.cost_usd, 6),
+        "speakers": [s.to_dict() for s in speakers],
+        "cuts": [{
+            "beatId": c.beat_id, "parentId": c.parent_id,
+            "assetId": c.asset_id, "order": c.order_idx,
+            "tcIn": frames_to_tc(c.src_in, ctxs[c.asset_id].rate),
+            "tcOut": frames_to_tc(c.src_out, ctxs[c.asset_id].rate),
+            "frames": c.frames, "speaker": names.get(c.speaker, c.speaker),
+            "score": round(c.score, 1), "rationale": c.rationale,
+            "warnings": c.warnings, "text": c.text} for c in cuts],
     }, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    if router.ledger.calls:
+        print()
+        for line in router.ledger.summary():
+            print(f"    llm          {D}{line}{X}")
+        fell = [c for c in router.ledger.calls if c.fell_back_from]
+        for c in fell:
+            print(f"                 {Y}{c.task}: fell back from "
+                  f"{c.fell_back_from} to {c.provider}/{c.model}{X}")
+        print(f"    llm          {B}${router.ledger.cost_usd:.4f}{X} total")
 
     print(f"\n{'=' * 68}")
     if failed:

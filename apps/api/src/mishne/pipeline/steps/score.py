@@ -102,10 +102,14 @@ class HeuristicScorer:
         return out
 
 
-class ClaudeScorer:
-    """Stage 6 as it ships. Pinned model and prompt version so runs compare."""
+class ModelScorer:
+    """Scoring as it ships. Vendor-agnostic; the router chooses the model.
 
-    name = "claude"
+    The prompt is pinned and versioned so two runs are comparable. Which model
+    ran it is recorded per job rather than fixed here — see llm/router.py.
+    """
+
+    name = "model"
 
     SYSTEM = (
         "You score transcript beats from raw interview or presenter footage for "
@@ -129,10 +133,8 @@ class ClaudeScorer:
         "language as the transcript so the editor can read it."
     )
 
-    def __init__(self, model: str = "claude-sonnet-4-5", chunk: int = 40):
-        import anthropic
-        self.client = anthropic.Anthropic()
-        self.model = model
+    def __init__(self, router, chunk: int = 40):
+        self.router = router
         self.chunk = chunk
 
     def score(self, beats: list[Beat], brief) -> dict[str, float]:
@@ -146,18 +148,13 @@ class ClaudeScorer:
             payload = [{"id": b.id, "speaker": b.speaker,
                         "seconds": round(b.duration_ms / 1000, 1),
                         "text": b.text, "flags": b.flags} for b in window]
-            msg = self.client.messages.create(
-                model=self.model, max_tokens=4096, system=self.SYSTEM,
-                messages=[{"role": "user", "content": (
-                    f"Brief:\n{brief_json}\n\nBeats:\n"
-                    f"{json.dumps(payload, ensure_ascii=False, indent=1)}\n\n"
-                    'Return ONLY a JSON array: [{"id":"...","score":0-100,'
-                    '"depends_on":[],"rationale":"one line"}]'
-                )}],
-            )
-            text = re.sub(r"^```(?:json)?|```$", "",
-                          msg.content[0].text.strip(), flags=re.M).strip()
-            for row in json.loads(text):
+            completion = self.router.complete(
+                "score", system=self.SYSTEM, max_tokens=4096,
+                user=(f"Brief:\n{brief_json}\n\nBeats:\n"
+                      f"{json.dumps(payload, ensure_ascii=False, indent=1)}\n\n"
+                      'Return ONLY a JSON array: [{"id":"...","score":0-100,'
+                      '"depends_on":[],"rationale":"one line"}]'))
+            for row in completion.json():
                 out[row["id"]] = float(row["score"])
                 for b in window:
                     if b.id == row["id"]:
@@ -169,19 +166,21 @@ class ClaudeScorer:
         return out
 
 
-def get_scorer(name: str = "auto") -> Scorer:
-    """`auto` uses Claude when a key is present, the control otherwise."""
+def get_scorer(name: str = "auto", router=None) -> Scorer:
+    """`auto` uses a model when any vendor key is present, the control else."""
     if name == "auto":
-        name = "claude" if os.environ.get("ANTHROPIC_API_KEY") else "heuristic"
+        name = ("model" if router is not None
+                and router.available_for("score") else "heuristic")
     if name == "heuristic":
         return HeuristicScorer()
-    if name == "claude":
-        if not os.environ.get("ANTHROPIC_API_KEY"):
+    if name in ("model", "claude", "llm"):
+        if router is None or not router.available_for("score"):
             raise RuntimeError(
-                "ANTHROPIC_API_KEY is not set. Use --scorer heuristic to run "
-                "offline, but treat its cuts as a plumbing test, not a product."
-            )
-        return ClaudeScorer()
+                "No API key for scoring. Set ANTHROPIC_API_KEY, OPENAI_API_KEY,"
+                " GEMINI_API_KEY or XAI_API_KEY — or use --scorer heuristic to "
+                "run offline, and treat its cuts as a plumbing test, not a "
+                "product.")
+        return ModelScorer(router)
     raise ValueError(f"unknown scorer: {name}")
 
 

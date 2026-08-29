@@ -198,7 +198,7 @@ sequenceDiagram
     participant W as Workers
     participant X as ASR / LLM
 
-    U->>A: POST /jobs {asset_id, notes, target_duration}
+    U->>A: POST /jobs {asset_ids[], notes, target_duration}
     A->>O: StartExecution
     A-->>U: job_id (202)
 

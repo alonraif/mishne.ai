@@ -12,6 +12,7 @@ import {
   Wand2,
 } from "lucide-react";
 import {
+  assetOf,
   formatDuration,
   formatTimecode,
   framesToSeconds,
@@ -92,13 +93,16 @@ export function CutEditor({
   );
 
   const selected = new Set(order);
-  const { rate, dropFrame } = transcript;
+  const multiAsset = transcript.assets.length > 1;
 
-  const cutFrames = order.reduce((a, id) => {
+  // Every duration is read against the beat's own reel. Summing raw frame
+  // counts across a 25 and a 23.976 reel is how a "ten minute" cut turns out
+  // to be ten minutes and eleven seconds.
+  const cutSeconds = order.reduce((a, id) => {
     const b = byId.get(id)!;
-    return a + (b.endFrames - b.startFrames);
+    return a + framesToSeconds(b.endFrames - b.startFrames, assetOf(transcript, b).rate);
   }, 0);
-  const cutS = framesToSeconds(cutFrames, rate);
+  const cutS = cutSeconds;
   const delta = cutS - targetDurationS;
   const onTarget = Math.abs(delta) <= 30;
 
@@ -188,11 +192,16 @@ export function CutEditor({
               >
                 <div className="w-[86px] shrink-0 pt-0.5">
                   <div className="tc text-[11px] text-timecode">
-                    {formatTimecode(b.startFrames, rate, dropFrame)}
+                    {formatTimecode(b.startFrames, assetOf(transcript, b).rate, assetOf(transcript, b).dropFrame)}
                   </div>
                   <div className="text-[11px] text-muted-foreground/70">
-                    {framesToSeconds(b.endFrames - b.startFrames, rate).toFixed(1)}s
+                    {framesToSeconds(b.endFrames - b.startFrames, assetOf(transcript, b).rate).toFixed(1)}s
                   </div>
+                  {multiAsset && (
+                    <div dir="ltr" className="truncate text-[10px] text-muted-foreground/60" title={assetOf(transcript, b).filename}>
+                      {assetOf(transcript, b).filename}
+                    </div>
+                  )}
                 </div>
                 <span
                   className={cn(
@@ -322,8 +331,13 @@ export function CutEditor({
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="tc text-[10px] text-timecode">
-                        {formatTimecode(b.startFrames, rate, dropFrame)} ·{" "}
-                        {framesToSeconds(b.endFrames - b.startFrames, rate).toFixed(1)}s
+                        {formatTimecode(b.startFrames, assetOf(transcript, b).rate, assetOf(transcript, b).dropFrame)} ·{" "}
+                        {framesToSeconds(b.endFrames - b.startFrames, assetOf(transcript, b).rate).toFixed(1)}s
+                        {multiAsset && (
+                          <span dir="ltr" className="ms-1 text-muted-foreground/60">
+                            {assetOf(transcript, b).filename}
+                          </span>
+                        )}
                       </div>
                       <p dir="auto" className="mt-0.5 line-clamp-2 text-xs leading-snug">{b.text}</p>
                     </div>

@@ -194,7 +194,7 @@ export const mockJobs: Job[] = [
   {
     id: "job_c41a",
     projectId: "prj_harbour",
-    assetId: "ast_9d41",
+    assetIds: ["ast_9d41"],
     mode: "ai",
     status: "analyzing",
     notesRaw:
@@ -223,7 +223,7 @@ export const mockJobs: Job[] = [
   {
     id: "job_8f23",
     projectId: "prj_harbour",
-    assetId: "ast_2b77",
+    assetIds: ["ast_2b77"],
     mode: "ai",
     status: "complete",
     notesRaw:
@@ -255,7 +255,7 @@ export const mockJobs: Job[] = [
   {
     id: "job_1d90",
     projectId: "prj_summit",
-    assetId: "ast_5e10",
+    assetIds: ["ast_5e10"],
     mode: "ai",
     status: "failed",
     notesRaw: "Twelve minutes. Keynote highlights, energy transition focus.",
@@ -289,7 +289,9 @@ export const mockJobs: Job[] = [
 mockJobs.push({
   id: "job_2e57",
   projectId: "prj_harbour",
-  assetId: "ast_9d41",
+  // Two uploads in one cut — the interview and the pickup shoot. Any screen
+  // that renders a job must survive this, not just the single-asset case.
+  assetIds: ["ast_9d41", "ast_2b77"],
   mode: "hybrid",
   status: "awaiting_edit",
   notesRaw:

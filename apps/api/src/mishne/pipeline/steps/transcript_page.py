@@ -36,6 +36,8 @@ from .refine import Cut
 from .structure import Beat
 
 CSS = """
+.trimmed{margin-top:6px;padding:6px 8px;border-radius:4px;background:rgba(120,180,120,.10);font-size:12px;line-height:1.5}
+.reel{display:block;font-size:10px;opacity:.55;unicode-bidi:isolate;direction:ltr;margin-top:2px}
 :root{--bg:#16161a;--fg:#f2f2f4;--muted:#9a9aa4;--line:#2b2b33;
 --card:#1d1d22;--used:#4ade80;--used-bg:#132a1d;--accent:#8b8bf5;
 --flag:#e0a458;--tc:#a5a5e8}
@@ -109,15 +111,38 @@ btns.forEach(b=>b.onclick=()=>{
 def render(beats: list[Beat], cuts: list[Cut], brief, rate: Rate,
            source_start_frames: int, source_duration_frames: int,
            speakers: dict[str, str], media_name: str, language: str,
-           out_path: Path) -> Path:
+           out_path: Path, contexts: dict | None = None,
+           asset_names: dict[str, str] | None = None) -> Path:
+    """Render the page an editor is actually going to read.
+
+    `contexts` maps asset id to a `refine.AssetContext`. When a job draws on
+    several uploads every timecode on this page has to be read against its own
+    reel — a beat at 00:04:12 of the second camera is not at 00:04:12 of the
+    first — so the source column names the file as well. Omitted for a
+    single-asset job, where the flat `rate`/`source_*` arguments say it all.
+    """
     rtl = is_rtl_language(language)
     body_dir = "rtl" if rtl else "ltr"
-    used_ids = {c.beat_id for c in cuts}
-    by_beat = {c.beat_id: c for c in cuts}
+    # Keyed on the PARENT beat. Stage 6 offers several candidate spans per
+    # beat and only one can be selected, so listing candidates would show the
+    # editor the same material six times over. The page lists what was
+    # considered — the beats — and says which span of each one survived.
+    used_ids = {c.parent_id or c.beat_id for c in cuts}
+    by_beat = {(c.parent_id or c.beat_id): c for c in cuts}
+    contexts = contexts or {}
+    asset_names = asset_names or {}
+    multi = len(contexts) > 1
 
-    cut_frames = sum(c.frames for c in cuts)
-    src_s = source_duration_frames / rate.fps
-    cut_s = cut_frames / rate.fps
+    def ctx_for(asset_id: str):
+        """That asset's (rate, start timecode), or the job's if there is one."""
+        c = contexts.get(asset_id)
+        if c is None:
+            return rate, source_start_frames
+        return c.rate, c.start_tc_frames
+
+    cut_s = sum(c.frames / ctx_for(c.asset_id)[0].fps for c in cuts)
+    src_s = (sum(c.duration_frames / c.rate.fps for c in contexts.values())
+             if contexts else source_duration_frames / rate.fps)
 
     def esc(t: str) -> str:
         return html.escape(t or "")
@@ -128,14 +153,27 @@ def render(beats: list[Beat], cuts: list[Cut], brief, rate: Rate,
         return f"{h}h {m:02d}m" if h else f"{m}m {s:02d}s"
 
     rows = []
-    ms_per_frame = 1000.0 / rate.fps
     for b in beats:
         used = b.id in used_ids
         cut = by_beat.get(b.id)
-        frame = source_start_frames + int(round(b.start_ms / ms_per_frame))
+        b_rate, b_start = ctx_for(b.asset_id)
+        frame = b_start + int(round(b.start_ms / (1000.0 / b_rate.fps)))
+        reel = (f'<span class="reel" dir="auto">'
+                f'{esc(asset_names.get(b.asset_id, b.asset_id))}</span>'
+                if multi else "")
         flags = "".join(
             f'<span class="flag">{esc(f.replace("_", " "))}</span>'
             for f in b.flags)
+        trimmed = ""
+        # Only when a span was actually carved. Comparing text instead would
+        # also fire on cuts that stage 9 merged, where the beat was used whole
+        # and the row would claim a trim that never happened.
+        if used and cut and cut.parent_id and cut.parent_id != cut.beat_id:
+            # What actually made the cut, when it is not the whole beat. This
+            # is the line an editor checks when they want to know why the AAF
+            # is shorter than the transcript row above it.
+            trimmed = (f'<div class="trimmed" dir="auto">'
+                       f'<b>{esc("used:")}</b> {esc(cut.text)}</div>')
         why = ""
         if used and cut and cut.rationale:
             why = f'<div class="why" dir="auto">{esc(cut.rationale)}</div>'
@@ -147,13 +185,13 @@ def render(beats: list[Beat], cuts: list[Cut], brief, rate: Rate,
         rows.append(
             f'<div class="beat{" used" if used else ""}">'
             f'<div class="gut"><span class="tc">'
-            f'{frames_to_tc(frame, rate)}</span></div>'
+            f'{frames_to_tc(frame, b_rate)}</span>{reel}</div>'
             f'<div class="mark"></div>'
             f'<div class="body">'
             f'<div class="meta"><span class="spk" dir="auto">'
             f'{esc(speakers.get(b.speaker, b.speaker))}</span>'
             f'<span class="tc">{b.duration_ms / 1000:.1f}s</span>{flags}</div>'
-            f'<p class="txt" dir="auto">{esc(b.text)}</p>{why}</div></div>'
+            f'<p class="txt" dir="auto">{esc(b.text)}</p>{trimmed}{why}</div></div>'
         )
 
     clar = "".join(f"<li>{esc(c)}</li>" for c in brief.clarifications)
@@ -164,7 +202,7 @@ def render(beats: list[Beat], cuts: list[Cut], brief, rate: Rate,
             ("Pacing", brief.pacing),
             ("Handles", f"{brief.handle_frames} frames"),
             ("Language", language),
-        ))
+        ) + ((("Sources", f"{len(contexts)} uploads"),) if multi else ()))
 
     out_path.write_text(f"""<!doctype html>
 <html lang="{esc(language)}" dir="ltr">
