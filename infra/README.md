@@ -12,4 +12,6 @@ need, per [03 — Platform & Data](../docs/architecture/03-platform-and-data.md)
 - ECS Fargate for the API and light workers; ECS on EC2 spot with EBS for the
   heavy tier (ffmpeg, AAF demux — Fargate's 200 GB ephemeral cap is not enough)
 - Step Functions state machine generated from `pipeline.steps.STEPS`
-- Separate AWS accounts per environment: dev, staging, prod
+- Separate AWS accounts per environment: staging and production only.
+  Development runs against staging; schema iteration runs against the local
+  Postgres above. See ADR-0012.

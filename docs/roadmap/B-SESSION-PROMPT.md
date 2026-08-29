@@ -21,9 +21,11 @@ We are working on mishne.ai. This session has one job: workstream B1 —
 replacing the in-memory fixtures with Postgres, with row-level security and
 org_id on every table from the first migration.
 
-Read these two files first, in this order, and nothing else until you have:
+Read these three files first, in this order, and nothing else until you have:
   docs/HANDOVER.md                — what exists, how to run it, the traps
   docs/roadmap/B1-persistence.md  — this workstream's brief
+  docs/adr/0012-two-environments-and-expand-contract-migrations.md
+                                  — the constraint that shapes migration #1
 
 Do not re-derive the architecture or read the whole codebase. The handover is
 accurate and current; trust it. The schema is already designed in
@@ -59,6 +61,8 @@ by decision, not forgotten. Nothing in B1 depends on it.
 1. One Alembic migration containing the whole schema from
    docs/architecture/03-platform-and-data.md. Do not dribble it out table by
    table — it is a greenfield database and the design is settled.
+   Establish the expand/contract conventions here, and write them down where
+   the next person writing a migration will see them.
 2. RLS policies on every table, keyed on org_id, enabled in the same migration
    that creates the table. Key them on a session variable the request sets;
    B4 will wire real identity into it later.
@@ -82,6 +86,13 @@ by decision, not forgotten. Nothing in B1 depends on it.
 - beats.asset_id is denormalised on purpose. A beat's timing is local to its
   own file and meaningless without knowing which file.
 - The credit ledger is append-only. No row is ever updated. (ADR-0006)
+- Two deployed environments, staging and production. Development happens
+  against staging; schema iteration happens locally against docker-compose.
+  Promotion is the same immutable artifact deployed to a second stack.
+- IN-FLIGHT JOBS SURVIVE A DEPLOY. Old and new code run side by side, so every
+  migration is backward-compatible — expand, dual-write, backfill, read-new,
+  contract, across separate releases. This constrains migration #1. Read
+  ADR-0012 before writing it. (ADR-0012)
 - model_versions on jobs is the reproducibility contract, shaped
   {task: ["provider/model", ...]}, and records failover. (ADR-0011)
 
@@ -96,6 +107,13 @@ by decision, not forgotten. Nothing in B1 depends on it.
 
 ## Traps
 
+- Every migration must be safe with the PREVIOUS release still running. No new
+  column is NOT NULL without a default, because old code does not set it. No
+  renames — add, dual-write, backfill, drop, across releases. Indexes created
+  CONCURRENTLY, which in Alembic needs an autocommit block because it cannot
+  run inside the migration's transaction.
+- alembic downgrade must genuinely work for every migration. Without it a
+  seamless deploy has no rollback, which is most of its value. Test it.
 - Enable RLS in the CREATING migration. Adding it later means auditing every
   query already written, and the audit is the expensive part.
 - A NULL org_id bypasses most naive RLS policies. Make the column NOT NULL.
@@ -114,7 +132,9 @@ by decision, not forgotten. Nothing in B1 depends on it.
 ## Definition of done
 
 - `alembic upgrade head` on an empty database produces the full schema with
-  RLS enabled everywhere.
+  RLS enabled everywhere, and `alembic downgrade base` cleanly reverses it.
+- The expand/contract conventions are written down where the next person
+  writing a migration will actually see them.
 - Every router serves from Postgres with use_mocks=False, and still serves
   fixtures with use_mocks=True.
 - A test proves a query issued as org A cannot see org B's rows AT THE

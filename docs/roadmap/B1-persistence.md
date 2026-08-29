@@ -28,7 +28,9 @@ Replace the in-memory fixtures with Postgres, with row-level security and
 ## What to build
 
 1. Migrations (Alembic). One initial migration containing the whole schema from
-   the architecture doc; do not dribble it out table by table.
+   the architecture doc; do not dribble it out table by table. **Establish the
+   expand/contract conventions in this first migration** — see ADR-0012 and the
+   traps below. They are a rule now and an audit later.
 2. SQLAlchemy models and a session dependency.
 3. Replace `mock.py` behind each router, keeping `use_mocks` working so the web
    app can still run against fixtures.
@@ -55,6 +57,11 @@ Replace the in-memory fixtures with Postgres, with row-level security and
   every model per task including failover (ADR-0011); the shape is
   `{task: ["provider/model", ...]}`.
 - The credit ledger is **append-only**, never updated in place (ADR-0006).
+- **Two deployed environments, staging and production, and in-flight jobs
+  survive a deploy** (ADR-0012). Old and new code run side by side, so every
+  migration is backward-compatible: expand, dual-write, backfill, read-new,
+  contract, across separate releases. This is a constraint on migration #1, not
+  a process to bolt on when there is traffic.
 
 ## Decisions still open
 
@@ -66,6 +73,13 @@ Replace the in-memory fixtures with Postgres, with row-level security and
 
 ## Traps
 
+- **Every migration must be safe with the previous release still running.** A
+  new column is never `NOT NULL` without a default, because the old code does
+  not set it. Renames are forbidden — add, dual-write, backfill, drop, across
+  releases. Indexes are created `CONCURRENTLY`, which in Alembic needs an
+  autocommit block because it cannot run inside the migration's transaction.
+- **`alembic downgrade` must genuinely work for every migration.** Without it a
+  seamless deploy has no rollback, which is most of its value. Test it.
 - **Enable RLS in the creating migration.** Adding it later means auditing every
   query already written against the table, and the audit is the expensive part.
 - A `NULL` `org_id` bypasses most naive RLS policies. Make the column `NOT NULL`.
@@ -82,7 +96,10 @@ Replace the in-memory fixtures with Postgres, with row-level security and
 ## Definition of done
 
 - `alembic upgrade head` on an empty database produces the full schema with RLS
-  enabled everywhere.
+  enabled everywhere, and `alembic downgrade base` cleanly reverses it.
+- The expand/contract conventions are written down where the next person writing
+  a migration will see them — a comment at the top of the Alembic env, or a
+  short `apps/api/migrations/README.md`.
 - Every endpoint in `routers/` serves from Postgres with `use_mocks=False`, and
   still serves fixtures with `use_mocks=True`.
 - A test proves that a query issued as org A cannot see org B's rows, at the

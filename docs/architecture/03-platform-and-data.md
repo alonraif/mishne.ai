@@ -252,9 +252,36 @@ risk.
 
 ## Environments
 
-Three: `dev`, `staging`, `prod`. Separate AWS accounts, separate KMS keys, no shared
-data. Infrastructure as code from the first commit — Terraform or CDK, either is
-fine; consistency matters more than the choice.
+**Two deployed: `staging` and `production`.** Separate AWS accounts, separate KMS
+keys, separate databases and buckets, no shared data. Infrastructure as code from
+the first commit — Terraform or CDK, either is fine; consistency matters more than
+the choice.
 
-Staging holds synthetic media only. Never copy customer footage into a lower
-environment, regardless of how much easier it makes reproducing a bug.
+Day-to-day development happens against staging. Schema iteration happens locally
+against `infra/docker-compose.yml`, because a database you can destroy is a better
+development database than a shared remote one.
+
+**Staging holds synthetic media only.** Never copy customer footage into a lower
+environment, regardless of how much easier it makes reproducing a bug — and this
+matters more, not less, now that development happens there.
+
+### Promotion
+
+One immutable artifact is deployed to staging, verified, and then that identical
+build is deployed to production. If production runs a different build from the one
+staging verified, staging verified nothing. Migrations run against each environment
+independently.
+
+### Deploys do not interrupt work
+
+A transcription runs for a long time and a job's workflow longer. Old and new code
+run side by side until work started under the previous release finishes, so
+**every migration must be backward-compatible** and schema change follows
+expand/contract across separate releases: expand, dual-write, backfill, read-new,
+contract.
+
+The practical rules — no `NOT NULL` without a default, no renames, indexes created
+`CONCURRENTLY`, a `downgrade` that genuinely works, RLS policies valid for both
+code versions at once, and versioned step payloads — are in
+[ADR-0012](../adr/0012-two-environments-and-expand-contract-migrations.md). They
+are cheap to adopt at migration #1 and expensive to retrofit at migration #40.

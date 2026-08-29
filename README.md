@@ -53,6 +53,7 @@ expensive part of the problem cheap, fast, and — critically — explainable.
 | [0009](docs/adr/0009-diarization-per-source-region.md) | Diarize per source region, on ONNX, and admit uncertainty |
 | [0010](docs/adr/0010-spans-not-beats.md) | Selection chooses spans; every boundary is gated on silence |
 | [0011](docs/adr/0011-provider-agnostic-llm-routing.md) | Any vendor's model, chosen per task by policy |
+| [0012](docs/adr/0012-two-environments-and-expand-contract-migrations.md) | Two environments; every migration is backward-compatible |
 
 ## Three ways to cut
 
