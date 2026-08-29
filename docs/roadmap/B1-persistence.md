@@ -20,6 +20,10 @@ Replace the in-memory fixtures with Postgres, with row-level security and
   shaped and returning mocks.
 - `apps/api/src/mishne/schemas.py` — Pydantic request/response models.
 - `apps/api/src/mishne/config.py` — `database_url` and a `use_mocks` flag.
+- **`infra/docker-compose.yml`** — local Postgres 16 with pgvector, healthcheck,
+  credentials `mishne/mishne`. Already matches the default `database_url`.
+- **The dependencies are already declared** in `apps/api/pyproject.toml`:
+  `sqlalchemy>=2.0`, `alembic>=1.14`, `psycopg[binary]>=3.2`. Nothing to add.
 
 ## What to build
 
