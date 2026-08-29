@@ -60,18 +60,30 @@ rm -rf .venv
 "$PY" -m venv .venv
 ./.venv/bin/pip install --quiet --upgrade pip
 
-echo "==> installing dependencies (a few minutes; faster-whisper is the big one)"
+echo "==> installing the API and its dependencies"
+# Editable, so `python -m mishne.db.seed` and `alembic` can import the package
+# without anybody having to remember PYTHONPATH. This is what pulls in FastAPI,
+# SQLAlchemy, Alembic and psycopg — they are declared in pyproject.toml, and
+# before B1 nothing installed them.
+./.venv/bin/pip install --quiet -e ".[dev]"
+
+echo "==> installing pipeline dependencies (a few minutes; faster-whisper is the big one)"
+# Deliberately not in pyproject.toml: these are large, and the API image does
+# not need them.
 ./.venv/bin/pip install --quiet \
   faster-whisper numpy \
   opentimelineio otio-aaf-adapter otio-cmx3600-adapter otio-fcpx-xml-adapter \
-  ortools anthropic pytest
+  ortools anthropic
 
 echo "==> verifying"
 ./.venv/bin/python - <<'PY'
 import importlib, sys
 missing = []
 for m in ("faster_whisper", "numpy", "opentimelineio", "aaf2",
-          "ortools.sat.python.cp_model", "anthropic"):
+          "ortools.sat.python.cp_model", "anthropic",
+          # The API and the database tooling. Without these, pytest cannot even
+          # collect the persistence tests.
+          "fastapi", "sqlalchemy", "alembic", "psycopg", "mishne.db.models"):
     try:
         importlib.import_module(m)
     except Exception as e:
@@ -98,10 +110,21 @@ PY
 
 cat <<'MSG'
 
-==> ready. Run it with:
+==> ready.
+
+Run the pipeline:
 
   .venv/bin/python run.py ../../samples/SyncDaniel.aaf --language he --model-path ../../models/faster-whisper-large-v3 --target 40s --notes "your notes"
 
 Transcription is the slow part — roughly real time or worse on CPU. The other
 eleven stages take about three seconds.
+
+Bring up the database (no psql needed — bootstrap runs the SQL for you):
+
+  docker compose -f ../../infra/docker-compose.yml up -d
+  .venv/bin/alembic upgrade head
+  .venv/bin/python -m mishne.db.bootstrap
+  .venv/bin/python -m mishne.db.seed --reset
+
+The persistence tests skip themselves when Postgres is not running.
 MSG

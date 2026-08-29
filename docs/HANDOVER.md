@@ -1,6 +1,6 @@
 # mishne.ai — state of the project
 
-*Last updated 2026-08-29.*
+*Last updated 2026-08-29 (B1: persistence).*
 
 **Read this first if you are picking the project up cold**, in a new session, on
 a new machine, or in a new account. It says what exists, what it does, what it
@@ -54,8 +54,11 @@ Verified on two pieces of real material:
 
 ### What does *not* exist
 
-- **No database.** The FastAPI layer in `apps/api/src/mishne/routers/` serves
-  fixtures from `mock.py`. `use_mocks: True` in `config.py`.
+- ~~No database.~~ **Postgres, as of B1.** Twenty tables, `org_id` on every one
+  of them, row-level security enabled and forced in the migration that creates
+  each table. `use_mocks: True` still serves fixtures and is refused outside
+  `environment=local`. See `apps/api/migrations/README.md` before writing a
+  second migration — the expand/contract rules are not optional.
 - **No object storage, no upload path.** The CLI reads local files.
 - **No orchestration.** `run.py` calls the stages in sequence, in process.
 - **No auth, no tenancy.** `org_id` is in the schema design, not in any code.
@@ -80,7 +83,10 @@ apps/api/                 the pipeline and the (mock-backed) API
     llm/                  four vendors behind one interface + routing
     interchange/          MobIDs, FCPXML patch, round-trip validation
     timecode.py           rational rates, drop-frame, the proven conversion pair
-    routers/, mock.py     FastAPI surface, currently fixtures
+    routers/, mock.py     FastAPI surface; fixtures behind use_mocks
+    db/                   models, session, query layer, seed script
+  migrations/             Alembic — 0001 is the whole schema, and README.md
+                          is the expand/contract contract
   tests/                  90 tests
 apps/web/                 Next.js 15 mockups, Tailwind 4, shadcn/ui
 packages/shared/          types, timecode, billing, RTL direction — TS
@@ -133,6 +139,7 @@ why the current shape is what it is.
 | [0009](adr/0009-diarization-per-source-region.md) | Diarize per source region; admit uncertainty |
 | [0010](adr/0010-spans-not-beats.md) | Selection chooses spans; boundaries gated on silence |
 | [0011](adr/0011-provider-agnostic-llm-routing.md) | Any vendor, chosen per task by policy |
+| [0012](adr/0012-two-environments-and-expand-contract-migrations.md) | Two environments; every migration is backward-compatible |
 
 ## Things that will bite you
 
@@ -164,6 +171,11 @@ Every one of these cost real time to find.
 - **large-v3 peaks around 4.6 GB.** It will be killed in a 4 GB container.
 - **A dataclass field with a default before a required one is a TypeError at
   import.** Caught twice in this codebase.
+- **A superuser bypasses row-level security, silently.** So does a table owner
+  unless the table is `FORCE`d. Point the API at `DATABASE_URL` instead of
+  `APP_DATABASE_URL` and every policy stays in the schema and stops doing
+  anything. `tests/test_rls_isolation.py` asserts the connecting role can do
+  neither, because otherwise the whole file passes and proves nothing.
 
 ## The three open questions, and they are one question
 

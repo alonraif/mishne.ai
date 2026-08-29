@@ -36,5 +36,11 @@ packages = ["src/mishne"]
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint.per-file-ignores]
+# Fixture prose. A transcript line rewrapped to 100 columns is unreadable, and
+# it diffs badly against apps/web/src/lib/mock-transcript.ts, which these lines
+# have to stay in step with.
+"src/mishne/mock.py" = ["E501"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]

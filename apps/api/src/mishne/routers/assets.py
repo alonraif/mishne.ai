@@ -5,10 +5,10 @@ talks to S3 directly — proxying a 200 GB ProRes master through the application
 tier is both an enormous bandwidth bill and a guaranteed source of timeouts.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from .. import mock
 from ..schemas import Asset, CompleteUploadRequest, CreateAssetRequest, PresignedUpload
+from ..store import Store, get_store
 
 router = APIRouter(prefix="/v1", tags=["assets"])
 
@@ -25,8 +25,8 @@ async def complete_upload(asset_id: str, body: CompleteUploadRequest) -> Asset:
 
 
 @router.get("/assets/{asset_id}", response_model=Asset)
-async def get_asset(asset_id: str) -> Asset:
-    for a in mock.ASSETS:
-        if a.id == asset_id:
-            return a
-    raise HTTPException(404, "asset not found")
+async def get_asset(asset_id: str, store: Store = Depends(get_store)) -> Asset:
+    asset = store.get_asset(asset_id)
+    if asset is None:
+        raise HTTPException(404, "asset not found")
+    return asset

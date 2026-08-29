@@ -1,15 +1,18 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from .. import mock
 from ..billing import CREDIT_PACKS, TIERS
 from ..schemas import LedgerEntry, Org, PurchaseCreditsRequest
+from ..store import Store, get_store
 
 router = APIRouter(prefix="/v1/billing", tags=["billing"])
 
 
 @router.get("/balance", response_model=Org)
-async def get_balance() -> Org:
-    return mock.ORG
+async def get_balance(store: Store = Depends(get_store)) -> Org:
+    org = store.get_org()
+    if org is None:
+        raise HTTPException(404, "organisation not found")
+    return org
 
 
 @router.get("/tiers")
@@ -36,11 +39,11 @@ async def list_packs() -> dict:
 
 
 @router.get("/ledger", response_model=list[LedgerEntry])
-async def get_ledger(project_id: str | None = None) -> list[LedgerEntry]:
+async def get_ledger(
+    project_id: str | None = None, store: Store = Depends(get_store)
+) -> list[LedgerEntry]:
     """Per-project usage falls out of filtering the ledger by project_id."""
-    if project_id:
-        return [e for e in mock.LEDGER if e.project_id == project_id]
-    return mock.LEDGER
+    return store.list_ledger(project_id)
 
 
 @router.post("/purchase", status_code=201)

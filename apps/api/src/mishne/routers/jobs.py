@@ -6,9 +6,8 @@ the estimate server-side and rejects a job whose approved cap does not match —
 never trust a client-supplied price.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from .. import mock
 from ..billing import TIERS, estimate_job
 from ..schemas import (
     Artifact,
@@ -19,23 +18,34 @@ from ..schemas import (
     SubmitCutRequest,
     Transcript,
 )
+from ..store import Store, get_store
 
 router = APIRouter(prefix="/v1", tags=["jobs"])
 
 
 @router.post("/jobs/estimate", response_model=CreditEstimate)
-async def estimate(body: EstimateJobRequest) -> CreditEstimate:
-    """Price a job before submission. Shown to the user for explicit approval."""
-    asset = next((a for a in mock.ASSETS if a.id == body.asset_id), None)
+async def estimate(
+    body: EstimateJobRequest, store: Store = Depends(get_store)
+) -> CreditEstimate:
+    """Price a job before submission. Shown to the user for explicit approval.
+
+    Still single-asset, while `Job.asset_ids` is not: a multi-asset job has to
+    be priced on the sum of its sources, and that is a billing change rather
+    than a persistence one. Tracked, not fixed here.
+    """
+    asset = store.get_asset(body.asset_id)
     if asset is None:
         raise HTTPException(404, "asset not found")
-    tier = TIERS[mock.ORG.tier]
+    org = store.get_org()
+    if org is None:
+        raise HTTPException(404, "organisation not found")
+    tier = TIERS[org.tier]
     if asset.duration_frames * asset.rate.den / asset.rate.num > tier.max_source_hours * 3600:
         raise HTTPException(
             422,
             f"source exceeds the {tier.max_source_hours}-hour limit on the {tier.name} plan",
         )
-    return estimate_job(asset, tier, mock.ORG.credit_balance, body.mode)
+    return estimate_job(asset, tier, org.credit_balance, body.mode)
 
 
 @router.post("/jobs", response_model=Job, status_code=202)
@@ -51,11 +61,11 @@ async def create_job(body: CreateJobRequest) -> Job:
 
 
 @router.get("/jobs/{job_id}", response_model=Job)
-async def get_job(job_id: str) -> Job:
-    for j in mock.JOBS:
-        if j.id == job_id:
-            return j
-    raise HTTPException(404, "job not found")
+async def get_job(job_id: str, store: Store = Depends(get_store)) -> Job:
+    job = store.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    return job
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=Job)
@@ -65,13 +75,16 @@ async def cancel_job(job_id: str) -> Job:
 
 
 @router.get("/jobs/{job_id}/artifacts", response_model=list[Artifact])
-async def get_artifacts(job_id: str) -> list[Artifact]:
-    return [a for a in mock.ARTIFACTS if a.job_id == job_id]
+async def get_artifacts(job_id: str, store: Store = Depends(get_store)) -> list[Artifact]:
+    return store.list_artifacts(job_id)
 
 
 @router.get("/jobs/{job_id}/transcript", response_model=Transcript)
-async def get_transcript(job_id: str) -> Transcript:
-    raise HTTPException(501, "not implemented")
+async def get_transcript(job_id: str, store: Store = Depends(get_store)) -> Transcript:
+    transcript = store.get_transcript(job_id)
+    if transcript is None:
+        raise HTTPException(404, "transcript not found")
+    return transcript
 
 
 @router.post("/jobs/{job_id}/cut", response_model=Job)

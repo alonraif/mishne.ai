@@ -58,3 +58,6 @@ models/*
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Scratch tarball used to mirror apps/api into a sandbox for schema work.
+.cowork-sync/

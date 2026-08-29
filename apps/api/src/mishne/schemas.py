@@ -39,6 +39,7 @@ JobStatus = Literal[
     "cancelled",
 ]
 BeatFlag = Literal["filler", "false_start", "retake", "crosstalk", "low_confidence", "off_mic"]
+SpeakerSource = Literal["track", "diarization"]
 
 
 class Rate(BaseModel):
@@ -138,7 +139,15 @@ class CreditEstimate(BaseModel):
 class Job(BaseModel):
     id: str
     project_id: str
-    asset_id: str
+    # Every upload this cut draws on, in upload order.
+    #
+    # A project accumulates footage over weeks and one finished piece is cut
+    # from several sessions, so this is a list and the order is meaningful: it
+    # is what "chronological" can honestly mean for material shot on different
+    # days. Beats carry their own asset's local timing and there is no global
+    # timeline, so nothing may show a position without knowing its asset.
+    # ADR-0008, and the `job_assets` join table.
+    asset_ids: list[str]
     mode: JobMode
     status: JobStatus
     notes_raw: str
@@ -164,6 +173,10 @@ class Artifact(BaseModel):
 class Beat(BaseModel):
     id: str
     idx: int
+    # Which upload this beat came from. `start_frames` is local to that asset's
+    # own reel and rate — two beats with the same number are not the same
+    # moment unless they share an asset_id.
+    asset_id: str
     speaker: str
     start_frames: int
     end_frames: int
@@ -175,13 +188,65 @@ class Beat(BaseModel):
     rationale: str | None = None
 
 
-class Transcript(BaseModel):
-    job_id: str
+class Speaker(BaseModel):
+    """A distinct voice in the source.
+
+    Attribution knows which microphone a voice came down and nothing at all
+    about who was in front of it a week earlier, so the same person recorded on
+    two days arrives as two speakers until a human merges them. `asset_ids`
+    holds more than one only after that merge.
+    """
+
+    id: str
+    #: "track" — a dedicated microphone. "diarization" — inferred.
+    source: SpeakerSource
+    #: What the UI shows until a human renames it: "Mic 2", "Speaker 1".
+    default_label: str
+    #: The human-supplied name. Empty until someone types one.
+    label: str = ""
+    confirmed: bool = False
+    track_index: int | None = None
+    word_count: int = 0
+    speech_ms: int = 0
+    asset_ids: list[str] = Field(default_factory=list)
+
+
+class SpeakerAttribution(BaseModel):
+    speakers: list[Speaker] = Field(default_factory=list)
+    crosstalk_words: int = 0
+    unattributed_words: int = 0
+    #: False when crosstalk is high enough that the labels should not be trusted.
+    reliable: bool = True
+    notes: list[str] = Field(default_factory=list)
+
+
+class TranscriptAsset(BaseModel):
+    """One upload as the transcript UI needs it: its own reel, its own rate."""
+
     asset_id: str
-    language: str
+    filename: str
     rate: Rate
     drop_frame: bool
-    speakers: list[str]
+    start_tc_frames: int
+    duration_frames: int
+    #: ISO code. A project can mix languages; direction is decided per asset.
+    language: str
+
+
+class Transcript(BaseModel):
+    """A job's transcript: every asset in the cut, and the beats across them.
+
+    Assembled from per-asset `transcripts` rows — transcription belongs to the
+    upload, not to the job (ADR-0008). Timecodes are formatted against the entry
+    matching each beat's own `asset_id`, never against a single job-wide rate,
+    which is how a two-camera cut ends up displaying timecodes that do not exist.
+    """
+
+    job_id: str
+    assets: list[TranscriptAsset]
+    language: str
+    speakers: list[Speaker] = Field(default_factory=list)
+    attribution: SpeakerAttribution = Field(default_factory=SpeakerAttribution)
     beats: list[Beat]
     source_duration_frames: int
     cut_duration_frames: int
@@ -231,7 +296,8 @@ class EstimateJobRequest(BaseModel):
 
 
 class CreateJobRequest(BaseModel):
-    asset_id: str
+    #: One or more uploads, in the order they should be treated as sequential.
+    asset_ids: list[str]
     mode: JobMode = "ai"
     notes: str = ""
     target_duration_s: int
