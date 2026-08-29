@@ -102,7 +102,7 @@ Media file in, structured beats out.
 
 ```bash
 cd apps/api
-python3 -m venv .venv && .venv/bin/pip install -r requirements-pipeline.txt
+./setup.sh          # native venv + dependency check, run it on the machine you'll use
 
 .venv/bin/python ingest.py rushes.mov --out work/
 .venv/bin/python ingest.py interview.wav --rate 25 --language he
@@ -140,6 +140,15 @@ python spikes/selection-quality/spike.py apps/api/work/rushes.beats.json --diagn
 That is the path from a real interview to a real quality number.
 
 ## Notes that will save an hour
+
+**A virtualenv is not portable.** `.venv/bin/python` symlinks to the interpreter
+that created it, so one built inside the Cowork Linux VM is a dead link on
+macOS — and macOS answers by trying to locate `python` and asking you to install
+Xcode command line tools, which is a confusing way to be told "wrong platform".
+Run `./setup.sh` on whichever machine will actually run the pipeline.
+
+**ffmpeg and ffprobe are required**, not optional. Every stage that touches
+audio shells out to them. `brew install ffmpeg` on macOS.
 
 **Transcription needs a Whisper model.** faster-whisper pulls it from
 HuggingFace on first use. If that host is blocked you get a proxy 403 with no

@@ -51,3 +51,7 @@ spikes/_to_delete/
 # Real source material — never committed
 samples/*
 !samples/README.md
+
+# Model weights — downloaded, never committed
+models/*
+!models/README.md
