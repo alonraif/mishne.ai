@@ -120,6 +120,83 @@ models/                   Whisper + diarization weights (gitignored, 2.9 GB)
 samples/                  real test material (gitignored, 443 MB)
 ```
 
+## Running it
+
+Everything below is run from `apps/api` with its venv. `alembic`, `pytest` and
+`python` are inside it and not on your PATH — either prefix them with
+`.venv/bin/` or `source .venv/bin/activate` first, which is the single most
+common five minutes lost by someone picking this up.
+
+```bash
+cd apps/api
+./setup.sh                                     # venv, ffmpeg and interpreter checks
+docker compose -f ../../infra/docker-compose.yml up -d
+.venv/bin/alembic upgrade head                 # migrations run as the OWNER
+.venv/bin/python -m mishne.db.bootstrap        # creates the app role RLS applies to
+.venv/bin/python -m mishne.db.seed --reset     # the fixtures, as real rows
+.venv/bin/python -m pytest -q                  # 300 tests
+```
+
+The API and the web app:
+
+```bash
+npm run api        # FastAPI on :8000  — USE_MOCKS=false to talk to Postgres
+npm run dev        # Next.js on :3000
+```
+
+### The concierge path
+
+One machine, no cloud, no database. This is what the pipeline is measured
+against and what `test_reference_run.py` compares the orchestrator to:
+
+```bash
+.venv/bin/python run.py ../../samples/SyncDaniel.aaf \
+  --language he --model-path ../../models/faster-whisper-large-v3 --target 40s
+```
+
+### The platform path
+
+Each of these is a separate process on purpose. Media never transits the API,
+and probing means reading the object:
+
+```bash
+# Stage 0 when an object lands. In production this is an S3 event calling
+# mishne.probe.handle_s3_event; locally it is this.
+.venv/bin/python -m mishne.probe --org org_7fa2 ast_1a2b
+
+# One job, end to end, with progress written to job_steps as it goes.
+.venv/bin/python -m mishne.orchestration.worker --org org_7fa2 job_a1b2
+
+# The Step Functions definition, generated from the step registry. A test fails
+# if the checked-in file has drifted from what this produces.
+.venv/bin/python -m mishne.orchestration.statemachine > ../../infra/statemachine.json
+```
+
+### Bucket configuration
+
+Applied per environment, idempotent, and testable against moto or MinIO without
+an AWS account:
+
+```bash
+python ../../infra/s3_lifecycle.py --apply     # expiry, and the 7-day multipart abort
+python ../../infra/s3_cors.py --apply --origin https://app.mishne.ai
+```
+
+### The reference run
+
+The regression target for the whole orchestration workstream. Needs a sample,
+which is not in the repository:
+
+```bash
+MISHNE_SAMPLE_AAF=../../samples/SyncDaniel.aaf \
+MISHNE_SAMPLE_REPLAY=../../samples/SyncDaniel_roughcut/work/SyncDaniel_flat_a0.asr.json \
+  .venv/bin/python -m pytest tests/test_reference_run.py -q
+```
+
+`--replay` reuses a stored ASR response, so it is a ten-second test rather than
+a transcription: no model is loaded and no network is touched, and every stage
+after transcription runs for real.
+
 ## The pipeline, stage by stage
 
 The registry in `pipeline/steps/__init__.py` is the list, and it is now true:

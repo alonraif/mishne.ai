@@ -1,68 +1,83 @@
-# C3 — Observability and cost per job
+# C3 — Observability, and the number nobody has
 
 > Thread starter. Read [../HANDOVER.md](../HANDOVER.md) first; you should not
 > need any other file.
 
 ## Goal
 
-Know what every job cost, where it spent its time, and why a bad one was bad —
-without asking the customer to send you the folder.
+Know what a job costs, where it spends its time, and that it failed before the
+customer tells you.
 
 ## What already exists
 
-- `apps/api/src/mishne/logging.py` — structured logging configuration.
-- **`llm/base.py` already records every model call**: task, provider, model,
-  latency, input and output tokens, cost, whether it parsed, and constraint
-  violations. `Ledger.summary()` prints it and `run.py` writes it into
-  `<name>.mishne.json` as `llmCalls` and `modelVersions`.
-- Stage 12 validation results are already per-artifact and structured.
-- `<name>.mishne.json` per job — the full record of what was decided.
+- `logging.py` — structured logging, and a `scrub` processor that blocks
+  customer content by key. It is the enforcement point; do not route around it.
+- **`llm/base.py` records every model call**: task, provider, model, latency,
+  input and output tokens, cost, whether it parsed, and constraint violations.
+  `Ledger.summary()` prints it and every job writes it into `<name>.mishne.json`
+  as `llmCalls` and `modelVersions`.
+- **B3 put timings in the database.** `job_steps` carries `status`, `attempt`,
+  `started_at`, `finished_at` and a `detail` string per stage, per asset. The
+  runner logs `step.done` with the same numbers. Cost per stage is one query
+  away and nobody has written it.
+- `jobs.cost_cents` and `jobs.model_versions` exist as columns. Nothing
+  populates `cost_cents` — the router's ledger knows the number and the worker
+  does not persist it.
+- Stage 12 validation results are per-artifact and structured.
 - The transcript page — the customer-facing explanation of the cut.
 
 ## What to build
 
-1. Traces spanning the whole job, one span per stage, with the asset and job ids.
-2. Cost per job, assembled from the model ledger (exact), transcription compute,
-   storage and egress. Model spend is the small half; compute is unmeasured.
-3. Quality telemetry that already exists but is not aggregated: proposals refused
-   by the silence gate per model, JSON parse failures per model, solver
-   infeasibility and greedy fallbacks, cuts that hit the minimum-duration floor
-   or were dropped for being too short.
-4. Alerting on the things that mean a bad cut shipped: an artifact failing
-   validation, a job completing with zero selected beats, a job whose median beat
-   is far larger than its target — the run already warns about that last one.
-5. A support view: given a job id, everything about it in one place.
+1. **Traces.** OpenTelemetry, one span per stage, correlated by `job_id`. The
+   step boundaries already exist in the runner; this is instrumentation, not
+   restructuring.
+2. **Cost per job, persisted.** Model spend from the router's ledger into
+   `jobs.cost_cents`, and worker time from the step timings. This is the number
+   C1 needs to set a credit's worth, and it does not exist yet.
+3. **Alerting on what actually hurts**: a job that fails after its retries, a
+   step whose duration leaves its distribution, a spend-per-job that moves, and
+   a queue that is growing.
+4. **A per-asset transcription cost baseline**, which decides the open GPU/CPU
+   question. Everything so far is CPU faster-whisper and nobody has measured
+   cost per source hour at any scale.
+5. **Log retention and access**, because the same rule applies to logs as to the
+   audit table: they outlive the job and are read by more people than wrote them.
 
 ## Decisions already made
 
-- **Validation is by independent parse** and runs on every job. A failed
-  artifact must never be delivered; the run exits non-zero.
-- The model ledger is per call, not per job, so failover and retries are visible.
-- `model_versions` records every model that actually ran — a job produced by two
-  vendors says so.
+- **No customer content in logs. Ever.** No transcript text, no filenames, no
+  brief text, no paths. IDs, durations, counts and status. This is why
+  `step.failed` logs an exception's *type* and not its message.
+- The same rule governs `job_steps.detail`, which is rendered in the UI and
+  stored for the life of the job.
+- Structured logs, not printf. `run.py`'s console output is a CLI affordance and
+  not the logging strategy.
 
 ## Decisions still open
 
-- Vendor. Anything with traces and structured logs will do; do not over-invest
-  before there is traffic.
-- Whether to keep the derived audio for support. It makes debugging a bad cut far
-  easier and it is customer media, which C4 governs.
-- Retention for the per-job JSON, which contains the full transcript.
+- Vendor. Anything OTel-compatible; the cost of the decision is low and the cost
+  of not instrumenting is compounding.
+- Whether per-customer cost is exposed to the customer. It is a strong trust
+  signal and a strong invitation to argue about it.
+- Sampling. Job volume is low enough that 100% is affordable today and will not
+  stay that way.
 
 ## Traps
 
-- **The interesting failures are silent.** A job that produces a validated AAF of
-  the wrong material fails nothing. The metrics that catch it are editorial —
-  beat count, median beat length against target, fraction of the cut coming from
-  one beat — not infrastructural.
-- The per-job JSON and the transcript page **contain the customer's transcript**.
-  They are not debug artifacts to be shipped to a log aggregator without thought.
-- Cost per job is dominated by transcription, not by model calls. Measure before
-  optimising the visible half.
+- **`scrub` blocks by key, not by value.** A new key carrying customer text
+  passes straight through it. Add the key.
+- The router already fails over across vendors. Counting a failover as two
+  failures makes an error rate that is wrong in the direction that causes
+  needless work.
+- A job's cost is not its duration. Transcription dominates wall-clock and model
+  calls dominate spend, and optimising the one you can see is how the bill stays
+  where it is.
 
 ## Definition of done
 
-- One trace per job, spans per stage, searchable by job id.
-- A dashboard showing cost per job broken down, and its trend.
-- Alerts on validation failure and on empty or degenerate cuts.
-- A support view that answers "why is this cut bad" without a screen share.
+- A job's trace shows every stage, with the ingest cache visible as the reason a
+  re-run is fast.
+- Cost per job is queryable, per stage and per model, and C1 can price from it.
+- A failed job pages somebody, and a job that merely retried does not.
+- No customer content appears anywhere in the telemetry, tested rather than
+  assumed.

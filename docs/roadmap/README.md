@@ -49,12 +49,24 @@ then B3:
 
 ### Phase C — make it sellable
 
-| | Workstream | Depends on |
-|---|---|---|
-| [C1](C1-billing-live.md) | Stripe, credit packs, hold and settle for real | B1, B4 |
-| [C2](C2-web-on-real-data.md) | The ten mockup screens against the real API | B1-B4 |
-| [C3](C3-observability.md) | Logs, traces, cost per job, alerting | B3 |
-| [C4](C4-security-and-retention.md) | Customer media is their IP; encryption, retention, deletion | B1, B2 |
+Phase B is done, so these briefs were rewritten against what it actually built:
+the ledger lifecycle, upload and auth in the web app, and per-stage timings all
+exist now, and each brief says so rather than asking for them again.
+
+| | Workstream | Prompt | Depends on | Start here because |
+|---|---|---|---|---|
+| [C1](C1-billing-live.md) | Stripe and the price of a credit | [prompt](C1-SESSION-PROMPT.md) | B1, B3, B4 | nothing takes money yet |
+| [C2](C2-web-on-real-data.md) | The screens on real data | [prompt](C2-SESSION-PROMPT.md) | B1-B4 | eight screens still render fixtures |
+| [C3](C3-observability.md) | Cost per job, traces, alerting | [prompt](C3-SESSION-PROMPT.md) | B3 | C1 cannot price without its numbers |
+| [C4](C4-security-and-retention.md) | Retention, deletion, the vendor register | [prompt](C4-SESSION-PROMPT.md) | B1, B2 | a broadcaster's review asks for it |
+
+**C3 before C1, if you want the order that unblocks things.** What a credit is
+worth depends on what a job costs, and that number does not exist: model spend
+is recorded exactly, transcription and compute have never been measured.
+
+**C4 opens with a policy decision, not code.** `credit_ledger` and `audit_log`
+refuse deletion by trigger — deliberately — so "delete everything about this
+customer" cannot mean what it says. C1 needs the same answer for the ledger.
 
 ## Reality check on sequencing
 
