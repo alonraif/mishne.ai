@@ -222,6 +222,15 @@ def main() -> int:
                 else propose.get_proposer(args.spans, router))
     candidates = propose.build(beats, speech_by_asset.get, ed, proposer)
     carved = getattr(propose.build, "carved", 0)
+    fell_back = getattr(propose.build, "failed", [])
+    if fell_back:
+        # Loud, because a silent fallback is indistinguishable from a model
+        # deciding a beat is not worth carving, and the difference is the whole
+        # quality of the cut.
+        kinds = ", ".join(sorted(set(fell_back)))
+        print(f"                 {R}{len(fell_back)} of {len(beats)} beats "
+              f"fell back to the whole block ({kinds}) — those were not "
+              f"carved{X}")
     if carved:
         longest = max((b.duration_ms for b in beats), default=0) / 1000
         print(f"  6 spans        {len(candidates)} candidates from "

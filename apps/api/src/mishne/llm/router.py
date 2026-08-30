@@ -60,8 +60,14 @@ TASKS = {
                   est_input=1_200, est_output=400),
     # Deciding which span of a long answer is a coherent thought, without
     # straying off the legal cut points. Judgement plus obedience.
-    "spans": Task("spans", min_tier="mid", prefers="frontier",
-                  est_input=3_000, est_output=700),
+    # `prefers` was "frontier", which put every call on the most expensive
+    # model available. Measured on a 25.7-minute interview that was 35 calls
+    # and $1.04 — 84% of the job's entire model spend — for a task whose answer
+    # is checked against CUT_POINTS anyway, and which scored 0 refusals out of
+    # 47 proposals. Obedience is what this task needs and the mid tier has it.
+    # `--policy quality` still reaches for frontier when somebody wants it.
+    "spans": Task("spans", min_tier="mid", prefers="mid",
+                  est_input=3_000, est_output=1_400),
     # Scoring beats against the brief, with enough spread for the solver to
     # have something to work with.
     #
@@ -72,7 +78,9 @@ TASKS = {
     # prompt, so this is 25 x 128 with a little room. `est_input` is unverified
     # and is the next thing to measure: it scales with transcript length, which
     # is the axis nobody has checked.
-    "score": Task("score", min_tier="mid", prefers="frontier",
+    # Same reasoning as spans, and the same measurement: sonnet-5 scored a
+    # 26-minute interview for $0.19 where opus-5 would have been ~2.5x that.
+    "score": Task("score", min_tier="mid", prefers="mid",
                   est_input=6_000, est_output=3_200),
 }
 

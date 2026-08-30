@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from mishne.llm import Router  # noqa: E402
 from mishne.llm import catalog, providers, router as router_mod  # noqa: E402
+from mishne.llm.router import POLICIES, TASKS  # noqa: E402
 from mishne.llm.base import CallRecord, Completion, LLMError  # noqa: E402
 
 ALL_KEYS = {"ANTHROPIC_API_KEY": "a", "OPENAI_API_KEY": "o",
@@ -113,10 +114,37 @@ def test_the_cheap_tier_is_allowed_for_the_brief(monkeypatch):
     assert Router(policy="cost").plan("brief")[0].tier == "fast"
 
 
-def test_balanced_does_not_silently_downgrade_a_demanding_task(monkeypatch):
-    """A task asking for frontier should get it, not the tenth-of-the-price one."""
+def test_balanced_never_goes_below_a_tasks_floor(monkeypatch):
+    """The invariant that actually protects quality.
+
+    This used to assert that `balanced` gave `spans` a FRONTIER model. That was
+    a statement about a routing preference, not about correctness, and the
+    preference changed once the preference was measured: on a 25.7-minute
+    interview, frontier span proposal cost $1.04 across 35 calls — 84% of the
+    job's entire model spend — for a task whose every answer is checked against
+    CUT_POINTS anyway, and which refused 0 of 47 proposals. Obedience is what
+    the task needs, and the mid tier has it.
+
+    What must never happen is dropping below the task's declared floor, because
+    that is the line where a model stops being able to do the job at all. That
+    is what is asserted here, for every policy.
+    """
     keys(monkeypatch, *ALL_KEYS)
-    assert Router(policy="balanced").plan("spans")[0].tier == "frontier"
+    for policy in POLICIES:
+        for task in ("spans", "score"):
+            best = Router(policy=policy).plan(task)[0]
+            floor = TASKS[task].min_tier
+            assert catalog.TIERS.index(best.tier) >= catalog.TIERS.index(floor), (
+                policy, task, best.id
+            )
+
+
+def test_quality_still_reaches_for_the_frontier(monkeypatch):
+    """Cheaper by default is not the same as cheap only. An operator who wants
+    the best model for a job can still ask for it."""
+    keys(monkeypatch, *ALL_KEYS)
+    assert Router(policy="quality").plan("spans")[0].tier == "frontier"
+    assert Router(policy="quality").plan("score")[0].tier == "frontier"
 
 
 def test_routing_is_deterministic(monkeypatch):

@@ -140,12 +140,18 @@ def test_every_stage_ran_in_order_and_reported_something(through_the_runner):
 
 
 def test_the_shape_of_the_cut_is_what_the_brief_predicts(through_the_runner):
-    """23 beats, 25 candidates, 4 spans — the numbers B3's brief names."""
+    """23 beats, 30 candidates, 4 spans.
+
+    Was 25 candidates when `CARVE_ABOVE_MS` was 12s. At 8s, seven beats are
+    carved rather than two — an 8-12s answer is 7-10% of a 120s piece and
+    should not be a take-it-or-leave-it candidate. The beat and pick counts are
+    unchanged, which is the point: more offers to the solver, same material.
+    """
     _out, (result, _) = through_the_runner
     state = result.state
     assert len(state.assets) == 1
     assert len(state.beats) == 23
-    assert len(state.candidates) == 25
+    assert len(state.candidates) == 30
     assert len(state.picks) == 4
     assert len(state.artifacts) == 4
     assert all(a.ok for a in state.artifacts)

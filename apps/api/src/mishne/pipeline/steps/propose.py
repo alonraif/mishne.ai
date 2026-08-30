@@ -58,11 +58,18 @@ from .vad import SpeechMap
 MIN_CUT_SILENCE_MS = 300
 # Only beats longer than this are worth carving up; shorter ones are already an
 # editorial unit and splitting them produces fragments.
-CARVE_ABOVE_MS = 12_000
+# Below this a beat is left whole. Was 12s, which left every 8-12s answer as a
+# single take-it-or-leave-it candidate — and at a 120s target those are 7-10%
+# of the finished piece each. Eight seconds is still comfortably above
+# MIN_SPAN_MS * 2, so a carve can produce two viable thoughts.
+CARVE_ABOVE_MS = 8_000
 # A proposed span shorter than this is not a thought.
 MIN_SPAN_MS = 2_000
-# Cap per parent, so the solver is not handed a combinatorial explosion.
-MAX_SPANS_PER_BEAT = 6
+# Cap per parent, so the solver is not handed a combinatorial explosion. Eight
+# rather than six: the proposer is now asked for four to eight on a long block,
+# and a cap below what the prompt requests silently discards the model's later
+# — often tighter — offers.
+MAX_SPANS_PER_BEAT = 8
 
 
 def cut_points(beat: Beat, speech: SpeechMap | None) -> list[int]:
@@ -213,7 +220,20 @@ class ModelProposer:
         "with no referent, an answer with no question, a \"but\" with nothing "
         "before it. If the best available cut point still leaves a fragment, "
         "propose nothing for that region and say so.\n\n"
-        "Fewer, better spans beat many. Two or three per beat is normal.\n\n"
+        "**Offer the tight version.** A 45-second answer almost always "
+        "contains a 10-second line that carries it, and that line is what an "
+        "editor wants. Propose the short, punchy span AND the fuller one where "
+        "both stand up — the solver downstream chooses between them against a "
+        "target length, so offering only the long version decides for it and "
+        "hands the viewer a slab.\n\n"
+        "Four to eight spans per beat is normal on a long block. Do not "
+        "self-censor to two: a span that is merely good is still worth "
+        "offering, because the alternative it competes against is the whole "
+        "unbroken beat. The one thing that is never worth offering is a "
+        "fragment that does not stand on its own.\n\n"
+        "As a rule of thumb, a span longer than a fifth of the finished piece "
+        "is doing too much work — for a 120-second cut, prefer spans under "
+        "about 25 seconds and look hard for ones under 15.\n\n"
         "The transcript may be in any language, Hebrew included. Judge it in "
         "its own language and register, and write `rationale` in that same "
         "language so the editor can read it."
@@ -230,13 +250,20 @@ class ModelProposer:
 
         numbered = [{"i": i, "w": w.text} for i, w in enumerate(beat.words)]
         completion = self.router.complete(
-            "spans", system=self.SYSTEM, max_tokens=2048,
+            # 4096, not 2048: the prompt now asks for four to eight spans per
+            # beat instead of two or three, and a budget sized for the old
+            # request truncates the new one. A truncated answer here does not
+            # raise into the operator's view — `build` catches everything and
+            # returns the unbroken beat — so it would read as a model choosing
+            # not to carve, which is precisely the bug this prompt is fixing.
+            "spans", system=self.SYSTEM, max_tokens=4096,
             user=(f"Target for the whole piece: {brief.target_duration_s}s. "
                   f"Tone: {', '.join(getattr(brief, 'tone', [])) or 'unspecified'}.\n\n"
                   f"CUT_POINTS: {json.dumps(points)}\n\n"
                   f"WORDS: {json.dumps(numbered, ensure_ascii=False)}\n\n"
                   'Return ONLY a JSON array: '
-                  '[{"start":int,"end":int,"rationale":"one line"}]'))
+                  '[{"start":int,"end":int,"rationale":"one line"}]\n'
+                  "Keep each rationale under 12 words."))
 
         out, refused, offered = [beat], 0, 0
         legal = set(points)
@@ -291,6 +318,7 @@ def build(beats: list[Beat], speech_for, brief, proposer=None) -> list[Beat]:
     timings is the class of bug that produces a plausible cut in the wrong place.
     """
     out: list[Beat] = []
+    failed: list[str] = []
     for b in beats:
         speech = speech_for(b.asset_id)
         if proposer is None:
@@ -298,10 +326,18 @@ def build(beats: list[Beat], speech_for, brief, proposer=None) -> list[Beat]:
             continue
         try:
             out.extend(proposer.propose(b, speech, brief))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             # A proposer failing is a degraded cut, not a failed job: the
             # original beat is still a perfectly valid candidate.
+            #
+            # But it IS a degraded cut, and this used to say nothing at all.
+            # Every beat can fall back and the run looks identical to one where
+            # the model simply chose not to carve — which is how a cache that
+            # dropped its words went unnoticed until somebody complained the
+            # edit was too gentle. Counted here, reported by the caller.
+            failed.append(type(exc).__name__)
             out.append(b)
 
     build.carved = sum(1 for s in out if s.kind != "beat")
+    build.failed = failed
     return out
