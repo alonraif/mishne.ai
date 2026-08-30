@@ -136,7 +136,7 @@ async def create_job(
         "target_duration_s": body.target_duration_s,
         "narrative_shape": body.narrative_shape,
         "tone": body.tone,
-        "handle_frames": 6,
+        "handle_frames": 0,
     }
     job_id = job_writes.create_job(
         s, org_id,

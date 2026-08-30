@@ -15,8 +15,26 @@ The rules, in order, and why each exists:
    sit tight against the speech. Cutting there clips onsets and truncates the
    final consonant, which is the most audible failure there is. Snapping
    outward to the nearest silence from the VAD map costs nothing and fixes it.
-2. **Add handles.** Default six frames each side. A rough cut without handles
-   is unusable — the editor has nothing to trim with. Non-negotiable.
+2. **Add handles, and by default add none.** This used to default to six
+   frames each side, justified as "the editor has nothing to trim with". That
+   reasoning does not hold here, for two reasons.
+
+   Handles in this pipeline are not trim room — they *extend the region that
+   plays*. Rule 5 below says so outright: two consecutive beats with no silence
+   between them overlap once handles are added. Six frames at 25 fps is 240 ms
+   of unasked-for material at each boundary, and the editor hears every bit of
+   it.
+
+   The trim room was never coming from here anyway. The AAF carries source
+   MobIDs that relink to the original media (ADR-0001), so in Media Composer
+   the full source sits behind every clip and the editor can pull a handle out
+   as far as the rushes go. Baking frames into the sequence buys nothing that
+   relinking does not already give, and costs precision.
+
+   What protects the audio is rule 1 — snapping outward to real silence — which
+   is the principled version of the same instinct and costs nothing. Handles
+   remain available (`--handles`, `brief.handle_frames`) for a delivery that
+   genuinely wants slack; they are no longer the default.
 3. **Never cut inside a word.** Asserted against the actual word spans, and a
    hard failure if violated. A cut mid-word is not a matter of taste.
 4. **Quantise to frame boundaries** in the sequence rate. Audio can be
@@ -135,7 +153,7 @@ class AssetContext:
 
 def refine(selections: list[Selection], speech: SpeechMap | None,
            rate: Rate, source_start_frames: int, source_duration_frames: int,
-           handle_frames: int = 6) -> list[Cut]:
+           handle_frames: int = 0) -> list[Cut]:
     """Turn selected beats into frame-accurate cuts, for a single asset."""
     ctx = AssetContext(
         rate=rate, start_tc_frames=source_start_frames,
@@ -148,7 +166,7 @@ def refine(selections: list[Selection], speech: SpeechMap | None,
 
 def refine_multi(selections: list[Selection],
                  contexts: dict[str, AssetContext],
-                 handle_frames: int = 6) -> list[Cut]:
+                 handle_frames: int = 0) -> list[Cut]:
     """Turn selected beats into frame-accurate cuts across several assets.
 
     `contexts` is keyed by asset id. A selection whose beat names an asset that

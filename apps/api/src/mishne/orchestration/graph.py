@@ -96,7 +96,7 @@ class JobRequest:
     notes: str = ""
     target_duration_s: int | None = None
     mode: str = "ai"
-    handle_frames: int = 6
+    handle_frames: int = 0
     language: str | None = None
     #: "auto" | "heuristic" | "model". The heuristic scorer proves the plumbing,
     #: not the cut.

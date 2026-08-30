@@ -146,7 +146,7 @@ def prepare_request(
         notes=notes,
         target_duration_s=brief.get("target_duration_s"),
         mode=job.mode,
-        handle_frames=brief.get("handle_frames", 6),
+        handle_frames=brief.get("handle_frames", 0),
         language=brief.get("language"),
         stem=f"{rows[0].filename.rsplit('.', 1)[0]}_roughcut",
         router=Router(),

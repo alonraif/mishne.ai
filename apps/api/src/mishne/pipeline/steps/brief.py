@@ -64,7 +64,7 @@ class EditBrief:
     speaker_priority: list[str] = field(default_factory=list)
     pacing: str = "tight"
     keep_filler: bool = False
-    handle_frames: int = 6
+    handle_frames: int = 0
     language: str = "en"
     clarifications: list[str] = field(default_factory=list)
     notes_raw: str = ""

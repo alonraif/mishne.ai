@@ -294,7 +294,7 @@ def _to_frames(units: int, src_rate: float, fps: float) -> int:
     source durations of -1,127,040 frames.
 
     A rough cut is a video edit: stage 9 has already quantised every cut point
-    to frames and the handles are six frames wide. Sub-frame audio precision is
+    to frames and handles, where a delivery asks for them, are frame-quantised too. Sub-frame audio precision is
     not meaningful here, and frame positions are the only thing all four
     formats agree on.
     """

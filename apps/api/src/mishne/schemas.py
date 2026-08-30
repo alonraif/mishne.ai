@@ -103,7 +103,7 @@ class EditBrief(BaseModel):
     speaker_priority: list[str] = Field(default_factory=list)
     pacing: Literal["tight", "breathing"] = "tight"
     keep_filler: bool = False
-    handle_frames: int = 6
+    handle_frames: int = 0
     language: str = "en"
     clarifications: list[str] = Field(default_factory=list)
 
