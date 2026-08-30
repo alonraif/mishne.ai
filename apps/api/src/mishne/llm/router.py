@@ -169,7 +169,7 @@ class Router:
             except LLMError as exc:
                 self.ledger.add(CallRecord(
                     task=task_name, provider=model.provider, model=model.id,
-                    ok=False, error=str(exc)[:200]))
+                    ok=False, error=type(exc).__name__))
                 last_error = exc
                 if not exc.retryable:
                     raise
@@ -180,7 +180,8 @@ class Router:
                 task=task_name, provider=model.provider, model=model.id,
                 ok=True, latency_ms=out.latency_ms,
                 input_tokens=out.input_tokens, output_tokens=out.output_tokens,
-                cost_usd=cost or 0.0, violations=violations,
+                cost_usd=cost or 0.0, priced=cost is not None,
+                violations=violations,
                 proposals=proposals,
                 fell_back_from=("" if model is first
                                 else f"{first.provider}/{first.id}")))

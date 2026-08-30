@@ -10,6 +10,24 @@ on failure or cancellation. `org_balances` is written in the same transaction as
 the ledger row, and it is reconstructible by summing `delta` — which is what
 makes "why is my balance 142.5?" a query rather than an investigation.
 
+**`delta` means one thing everywhere: the change in AVAILABLE credits.** That is
+what makes the sum reconstruct the balance, and it is worth stating because
+`settle` looks wrong until you hold it in mind:
+
+    hold     -cap              the money becomes unavailable
+    release  +cap              all of it comes back
+    settle   +(cap - charged)  the UNUSED part comes back
+
+A settle row is therefore positive, and what the customer was actually charged
+is the hold and the settle together: `cap - (cap - charged) == charged`. It is
+also on `jobs.credits_settled` and in the row's description.
+
+This was wrong until C1. `settle` wrote `-charged` while its own `balance_after`
+recorded the balance going *up* by `cap - charged` — so a row contradicted
+itself, and summing deltas double-counted every completed job's hold. Nothing
+caught it because the one ledger test asserted that a hold and its release net
+to zero, which they did; nobody had summed a hold and a settle.
+
 **A retried settle is a duplicate-key error, not a double charge.** The unique
 index on `(job_id, kind)` is the idempotency, so a worker that dies between
 settling and marking the job complete can be re-run without charging twice.
@@ -128,10 +146,23 @@ def upsert_step(
     attempt: int = 1,
     detail: str | None = None,
     output_ref: str | None = None,
+    asset_id: str | None = None,
+    seconds: float | None = None,
+    cumulative_seconds: float | None = None,
+    from_cache: bool | None = None,
+    model_cost_micros: int | None = None,
     started: bool = False,
     finished: bool = False,
 ) -> None:
-    """Idempotent on `(job_id, idx)`. A retry updates the row it already wrote."""
+    """Idempotent on `(job_id, idx)`. A retry updates the row it already wrote.
+
+    Which is exactly why `seconds` is written rather than left to be derived
+    from `finished_at - started_at`: the retry that overwrites this row also
+    overwrites the timestamps, so the derived duration is the last attempt's
+    and a stage that failed twice before succeeding reads as a cheap one.
+    `cumulative_seconds` is every attempt, and the gap between the two is what
+    a retry cost.
+    """
     table = m.JobStep.__table__
     now = datetime.now(timezone.utc)
     values: dict = {
@@ -142,6 +173,18 @@ def upsert_step(
     }
     if output_ref is not None:
         values["output_ref"] = output_ref
+    # None means "the caller has nothing to say about this field", which is not
+    # the same as zero. A progress write mid-step must not blank the duration a
+    # previous attempt recorded.
+    for column, value in (
+        ("asset_id", asset_id),
+        ("seconds", seconds),
+        ("cumulative_seconds", cumulative_seconds),
+        ("from_cache", from_cache),
+        ("model_cost_micros", model_cost_micros),
+    ):
+        if value is not None:
+            values[column] = value
     if started:
         values["started_at"] = now
     if finished:
@@ -164,6 +207,103 @@ def upsert_step(
             **values,
         )
     )
+
+
+# ─────────────────────────────────────────────────────────────────── the cost
+
+
+#: A dollar in micros. Model spend is recorded at this resolution because a
+#: scoring call costs a fraction of a cent, and integer cents rounds a real
+#: number to zero.
+MICROS_PER_USD = 1_000_000
+
+
+def record_llm_calls(
+    s: Session,
+    org_id: str,
+    job_id: str,
+    step_idx: int,
+    step_name: str,
+    calls: list,
+) -> int:
+    """One row per model call this step made. Returns the spend, in micros.
+
+    `calls` are `llm.base.CallRecord`s, read field by field rather than through
+    `to_dict()`: that method exists to shrink a manifest and drops empty values,
+    and a column is not optional.
+
+    Idempotent by construction — the id carries the step and the call's position
+    within it, so re-running a step after a worker died rewrites its own rows
+    instead of doubling the job's recorded spend.
+    """
+    table = m.JobLlmCall.__table__
+    spend = 0
+    for position, call in enumerate(calls):
+        micros = int(round(call.cost_usd * MICROS_PER_USD))
+        spend += micros
+        values = {
+            "org_id": org_id,
+            "job_id": job_id,
+            "step_idx": step_idx,
+            "step_name": step_name,
+            "task": call.task,
+            "provider": call.provider,
+            "model": call.model,
+            "ok": call.ok,
+            "latency_ms": call.latency_ms,
+            "input_tokens": call.input_tokens,
+            "output_tokens": call.output_tokens,
+            "cost_micros": micros,
+            "priced": getattr(call, "priced", True),
+            "fell_back_from": call.fell_back_from,
+            "violations": call.violations,
+            "proposals": call.proposals,
+            # `CallRecord.error` holds the exception TYPE, not a provider's
+            # message, and this column is named for what it actually contains.
+            "error_type": call.error,
+        }
+        call_id = f"llm_{job_id}_{step_idx:02d}_{position:03d}"
+        updated = s.execute(
+            sa.update(table)
+            .where(table.c.org_id == org_id, table.c.id == call_id)
+            .values(**values)
+        )
+        if not updated.rowcount:
+            s.execute(sa.insert(table).values(id=call_id, **values))
+    return spend
+
+
+def set_job_cost(
+    s: Session, org_id: str, job_id: str, *, model_versions: dict
+) -> int:
+    """Project the job's recorded model spend onto the job row. Returns cents.
+
+    `jobs.cost_cents` is a projection of `job_llm_calls`, in the same way
+    `org_balances` is a projection of `credit_ledger`: the rows are the truth
+    and this is the number a page renders. It is written from a SUM rather than
+    from whatever the caller was holding, so a job resumed by a second worker
+    reports what the database actually recorded rather than what one process
+    happened to see.
+
+    Cents lose the sub-cent detail on purpose — that is what the column is, and
+    `job_llm_calls.cost_micros` is where the precision lives. Do not add a
+    second cost figure to this row: two descriptions of one contract is how one
+    of them stops being true.
+    """
+    calls = m.JobLlmCall.__table__
+    micros = s.execute(
+        sa.select(sa.func.coalesce(sa.func.sum(calls.c.cost_micros), 0)).where(
+            calls.c.org_id == org_id, calls.c.job_id == job_id
+        )
+    ).scalar_one()
+    cents = int(round(micros / 10_000))
+    jobs = m.Job.__table__
+    s.execute(
+        sa.update(jobs)
+        .where(jobs.c.org_id == org_id, jobs.c.id == job_id)
+        .values(cost_cents=cents, model_versions=model_versions)
+    )
+    return cents
 
 
 # ──────────────────────────────────────────────────────────────── the ledger
@@ -208,6 +348,21 @@ def _entry(
     )
 
 
+def _project_for_job(s: Session, org_id: str, job_id: str) -> str | None:
+    """Which project a job belongs to.
+
+    Looked up rather than passed in, because `settle` and `release` are called
+    from the worker, which knows a job id and would otherwise have to carry a
+    project id through the whole run purely so the ledger could record it.
+    """
+    jobs = m.Job.__table__
+    return s.execute(
+        sa.select(jobs.c.project_id).where(
+            jobs.c.org_id == org_id, jobs.c.id == job_id
+        )
+    ).scalar()
+
+
 def hold(s: Session, org_id: str, job_id: str, project_id: str, cap: float) -> None:
     """Reserve credits at submission.
 
@@ -234,8 +389,13 @@ def settle(s: Session, org_id: str, job_id: str, actual: float, cap: float) -> f
     try:
         with s.begin_nested():
             _entry(
-                s, org_id, "settle", -charged, job_id=job_id,
-                description="job complete",
+                # The unused part of the hold coming back — see the note at the
+                # top of this module on what `delta` means. The hold already
+                # took the whole cap out of `available`; this returns whatever
+                # the job did not use, and the two together are the charge.
+                s, org_id, "settle", cap - charged, job_id=job_id,
+                project_id=_project_for_job(s, org_id, job_id),
+                description=f"job complete: charged {charged:g} of {cap:g}",
                 available=available + (cap - charged), held=held - cap,
             )
     except IntegrityError:
@@ -257,11 +417,95 @@ def release(s: Session, org_id: str, job_id: str, cap: float, *, reason: str) ->
     try:
         with s.begin_nested():
             _entry(
-                s, org_id, "release", cap, job_id=job_id, description=reason,
+                s, org_id, "release", cap, job_id=job_id,
+                project_id=_project_for_job(s, org_id, job_id),
+                description=reason,
                 available=available + cap, held=max(0.0, held - cap),
             )
     except IntegrityError:
         return
+
+
+def claim_stripe_event(
+    s: Session, event_id: str, org_id: str, event_type: str, payload: dict
+) -> bool:
+    """Record that this webhook was handled. False if it already was.
+
+    The dedupe is the primary key on `stripe_events`, not a SELECT followed by
+    an INSERT — two deliveries of the same event arriving at two workers would
+    both find nothing and both grant credits. Postgres decides, once.
+
+    Append-only is not the same as idempotent: the ledger will happily accept a
+    second `purchase` row, and it is correct to, because a customer really can
+    buy two packs. Only the event id knows that these two are the same purchase.
+    """
+    try:
+        with s.begin_nested():
+            s.execute(
+                sa.insert(m.StripeEvent.__table__).values(
+                    id=event_id,
+                    org_id=org_id,
+                    type=event_type,
+                    payload=payload,
+                )
+            )
+    except IntegrityError:
+        return False
+    return True
+
+
+def project_spend(s: Session, org_id: str) -> list[dict]:
+    """Net credits consumed, per project. What "what has this cost me" means.
+
+    ## Why this is a SUM of deltas rather than a sum of settlements
+
+    The ledger's three job entries are `hold` (−cap), then either `settle`
+    (−charged) with `release` of the unused remainder folded into the same
+    arithmetic, or `release` (+cap) in full. Summing the deltas is therefore the
+    only expression that is right in all three cases at once: a completed job
+    nets to what was charged, a cancelled one nets to zero, and a job still
+    running shows its hold — which is correct, because that money is genuinely
+    unavailable to the customer right now.
+
+    Adding up `settle` rows alone would report a running job as free and a
+    cancelled one as free, and the customer's balance would disagree with the
+    page telling them where it went.
+
+    ## The bug this had to fix first
+
+    Until now only `hold` carried a `project_id`. `settle` and `release` did
+    not, so filtering the ledger by project — which `GET /v1/billing/ledger`
+    already offered — returned the holds and nothing else. A finished job
+    showed its approved cap rather than what it cost, a cancelled job showed a
+    charge that had been refunded in full, and no project's total ever came
+    back down. The column existed and was populated on exactly one of the three
+    rows that matter.
+
+    `purchase` and `grant` have no project by design: money coming in belongs to
+    the organisation, not to whichever project happened to spend it next. They
+    are excluded here rather than bucketed under NULL.
+    """
+    lg = m.CreditLedger.__table__
+    rows = s.execute(
+        sa.select(
+            lg.c.project_id,
+            sa.func.sum(-lg.c.delta).label("credits"),
+            sa.func.count(sa.distinct(lg.c.job_id)).label("jobs"),
+            sa.func.max(lg.c.created_at).label("last_activity"),
+        )
+        .where(lg.c.org_id == org_id, lg.c.project_id.is_not(None))
+        .group_by(lg.c.project_id)
+        .order_by(sa.desc("credits"))
+    ).all()
+    return [
+        {
+            "project_id": r.project_id,
+            "credits": round(float(r.credits or 0), 2),
+            "jobs": int(r.jobs or 0),
+            "last_activity": r.last_activity,
+        }
+        for r in rows
+    ]
 
 
 def purchase(s: Session, org_id: str, credits: float, *, stripe_event_id: str = "") -> None:

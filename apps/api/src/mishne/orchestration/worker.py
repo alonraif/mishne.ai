@@ -17,6 +17,12 @@ What it is responsible for that the runner is not:
   whole hold on failure or cancellation. A job that dies without releasing its
   hold leaves a customer's balance wrong until somebody notices (ADR-0006).
 * **The artifacts.** Published to the artifacts bucket, and recorded as rows.
+* **The cost.** What the job spent on models, projected onto `jobs.cost_cents`
+  from the rows the sink wrote per step. This is not the same number as the
+  credits charged: the customer pays for source hours at their tier's rate, and
+  what the work cost us is the other side of that trade. Until C3 the worker
+  built a `Router`, let it spend money, and threw the ledger away — so the
+  margin on a job was not a hard number anywhere.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ from pathlib import Path
 
 import sqlalchemy as sa
 
+from .. import alerts, telemetry
 from ..config import Settings, get_settings
 from ..db import jobs as job_writes
 from ..db import models as m
@@ -161,12 +168,19 @@ def execute(org_id: str, job_id: str, settings: Settings | None = None) -> str:
     except Cancelled:
         with session_for_org(org_id) as s:
             job_writes.release(s, org_id, job_id, cap, reason="job cancelled")
+            # Cancellation is checked between steps, so a job cancelled late
+            # has already paid for the stages that ran.
+            _record_cost(s, org_id, job_id, request)
         log.info("job.cancelled", job_id=job_id)
         workspace.cleanup()
         return "cancelled"
     except Exception as exc:  # noqa: BLE001 - every failure releases the hold
         with session_for_org(org_id) as s:
             job_writes.release(s, org_id, job_id, cap, reason="job failed")
+            # A failed job costs the customer nothing and costs us whatever it
+            # spent before it died. Recording only successful jobs' costs is
+            # how a retry storm stays invisible in the cost model.
+            _record_cost(s, org_id, job_id, request)
             job_writes.set_status(
                 s, org_id, job_id, "failed",
                 # The type, not the message: an exception can quote a filename.
@@ -174,6 +188,15 @@ def execute(org_id: str, job_id: str, settings: Settings | None = None) -> str:
                 finished_at=sa.func.now(),
             )
         log.warning("job.failed", job_id=job_id, reason=type(exc).__name__)
+        # Out of retries, so this is a customer waiting for a deliverable that
+        # is not coming. A step that failed and was retried never reaches here:
+        # the runner raises only once the retries are exhausted.
+        alerts.job_failed(
+            job_id,
+            step=getattr(exc, "step", ""),
+            reason=type(exc).__name__,
+            attempts=getattr(exc, "attempt", 0),
+        ).emit()
         workspace.cleanup()
         return "failed"
 
@@ -181,12 +204,32 @@ def execute(org_id: str, job_id: str, settings: Settings | None = None) -> str:
     actual = _credits_used(result, meta["tier"])
     with session_for_org(org_id) as s:
         charged = job_writes.settle(s, org_id, job_id, actual, cap)
+        cost_cents = _record_cost(s, org_id, job_id, request)
         job_writes.set_status(
             s, org_id, job_id, "complete", finished_at=sa.func.now()
         )
-    log.info("job.settled", job_id=job_id, charged=charged, artifacts=published)
+    log.info("job.settled", job_id=job_id, charged=charged, artifacts=published,
+             model_cost_cents=cost_cents)
+    with session_for_org(org_id) as s:
+        moved = alerts.spend_moved(s, org_id, job_id, cost_cents=cost_cents)
+    if moved:
+        moved.emit()
     workspace.cleanup()
     return "complete"
+
+
+def _record_cost(s, org_id: str, job_id: str, request: JobRequest) -> int:
+    """Project this job's model spend onto its row. Returns cents.
+
+    The per-call rows are already written — the progress sink wrote them as each
+    step finished, which is what makes cost visible while a job is still running
+    rather than only after it ends. This sums them and records which models
+    actually ran, failover included, because a job produced by two vendors was
+    produced by both and the reproducibility record has to say so.
+    """
+    ledger = getattr(request.router, "ledger", None)
+    versions = ledger.models_used() if ledger else {}
+    return job_writes.set_job_cost(s, org_id, job_id, model_versions=versions)
 
 
 def _publish(result, workspace, org_id: str, job_id: str, request: JobRequest) -> int:
@@ -242,6 +285,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("job_id")
     parser.add_argument("--org", required=True)
     args = parser.parse_args(argv)
+    # Tracing is configured once, by the process that owns the job. `run.py` on
+    # a laptop never calls this, which is why `telemetry.span` is a no-op until
+    # something opts in.
+    telemetry.configure(service="mishne-worker")
     status = execute(args.org, args.job_id)
     print(f"{args.job_id}: {status}")
     return 0 if status == "complete" else 1

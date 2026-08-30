@@ -132,13 +132,32 @@ class CallRecord:
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
+    #: False when the catalog has no price for this model. `cost_usd` is then
+    #: 0.0 because there is no other honest number to put there, and a consumer
+    #: that cannot tell it from a genuinely free call under-charges silently —
+    #: which is the whole reason `Model.cost_for` returns None rather than 0.
+    priced: bool = True
+    #: The exception TYPE, never a provider's message. A vendor quotes the
+    #: prompt back in an error string often enough that the message is customer
+    #: content, and this record is written into the job's manifest.
     error: str = ""
     violations: int = 0
     proposals: int = 0
     fell_back_from: str = ""
 
     def to_dict(self) -> dict:
-        return {k: v for k, v in self.__dict__.items() if v not in ("", 0, 0.0)}
+        """The non-empty fields, for the job manifest.
+
+        Booleans are kept even when False, which `v not in ("", 0, 0.0)` did not
+        do: `False == 0` in Python, so `ok=False` and `priced=False` — the two
+        fields whose False is the entire point of recording them — were dropped
+        from every manifest they appeared in.
+        """
+        return {
+            k: v
+            for k, v in self.__dict__.items()
+            if isinstance(v, bool) or v not in ("", 0, 0.0)
+        }
 
 
 @dataclass

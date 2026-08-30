@@ -23,6 +23,19 @@ media = [
     "ffmpeg-python>=0.2",
 ]
 solver = ["ortools>=9.11"]
+# Taking money. Optional because `payment_provider="fake"` implements the same
+# contract — signature verification included — so the whole purchase and
+# webhook path is testable without an account, a key or a network.
+payments = ["stripe>=11.0"]
+# Traces. Optional on purpose: `telemetry.py` degrades to no-op spans when the
+# SDK is absent, because a worker that will not start because a telemetry
+# package is missing is a worse outcome than a worker with no telemetry. The
+# exporter is chosen by settings, so no vendor appears here either.
+telemetry = [
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
+]
 # `moto` gives the storage tests a real S3 protocol implementation in-process,
 # so the suite never needs AWS credentials or a network.
 dev = ["pytest>=8.3", "httpx>=0.28", "ruff>=0.8", "mypy>=1.13", "moto[s3]>=5.0"]

@@ -36,6 +36,7 @@ from typing import Protocol
 
 from ..logging import get_logger
 from ..pipeline import project
+from ..telemetry import span
 from ..pipeline.steps import ASSET_STEPS, JOB_STEPS, STEPS, StepSpec
 from ..pipeline.steps.base import PAYLOAD_VERSION, StepContext
 from . import graph
@@ -61,7 +62,19 @@ class StepRun:
     status: str = "pending"
     detail: str = ""
     error: str = ""
+    #: The attempt that ended the step.
     seconds: float = 0.0
+    #: Every attempt, failed ones included. Equal to `seconds` on a step that
+    #: succeeded first time; the difference is what the retries cost.
+    cumulative_seconds: float = 0.0
+    #: The per-asset phase was served from the ingest cache rather than executed
+    #: (ADR-0016). A stage that took no time because it did no work has to say
+    #: so, or a cost baseline averages the cache hits into the work.
+    from_cache: bool = False
+    #: The model calls this step made, as `llm.base.CallRecord`s. The router's
+    #: ledger is per-job and knows nothing about stages; sliced here, where the
+    #: step boundary is, it becomes cost per stage.
+    llm_calls: list = field(default_factory=list)
 
 
 class ProgressSink(Protocol):
@@ -140,8 +153,41 @@ def run_job(
     state = RunState(request=request)
     started = time.time()
     steps: list[StepRun] = []
-    idx = 0
 
+    # One span for the job, every stage nested inside it. `job_id` is what
+    # correlates the two, and it is the id a support conversation starts from.
+    job_span = span(
+        "job",
+        job_id=request.job_id,
+        org_id=request.org_id,
+        project_id=request.project_id,
+        assets=len(request.assets),
+        mode=request.mode,
+    )
+
+    with job_span as job_trace:
+        _run_phases(request, state, sink, sleep, steps)
+        cached = sum(1 for r in state.runs.values() if r.from_cache)
+        job_trace.set(
+            steps=len(steps),
+            cached_assets=cached,
+            seconds=round(time.time() - started, 3),
+        )
+
+    log.info(
+        "job.complete",
+        job_id=request.job_id,
+        assets=len(request.assets),
+        steps=len(steps),
+        cached_assets=sum(1 for r in state.runs.values() if r.from_cache),
+        seconds=round(time.time() - started, 1),
+    )
+    return JobResult(state=state, steps=steps, seconds=time.time() - started)
+
+
+def _run_phases(request, state, sink, sleep, steps: list) -> None:
+    """The per-asset phase then the per-job phase, in the registry's order."""
+    idx = 0
     # ── the per-asset phase, once per upload ───────────────────────────────
     for source in request.assets:
         adir = _asset_dir(request, source.pipeline_id)
@@ -162,16 +208,6 @@ def run_job(
     for spec in JOB_STEPS:
         idx += 1
         steps.append(_execute(spec, idx, state, sink, sleep))
-
-    log.info(
-        "job.complete",
-        job_id=request.job_id,
-        assets=len(request.assets),
-        steps=len(steps),
-        cached_assets=sum(1 for r in state.runs.values() if r.from_cache),
-        seconds=round(time.time() - started, 1),
-    )
-    return JobResult(state=state, steps=steps, seconds=time.time() - started)
 
 
 def _asset_dir(request: JobRequest, asset_id: str) -> Path:
@@ -196,6 +232,15 @@ def _execute(
         raise Cancelled(f"cancelled before {spec.name}")
 
     run = StepRun(idx=idx, name=spec.name, label=spec.label, asset_id=asset_id)
+    # A per-asset step whose whole phase came from cache did not do the work its
+    # duration would otherwise imply.
+    if asset_id and asset_id in state.runs:
+        run.from_cache = state.runs[asset_id].from_cache
+    # Where the job's model spend stood before this step. The ledger is a flat
+    # list per job, so the calls this step is responsible for are the ones
+    # appended while it ran.
+    ledger = getattr(state.request.router, "ledger", None)
+    calls_before = len(ledger.calls) if ledger else 0
     sink.job_status(spec.status)
     # Looked up at call time, through the module. A name bound at import is a
     # name a test cannot replace and a plugin cannot extend — and the point of
@@ -207,36 +252,82 @@ def _execute(
         run.status = "active"
         started = time.time()
         sink.step_started(run)
-        ctx = StepContext(
+        # A span per ATTEMPT rather than per step. A step that was retried is
+        # two pieces of work that took different times for different reasons,
+        # and averaging them into one span is how the retry disappears.
+        with span(
+            f"step.{spec.name}",
             job_id=state.request.job_id,
             org_id=state.request.org_id,
-            project_id=state.request.project_id,
+            step=spec.name,
+            step_idx=idx,
+            asset_id=asset_id or None,
             attempt=attempt,
-            on_progress=lambda detail, r=run: sink.step_progress(r, str(detail)),
-        )
-        try:
-            detail = implementation(ctx, state) or ""
-        except Exception as exc:  # noqa: BLE001 - the runner decides what is fatal
-            run.seconds = time.time() - started
-            run.error = f"{type(exc).__name__}: {exc}"
-            will_retry = attempt <= spec.retries
-            sink.step_failed(run, will_retry)
-            log.warning(
-                "step.failed",
+            # Why a re-run is fast. Without it the cache hit looks like the
+            # work vanished, and a stage that did nothing in 40ms is
+            # indistinguishable from one that broke silently.
+            from_cache=run.from_cache,
+        ) as trace:
+            ctx = StepContext(
                 job_id=state.request.job_id,
-                step=spec.name,
+                org_id=state.request.org_id,
+                project_id=state.request.project_id,
                 attempt=attempt,
-                will_retry=will_retry,
-                # The type, never the message: a step's exception can quote a
-                # filename, and a filename is customer content.
-                reason=type(exc).__name__,
+                on_progress=lambda detail, r=run: sink.step_progress(r, str(detail)),
             )
-            if not will_retry:
-                raise
+            try:
+                detail = implementation(ctx, state) or ""
+            except Exception as exc:  # noqa: BLE001 - the runner decides what is fatal
+                run.seconds = time.time() - started
+                run.cumulative_seconds += run.seconds
+                if ledger:
+                    run.llm_calls = ledger.calls[calls_before:]
+                run.error = f"{type(exc).__name__}: {exc}"
+                will_retry = attempt <= spec.retries
+                # Marked here rather than left to the context manager: an
+                # attempt that will be retried does not propagate, so the
+                # `with` block exits cleanly and a failure that the system
+                # recovered from would show as a successful span. By exception
+                # TYPE — never `record_exception`, which attaches the message
+                # and the stack trace.
+                trace.failed(exc)
+                trace.set(will_retry=will_retry, seconds=round(run.seconds, 3))
+                sink.step_failed(run, will_retry)
+                log.warning(
+                    "step.failed",
+                    job_id=state.request.job_id,
+                    step=spec.name,
+                    attempt=attempt,
+                    will_retry=will_retry,
+                    # The type, never the message: a step's exception can quote
+                    # a filename, and a filename is customer content.
+                    reason=type(exc).__name__,
+                )
+                if not will_retry:
+                    raise
+                _retried = True
+            else:
+                _retried = False
+                run.seconds = time.time() - started
+                run.cumulative_seconds += run.seconds
+                if ledger:
+                    # Every attempt's calls, not just the successful one's: a
+                    # step that was retried spent real money on the attempts
+                    # that failed, and a cost record that omits them
+                    # under-reports exactly the jobs that went wrong.
+                    run.llm_calls = ledger.calls[calls_before:]
+                trace.set(
+                    seconds=round(run.seconds, 3),
+                    llm_calls=len(run.llm_calls),
+                    llm_cost_usd=round(
+                        sum(c.cost_usd for c in run.llm_calls), 6
+                    ) or None,
+                )
+
+        if _retried:
             sleep(RETRY_BACKOFF_S[min(attempt - 1, len(RETRY_BACKOFF_S) - 1)])
             continue
 
-        run.seconds = time.time() - started
         run.detail = detail or run.detail
         run.status = "done"
         sink.step_finished(run)
@@ -246,6 +337,9 @@ def _execute(
             step=spec.name,
             asset_id=asset_id or None,
             seconds=round(run.seconds, 2),
+            cumulative_seconds=round(run.cumulative_seconds, 2),
+            from_cache=run.from_cache,
+            llm_calls=len(run.llm_calls),
             attempt=attempt,
             payload_version=PAYLOAD_VERSION,
         )

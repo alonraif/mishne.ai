@@ -375,10 +375,74 @@ class JobStep(Base):
     error = sa.Column(JSONB)
     started_at = sa.Column(TS)
     finished_at = sa.Column(TS)
+    # The upload this step ran for; NULL for a job-phase step. The runner has
+    # always known it — `StepRun.asset_id` — and until 0005 the write path
+    # dropped it, which made a three-upload job's per-asset timings eighteen
+    # indistinguishable rows and a per-source-hour baseline uncomputable.
+    asset_id = sa.Column(sa.Text)
+    # Duration of the attempt that ENDED the step, and of every attempt
+    # together. Not derivable: this row is idempotent on (job_id, idx), so a
+    # retry overwrites started_at and the derived figure describes the last
+    # attempt only — a stage that failed twice at eight minutes reads as cheap.
+    seconds = sa.Column(sa.Float)
+    cumulative_seconds = sa.Column(sa.Float)
+    # Served from the ingest cache rather than executed (ADR-0016). Without it,
+    # a re-run is six stages that took no time and no recorded reason, and the
+    # cache hits average into the cost of the work they skipped.
+    from_cache = sa.Column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    # Model spend attributed to this step, in millionths of a dollar. Micros
+    # because a scoring call rounds to zero cents and summing zeros is how a
+    # cost model concludes the models are free.
+    model_cost_micros = sa.Column(
+        sa.BigInteger, nullable=False, server_default=sa.text("0")
+    )
     __table_args__ = (
         _ck("ck_job_steps_status", "status", vocab.STEP_STATUSES),
         sa.UniqueConstraint("job_id", "idx", name="uq_job_steps_job_idx"),
     )
+
+
+class JobLlmCall(Base):
+    """One model call. The evidence C1 prices a credit from.
+
+    `Ledger`/`CallRecord` in `llm/base.py` already carry exactly this in memory
+    and write it into the job's `.mishne.json`; this is the same record kept
+    somewhere a query can reach, which is what "cost per model" requires.
+
+    Nothing here is customer content — task, vendor, model id, counts, latency,
+    cost, status. Prompts and completions are not recorded and must not be
+    added (docs/architecture/04-security.md).
+    """
+
+    __tablename__ = "job_llm_calls"
+    id = sa.Column(sa.Text, primary_key=True)
+    org_id = sa.Column(sa.Text, nullable=False)
+    job_id = sa.Column(
+        sa.Text, sa.ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False
+    )
+    step_idx = sa.Column(sa.Integer, nullable=False)
+    step_name = sa.Column(sa.Text, nullable=False)
+    #: brief | propose | score — the stage's own name for the work.
+    task = sa.Column(sa.Text, nullable=False)
+    provider = sa.Column(sa.Text, nullable=False)
+    model = sa.Column(sa.Text, nullable=False)
+    ok = sa.Column(sa.Boolean, nullable=False)
+    latency_ms = sa.Column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    input_tokens = sa.Column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    output_tokens = sa.Column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    cost_micros = sa.Column(sa.BigInteger, nullable=False, server_default=sa.text("0"))
+    #: An unpriced model is not a free model. `priced=False` with cost 0 is
+    #: UNKNOWN; `priced=True` with cost 0 is genuinely nothing.
+    priced = sa.Column(sa.Boolean, nullable=False, server_default=sa.text("true"))
+    #: The model this call was a failover FROM. Non-empty means the router moved
+    #: vendors and this call is the recovery, not a second failure — counting it
+    #: as one is an error rate wrong in the direction that causes needless work.
+    fell_back_from = sa.Column(sa.Text, nullable=False, server_default=sa.text("''"))
+    violations = sa.Column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    proposals = sa.Column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    #: The exception TYPE, never a provider's message.
+    error_type = sa.Column(sa.Text, nullable=False, server_default=sa.text("''"))
+    created_at = sa.Column(TS, nullable=False, server_default=sa.text("now()"))
 
 
 # ─────────────────────────────────────────────────────── transcript and beats
@@ -752,6 +816,10 @@ ALL_TABLES = [
     "jobs",
     "job_assets",
     "job_steps",
+    # C3. Added in 0005, and listed here for the reason the docstring gives:
+    # the RLS test walks this list, so a table that is not on it is a table
+    # whose policy nobody checks.
+    "job_llm_calls",
     "transcripts",
     "speakers",
     "speaker_links",

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from .. import alerts
 from ..db import jobs as job_writes
 from ..db.base import session_for_org
 from ..logging import get_logger
@@ -44,13 +45,18 @@ class DatabaseSink:
         self._write(run, status="active")
 
     def step_finished(self, run: StepRun) -> None:
-        self._write(run, status="done", finished=True)
+        self._write(run, status="done", finished=True, costs=True)
+        self._check_duration(run)
 
     def step_failed(self, run: StepRun, will_retry: bool) -> None:
         # A step that will be retried stays `active`: showing "failed" for
         # something the system is about to do again reads as a broken job.
+        # A failed attempt still spent money on the model calls it made before
+        # it failed, so its costs are recorded whether or not it will be tried
+        # again. `record_llm_calls` is keyed on the step, so the retry rewrites
+        # these rows rather than adding to them.
         self._write(run, status="active" if will_retry else "failed",
-                    finished=not will_retry)
+                    finished=not will_retry, costs=True)
 
     def job_status(self, status: str) -> None:
         if status == self._status:
@@ -75,6 +81,29 @@ class DatabaseSink:
 
     # ── internals ──────────────────────────────────────────────────────────
 
+    def _check_duration(self, run: StepRun) -> None:
+        """Was this stage unlike what this stage does?
+
+        Asked after the row is written, so the comparison includes nothing about
+        this run and the alert is never the reason the step's progress is late.
+        A cache hit is skipped: it took no time because it did no work, and
+        neither side of that comparison means anything.
+        """
+        if run.from_cache or not run.seconds:
+            return
+        try:
+            with session_for_org(self.org_id) as s:
+                alert = alerts.slow_step(
+                    s, self.org_id, self.job_id, step=run.name,
+                    seconds=run.seconds,
+                )
+            if alert:
+                alert.emit()
+        except Exception as exc:  # noqa: BLE001 - a monitor never fails a job
+            log.warning("alert.check_failed", job_id=self.job_id,
+                        step=run.name, reason=type(exc).__name__)
+
+
     def _started(self, s) -> bool:
         from sqlalchemy import select
 
@@ -89,12 +118,28 @@ class DatabaseSink:
         return bool(row and row.started_at)
 
     def _write(self, run: StepRun, *, status: str, started: bool = False,
-               finished: bool = False) -> None:
+               finished: bool = False, costs: bool = False) -> None:
         try:
             with session_for_org(self.org_id) as s:
+                spend = None
+                if costs:
+                    # The calls first, then the step row that sums them: the
+                    # step's cost column is a projection of those rows and must
+                    # not be able to claim a figure they do not support.
+                    spend = job_writes.record_llm_calls(
+                        s, self.org_id, self.job_id, run.idx, run.name,
+                        run.llm_calls,
+                    )
                 job_writes.upsert_step(
                     s, self.org_id, self.job_id, run.idx, run.name,
                     status=status, attempt=run.attempt, detail=run.detail or None,
+                    asset_id=run.asset_id or None,
+                    seconds=round(run.seconds, 3) if costs else None,
+                    cumulative_seconds=(
+                        round(run.cumulative_seconds, 3) if costs else None
+                    ),
+                    from_cache=run.from_cache or None,
+                    model_cost_micros=spend,
                     started=started, finished=finished,
                 )
         except Exception as exc:  # noqa: BLE001 - progress is not worth a job

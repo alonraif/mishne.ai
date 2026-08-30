@@ -56,6 +56,58 @@ class Settings(BaseSettings):
     # commit us to storing a petabyte.
     max_upload_bytes: int = 512 * 1024**3  # 512 GiB
 
+    # ── payments (C1) ──────────────────────────────────────────────────────
+    #
+    # `fake` signs and verifies webhooks with a shared secret and talks to
+    # nothing — what the test suite and a developer's machine use. It is not a
+    # mock: it implements the same contract, so the handler under test is the
+    # real handler.
+    payment_provider: Literal["fake", "stripe"] = "fake"
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+
+    # A balance is low when it will not cover the customer's recent jobs. Two
+    # numbers rather than one: a flat floor for somebody who has never run a
+    # job, and a multiple of what their typical job costs for somebody who has.
+    # A fixed "warn under 10 credits" is wrong in both directions — trivial for
+    # a broadcaster and permanent for a hobbyist.
+    low_balance_floor: float = 10.0
+    low_balance_jobs: float = 2.0
+
+    # ── telemetry (C3) ─────────────────────────────────────────────────────
+    #
+    # Anything OTel-compatible. The vendor is deliberately not a code decision:
+    # the cost of choosing one late is an endpoint, and the cost of not
+    # instrumenting compounds every week. `console` is what a developer sees;
+    # `none` is the default so that nothing is exported by a process nobody
+    # configured.
+    otel_exporter: Literal["none", "console", "otlp"] = "none"
+    otel_endpoint: str = "http://localhost:4318/v1/traces"
+
+    # 100% is affordable at today's job volume and will not stay that way. A
+    # setting, so the day it stops being affordable is a config change.
+    otel_sample_ratio: float = 1.0
+
+    # Retention, in days, for the two things that are NOT customer content —
+    # see ADR-0017. Operational logs and traces run on their own clock because
+    # `logging.scrub` keeps content out of them, which makes their retention a
+    # cost decision rather than a privacy one. The audit log's three years is
+    # not here: it is a property of the table, not of a log backend.
+    log_retention_days: int = 90
+    trace_retention_days: int = 30
+
+    # ── alerting (C3) ──────────────────────────────────────────────────────
+    #
+    # How many multiples of a stage's own median duration counts as leaving the
+    # distribution. Transcription varies with the material, so this is not
+    # tight — the alert worth having is "this took six times as long as the
+    # same stage usually does", not a p95 that pages every Tuesday.
+    alert_duration_multiple: float = 6.0
+
+    # Below this many prior runs of a stage there is no distribution to leave,
+    # and comparing against three samples produces confident nonsense.
+    alert_duration_min_samples: int = 20
+
     # ── identity (B4) ──────────────────────────────────────────────────────
     #
     # Which provider answers "who is this?". `local` is email and password in
