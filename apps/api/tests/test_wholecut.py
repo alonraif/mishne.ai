@@ -166,3 +166,28 @@ def test_a_ceiling_that_still_truncates_is_reported_not_half_a_cut():
     with pytest.raises(Truncated):
         wholecut.propose_cut(_beats(1), lambda _a: SPEECH, _Brief(), router)
     assert max(router.budgets) == wholecut.CEILING_MAX_TOKENS
+
+
+def test_the_call_asks_for_more_material_than_the_cut_needs():
+    """The solver can only choose between things it was given.
+
+    The first real whole-cut runs returned exactly the target duration, so
+    after the clip-length cap filtered the over-long spans there was not enough
+    left to fill the window and the cap relaxed — silently reverting to "take
+    everything offered". Six spans in, five out: the solver made no decisions,
+    and a 57-second clip survived a brief that caps clips at 24.
+    """
+    router = FakeRouter([])
+    wholecut.propose_cut(_beats(1), lambda _a: SPEECH, _Brief(), router)
+    assert "twice the target" in router.system
+
+
+def test_the_timeout_scales_with_the_output_asked_for():
+    """A budget escalation once ran past a timeout sized for a small answer.
+    `_post` treats a timeout as retryable, so the router failed over and the
+    run was labelled with a model that did not produce it."""
+    from mishne.llm.providers import _timeout_for
+
+    assert _timeout_for(4096) < _timeout_for(32_768)
+    # Enough headroom that a 32k-token generation is not racing the clock.
+    assert _timeout_for(32_768) >= 480

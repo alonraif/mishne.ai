@@ -23,7 +23,20 @@ from dataclasses import dataclass
 
 from .base import Completion, LLMError, ProviderConfig
 
+#: Base read timeout. Generation time scales with output, so a call asking for
+#: 32k tokens can run past a limit sized for a 2k answer — and `_post` treats a
+#: timeout as retryable, so the router fails over to another model and the run
+#: silently produces its answer from a model nobody chose. Seen exactly that:
+#: a whole-transcript call escalated its budget, timed out, and the result was
+#: labelled sonnet-5 while being produced by sonnet-4-6.
 TIMEOUT_S = 120
+
+#: Extra seconds allowed per 1k requested output tokens.
+TIMEOUT_S_PER_1K_TOKENS = 12
+
+
+def _timeout_for(max_tokens: int) -> int:
+    return TIMEOUT_S + int(max_tokens / 1000 * TIMEOUT_S_PER_1K_TOKENS)
 
 PROVIDERS = {
     "anthropic": ProviderConfig(
@@ -41,9 +54,11 @@ def _post(url: str, headers: dict, body: dict) -> tuple[dict, int]:
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(), method="POST",
         headers={"content-type": "application/json", **headers})
+    timeout = _timeout_for(int(body.get("max_tokens") or body.get(
+        "max_completion_tokens") or 4096))
     t0 = time.time()
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             payload = json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode()[:400]
