@@ -78,6 +78,9 @@ def main() -> int:
     ap.add_argument("--policy", default="balanced",
                     choices=["quality", "balanced", "cost"],
                     help="how to choose a model when several keys are set")
+    ap.add_argument("--whole-cut", action="store_true",
+                    help="one model call reads the whole transcript and makes "
+                         "the cut (replaces stages 6 and 7)")
     ap.add_argument("--spans", default="auto",
                     choices=["auto", "model", "claude", "enumerate", "none"],
                     help="propose cuts inside long beats (default: auto)")
@@ -218,11 +221,25 @@ def main() -> int:
     # gated on real silence — see steps/propose.py for why that gate is the
     # point of the stage.
     speech_by_asset = {a.asset_id: a.speech for a in assets}
-    proposer = (None if args.spans == "none"
-                else propose.get_proposer(args.spans, router))
-    candidates = propose.build(beats, speech_by_asset.get, ed, proposer)
-    carved = getattr(propose.build, "carved", 0)
-    fell_back = getattr(propose.build, "failed", [])
+    if args.whole_cut:
+        if router is None or not router.available_for("spans"):
+            print(f"  6 whole cut    {R}needs a vendor key{X}")
+            return 1
+        from mishne.pipeline.steps import wholecut
+
+        candidates, provided_scores = wholecut.propose_cut(
+            beats, speech_by_asset.get, ed, router)
+        chosen = sum(1 for v in provided_scores.values() if v > 0)
+        print(f"  6 whole cut    {chosen} spans chosen from {len(beats)} beats "
+              f"in one pass · {wholecut.propose_cut.refused} of "
+              f"{wholecut.propose_cut.offered} refused by the silence gate")
+    else:
+        provided_scores = None
+        proposer = (None if args.spans == "none"
+                    else propose.get_proposer(args.spans, router))
+        candidates = propose.build(beats, speech_by_asset.get, ed, proposer)
+    carved = 0 if args.whole_cut else getattr(propose.build, "carved", 0)
+    fell_back = [] if args.whole_cut else getattr(propose.build, "failed", [])
     if fell_back:
         # Loud, because a silent fallback is indistinguishable from a model
         # deciding a beat is not worth carving, and the difference is the whole
@@ -241,8 +258,15 @@ def main() -> int:
                   f"judgement about which span is a thought. Set any vendor "
                   f"API key for that.{X}")
 
-    scorer = score_step.get_scorer(args.scorer, router)
-    scores = scorer.score(candidates, ed)
+    if provided_scores is not None:
+        # Stage 7 already happened: the same call that chose the spans scored
+        # them, because "is this worth its seconds" is not a separable question
+        # once you have read the whole piece.
+        scores = provided_scores
+        scorer = type("Provided", (), {"name": "whole-cut"})()
+    else:
+        scorer = score_step.get_scorer(args.scorer, router)
+        scores = scorer.score(candidates, ed)
     scores = score_step.apply_disqualifiers(candidates, scores, ed.keep_filler)
     live = sum(1 for v in scores.values() if v > 0)
     print(f"  7 score        {scorer.name} · {live} of {len(candidates)} eligible")
