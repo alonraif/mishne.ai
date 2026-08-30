@@ -15,6 +15,7 @@ prompt is a top-level field rather than a message, and `max_tokens` is required.
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -114,11 +115,20 @@ class Anthropic:
         if temperature:
             body["temperature"] = temperature
 
-        data, ms = _post(
-            f"{self.config.base_url}/messages",
-            {"x-api-key": self.config.api_key,
-             "anthropic-version": "2023-06-01"},
-            body)
+        headers = {
+            "x-api-key": self.config.api_key,
+            "anthropic-version": "2023-06-01",
+        }
+        # An identity-linked key — the kind an organisation's policy usually
+        # issues — is not tied to a workspace, so the API cannot tell which one
+        # the request should be billed and attributed to and refuses with a 400
+        # naming this header. A workspace-scoped key does not need it, which is
+        # why this is optional rather than required.
+        workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID", "")
+        if workspace:
+            headers["anthropic-workspace-id"] = workspace
+
+        data, ms = _post(f"{self.config.base_url}/messages", headers, body)
         # Content is a list of blocks; a thinking model puts reasoning blocks
         # before the text one, so take the text blocks rather than block zero.
         text = "".join(b.get("text", "") for b in data.get("content", [])
