@@ -140,25 +140,28 @@ def test_every_stage_ran_in_order_and_reported_something(through_the_runner):
 
 
 def test_the_shape_of_the_cut_is_what_the_brief_predicts(through_the_runner):
-    """23 beats, 30 candidates, 10 spans.
+    """23 beats, 45 candidates, 6 spans.
 
-    Was 25 candidates when `CARVE_ABOVE_MS` was 12s. At 8s, seven beats are
-    carved rather than two — an 8-12s answer is 7-10% of a 120s piece and
-    should not be a take-it-or-leave-it candidate.
+    These numbers have moved three times today and each move is a measurement,
+    so they are worth reading as a record rather than as magic constants.
 
-    And 4 picks became 10 once no single clip could exceed its share of the
-    target. The extra offers had been there since the carving change and went
-    unused: the objective is quality-weighted screen time under a fixed
-    duration, which is indifferent to how that time is divided, so a long block
-    that scored well took the budget. Same material, same seconds, two and a
-    half times the clips.
+    25 candidates when `CARVE_ABOVE_MS` was 12s; 30 at 8s; 45 at 4s with
+    `MIN_SPAN_MS` down from 2_000 to 500. The last move came from a finished
+    18-minute assembly in which 15% of the editor's clips are under 2s and 66%
+    under 8s — lengths this pipeline could not previously represent at all.
+
+    Picks went 4 -> 10 -> 6. The 10 was a per-clip length cap expressed as a
+    share of the target, which two measured cuts then refuted: it would have
+    forbidden 57% of a human's 2-minute promo while never binding at all on an
+    18-minute piece. Removed rather than retuned. 6 is what the solver picks
+    from a richer candidate pool with no artificial ceiling.
     """
     _out, (result, _) = through_the_runner
     state = result.state
     assert len(state.assets) == 1
     assert len(state.beats) == 23
-    assert len(state.candidates) == 30
-    assert len(state.picks) == 10
+    assert len(state.candidates) == 45
+    assert len(state.picks) == 6
     assert len(state.artifacts) == 4
     assert all(a.ok for a in state.artifacts)
 

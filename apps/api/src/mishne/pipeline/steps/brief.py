@@ -111,7 +111,13 @@ DEFAULT_MAX_SHARE = 0.25
 
 
 def max_clip_ms_for(brief) -> int:
-    """The longest single clip this brief tolerates, in milliseconds."""
+    """The longest single clip this brief tolerates, in milliseconds.
+
+    No longer consulted by the solver — see the note in `select.solve`. Kept
+    because the pacing-to-length relationship is real and will be wanted again
+    once it is expressed as an absolute duration rather than a share of the
+    target, which is what two measured cuts showed it has to be.
+    """
     share = getattr(brief, "max_clip_share", None)
     if share is None:
         share = PACING_MAX_SHARE.get(

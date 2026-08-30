@@ -58,13 +58,24 @@ from .vad import SpeechMap
 MIN_CUT_SILENCE_MS = 300
 # Only beats longer than this are worth carving up; shorter ones are already an
 # editorial unit and splitting them produces fragments.
-# Below this a beat is left whole. Was 12s, which left every 8-12s answer as a
-# single take-it-or-leave-it candidate — and at a 120s target those are 7-10%
-# of the finished piece each. Eight seconds is still comfortably above
-# MIN_SPAN_MS * 2, so a carve can produce two viable thoughts.
-CARVE_ABOVE_MS = 8_000
+# Below this a beat is left whole. 12s originally, then 8s, and now 4s on the
+# same evidence as MIN_SPAN_MS: in a real assembly the median clip is 5.2s and
+# 66% are under 8s, so a rule that never carves anything under 8s declines to
+# consider the length most editing actually uses. 4s is MIN_SPAN_MS * 8, which
+# still leaves room for a carve to yield two viable spans.
+CARVE_ABOVE_MS = 4_000
 # A proposed span shorter than this is not a thought.
-MIN_SPAN_MS = 2_000
+#
+# Was 2_000, chosen by intuition. Measured against a finished 18-minute
+# multi-source assembly (154 clips, Pepper Creative): 15% of that editor's
+# clips are under 2s, 8% under 1s, and four are under half a second. The
+# pipeline was structurally incapable of the fastest sixth of real editing, and
+# no prompt or model could reach it — the span was refused before anything
+# scored it.
+#
+# 500ms is where real clips actually stop, and it is still comfortably above
+# the frame quantisation and the silence gate's own 300ms.
+MIN_SPAN_MS = 500
 # Cap per parent, so the solver is not handed a combinatorial explosion. Eight
 # rather than six: the proposer is now asked for four to eight on a long block,
 # and a cap below what the prompt requests silently discards the model's later

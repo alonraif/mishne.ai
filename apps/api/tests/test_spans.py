@@ -89,9 +89,24 @@ def test_every_enumerated_boundary_is_a_legal_cut_point():
 # --- what a span is ----------------------------------------------------------
 
 
-def test_a_short_beat_is_never_carved():
-    """Already an editorial unit; splitting it produces fragments."""
-    b = beat_of(12, gaps={5: 900})
+def test_a_beat_below_the_carve_threshold_is_left_whole():
+    """Short enough to already be an editorial unit.
+
+    Expressed against `CARVE_ABOVE_MS` rather than a fixed word count, because
+    that threshold is evidence-led and has moved twice: 12s, then 8s, now 4s.
+    The last move came from a finished 18-minute assembly whose median clip is
+    5.2s and 66% of whose clips are under 8s — a rule that never carved
+    anything under 8s was declining to consider the length most editing
+    actually uses.
+
+    A test pinned to a word count silently stops testing what it names when the
+    threshold moves under it: `beat_of(12)` was 6s of speech, comfortably below
+    12s and then 8s, and became carvable at 4s without the assertion changing
+    its mind about what it meant.
+    """
+    words = max(1, int(propose.CARVE_ABOVE_MS / 500) - 2)
+    b = beat_of(words, gaps={1: 900})
+    assert b.duration_ms < propose.CARVE_ABOVE_MS
     assert propose.enumerate_spans(b, speech_from(b)) == [b]
 
 

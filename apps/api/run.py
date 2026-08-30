@@ -276,9 +276,6 @@ def main() -> int:
 
     # 7 ----------------------------------------------------------------------
     picks = select.solve(candidates, scores, ed, order)
-    if getattr(select.solve, "cap_relaxed", False):
-        print(f"                 {Y}no clip-length cap could be met — the "
-              f"material has no short enough spans to fill the target{X}")
     if not picks:
         print(f"  7 select       {R}nothing selected — target may be "
               f"unreachable with the available material{X}")

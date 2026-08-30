@@ -47,30 +47,27 @@ def solve(beats: list[Beat], scores: dict[str, float], brief,
     target_ms = brief.target_duration_s * 1000
     tol_ms = brief.duration_tolerance_s * 1000
 
-    # No single clip may dominate the cut. Stated as a preference in the notes
-    # ("punchy", "cut hard"), enforced here — the same move as speaker balance
-    # below, and for the same reason: the solver is where a preference becomes
-    # a guarantee.
+    # There was a per-clip length cap here, expressed as a share of the target,
+    # and it is gone. Not retuned — removed, because it measured the wrong
+    # thing.
     #
-    # Without it the objective is quality-weighted screen time under a fixed
-    # duration, which is indifferent to how that time is divided. A 45-second
-    # block that scores well is a perfectly correct answer, and three different
-    # models gave exactly that answer — four clips averaging 31 seconds against
-    # a 120-second target. None of them was wrong. None of them had been asked.
-    from .brief import max_clip_ms_for
-
-    cap_ms = max_clip_ms_for(brief)
-    eligible = [b for b in scored if b.duration_ms <= cap_ms]
-    solve.capped_out = len(scored) - len(eligible)
-
-    # The cap is a preference, not a physical law. If the material cannot fill
-    # the target out of short clips — a sparse interview of long unbroken
-    # answers, or a proposal stage that carved nothing — a near-miss the editor
-    # can trim beats a failed job. Relaxing is recorded, never silent.
+    # Two finished cuts settled it. A 2-minute promo from one interview: seven
+    # clips, two of them 34s, which a 20-25% share cap forbids — 57% of that
+    # cut would have been refused. An 18-minute multi-source assembly: 154
+    # clips, median 5.2s, longest 37.3s, which is 3.4% of the piece and which
+    # the same rule would never touch. Same editor's instinct, and a cap three
+    # orders of magnitude apart depending only on how long the finished piece
+    # happens to be.
+    #
+    # Editing has an absolute rhythm — clips of a few seconds — not a fraction
+    # of the running time. Pacing belongs in what gets PROPOSED and how it
+    # scores, where the material and the brief are both in view, and the fix
+    # for a cut of four long slabs is that spans under 2s were unrepresentable
+    # (MIN_SPAN_MS) and beats under 8s uncarvable (CARVE_ABOVE_MS). Both were
+    # constants picked by intuition; both are now measured.
+    eligible = scored
+    solve.capped_out = 0
     solve.cap_relaxed = False
-    if sum(b.duration_ms for b in eligible) < max(0, target_ms - tol_ms):
-        eligible = scored
-        solve.cap_relaxed = True
 
     model = cp_model.CpModel()
     pick = {b.id: model.NewBoolVar(b.id) for b in eligible}
