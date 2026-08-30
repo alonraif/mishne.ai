@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import json
 
-from ...llm.base import LLMError
+from ...llm.base import LLMError, Truncated
 from .propose import cut_points, span
 from .structure import Beat
 
@@ -107,32 +107,62 @@ def _payload(beats: list[Beat], speech_for) -> list[dict]:
     return out
 
 
+#: Where the output budget starts, and how far it may climb. A 26-minute
+#: interview truncated at 8_192: the answer is 20-40 spans of maybe 40 tokens
+#: each, but the reasoning blocks in front of them are the bulk of the output
+#: and scale with how much transcript there is to think about.
+START_MAX_TOKENS = 16_384
+CEILING_MAX_TOKENS = 65_536
+
+
 def propose_cut(beats: list[Beat], speech_for, brief, router,
-                max_tokens: int = 8192) -> tuple[list[Beat], dict[str, float]]:
+                max_tokens: int = START_MAX_TOKENS,
+                ) -> tuple[list[Beat], dict[str, float]]:
     """One call. Returns candidate spans and their scores.
 
     Beats that the model did not choose are returned as candidates too, scored
     zero: the solver needs something to fall back on if the chosen spans cannot
     make the duration window, and a beat nobody picked is still real material.
+
+    ## Truncation grows the budget rather than shrinking the question
+
+    The windowed scorer answers a truncated window by halving it and asking
+    again, which works because its question is a list that can be split. This
+    question cannot be: the entire value of the call is that one model saw the
+    whole transcript at once, and asking about half of it is asking a different
+    question and getting the decomposed pipeline's answer by another route.
+
+    So the budget doubles instead, up to a ceiling. If even the ceiling
+    truncates, the material is too long for a single pass on this model and
+    saying so is more useful than quietly returning half a cut.
     """
     payload = _payload(beats, speech_for)
     brief_json = json.dumps(
         {k: v for k, v in brief.to_dict().items() if k != "notes_raw"}, indent=1)
+    user = (f"Brief:\n{brief_json}\n\n"
+            f"TRANSCRIPT:\n{json.dumps(payload, ensure_ascii=False)}\n\n"
+            'Return ONLY a JSON array, in cut order: '
+            '[{"beat":"beat_0007","start":int,"end":int,"score":0-100,'
+            '"rationale":"one line"}]\n'
+            "Keep each rationale under 12 words. Return only the spans that "
+            "make the cut — do not narrate your reasoning.")
 
-    completion = router.complete(
-        "spans", system=SYSTEM, max_tokens=max_tokens,
-        user=(f"Brief:\n{brief_json}\n\n"
-              f"TRANSCRIPT:\n{json.dumps(payload, ensure_ascii=False)}\n\n"
-              'Return ONLY a JSON array, in cut order: '
-              '[{"beat":"beat_0007","start":int,"end":int,"score":0-100,'
-              '"rationale":"one line"}]\n'
-              "Keep each rationale under 12 words."))
-
-    try:
-        rows = completion.json()
-    except LLMError:
-        router.mark_unparsed(completion)
-        raise
+    budget = max_tokens
+    while True:
+        completion = router.complete(
+            "spans", system=SYSTEM, max_tokens=budget, user=user)
+        try:
+            rows = completion.json()
+            break
+        except Truncated:
+            router.mark_unparsed(completion)
+            if budget >= CEILING_MAX_TOKENS:
+                raise
+            budget = min(budget * 2, CEILING_MAX_TOKENS)
+            propose_cut.grew_to = budget
+        except LLMError:
+            router.mark_unparsed(completion)
+            raise
 
     by_id = {b.id: b for b in beats}
     legal = {b.id: set(cut_points(b, speech_for(b.asset_id))) for b in beats}

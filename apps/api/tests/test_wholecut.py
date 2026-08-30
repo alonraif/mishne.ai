@@ -56,14 +56,21 @@ class _Brief:
 
 
 class FakeRouter:
-    def __init__(self, rows):
+    def __init__(self, rows, truncate_below: int = 0):
         self.rows = rows
         self.user = ""
         self.violations = None
+        self.truncate_below = truncate_below
+        self.budgets: list[int] = []
 
     def complete(self, task, *, system, user, max_tokens=8192, **kw):
         self.user = user
         self.system = system
+        self.budgets.append(max_tokens)
+        if max_tokens < self.truncate_below:
+            return Completion(text="[{", model="m", provider="p",
+                              output_tokens=max_tokens,
+                              stop_reason="max_tokens")
         return Completion(text=json.dumps(self.rows), model="m", provider="p")
 
     def note_violations(self, task, refused, offered, completion=None):
@@ -131,3 +138,31 @@ def test_the_brief_reaches_the_model_without_the_raw_notes():
     wholecut.propose_cut(_beats(1), lambda _a: SPEECH, _Brief(), router)
     assert "target_duration_s" in router.user
     assert "notes_raw" not in router.user
+
+
+def test_truncation_grows_the_budget_rather_than_splitting_the_question():
+    """The windowed scorer halves a truncated window and asks again. This
+    question cannot be halved: the entire value of the call is that one model
+    saw the whole transcript, and asking about half of it is asking the
+    decomposed pipeline's question by another route. So the budget doubles."""
+    router = FakeRouter(
+        [{"beat": "beat_0000", "start": 0, "end": 8, "score": 90}],
+        truncate_below=wholecut.START_MAX_TOKENS * 2,
+    )
+
+    candidates, scores = wholecut.propose_cut(
+        _beats(1), lambda _a: SPEECH, _Brief(), router)
+
+    assert router.budgets[0] == wholecut.START_MAX_TOKENS
+    assert router.budgets[1] == wholecut.START_MAX_TOKENS * 2
+    assert any(v > 0 for v in scores.values())
+
+
+def test_a_ceiling_that_still_truncates_is_reported_not_half_a_cut():
+    """Half a cut that looks like a whole one is the worse outcome."""
+    from mishne.llm.base import Truncated
+
+    router = FakeRouter([], truncate_below=10 ** 9)
+    with pytest.raises(Truncated):
+        wholecut.propose_cut(_beats(1), lambda _a: SPEECH, _Brief(), router)
+    assert max(router.budgets) == wholecut.CEILING_MAX_TOKENS
