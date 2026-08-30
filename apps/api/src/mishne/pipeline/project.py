@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..asr import ASRResult
+from ..asr.base import Word
 from ..timecode import Rate
 from .steps import aaf_ingest, audio as audio_step, prepare, speakers as spk
 from .steps import structure, transcribe, vad
@@ -49,7 +50,10 @@ from .steps.vad import SpeechMap
 # one: it serves beats built by code that no longer exists, and the only symptom
 # is a cut that looks subtly wrong. Transcription is keyed separately and is not
 # repaid by a bump here.
-CACHE_VERSION = 2
+#: Bumped to 3 when the cache started carrying each beat's words. A cache
+#: written by version 2 has no words in it, and a beat without words cannot be
+#: carved into spans — so an old entry has to be rebuilt rather than served.
+CACHE_VERSION = 3
 
 
 @dataclass
@@ -368,6 +372,21 @@ def _save(a: AssetIngest, path: Path) -> None:
             "speaker": b.speaker, "startMs": b.start_ms, "endMs": b.end_ms,
             "text": b.text, "flags": b.flags,
             "confidence": round(b.mean_confidence, 3),
+            # The words, and they are not optional. Stage 6 carves a long beat
+            # into candidate spans at word indices, gated on real silence
+            # (ADR-0010) — `cut_points` returns indices into this list. A beat
+            # restored without them has exactly two legal cut points, its own
+            # edges, so nothing is ever carved and the scorer is offered whole
+            # 27-second blocks instead of the thoughts inside them.
+            #
+            # This is what made a cached re-run produce a coarser cut than the
+            # cold run that populated the cache, silently, and it is why the
+            # model proposer made no calls at all on a cache hit: it builds its
+            # prompt from these.
+            "words": [{
+                "t": w.text, "s": w.start_ms, "e": w.end_ms,
+                "c": round(w.confidence, 3), "spk": w.speaker,
+            } for w in b.words],
         } for b in a.beats],
     }, ensure_ascii=False, indent=1), encoding="utf-8")
 
@@ -381,7 +400,11 @@ def _load(cached: Path, path: Path, adir: Path) -> AssetIngest | None:
     beats = [Beat(id=b["id"], idx=b["idx"], asset_id=b["assetId"],
                   speaker=b["speaker"], start_ms=b["startMs"],
                   end_ms=b["endMs"], text=b["text"], flags=b["flags"],
-                  mean_confidence=b.get("confidence", 1.0))
+                  mean_confidence=b.get("confidence", 1.0),
+                  words=[Word(text=w["t"], start_ms=w["s"], end_ms=w["e"],
+                              confidence=w.get("c", 1.0),
+                              speaker=w.get("spk", ""))
+                         for w in b.get("words", [])])
              for b in d["beats"]]
     speakers = [spk.Speaker(
         id=s["id"], source=s["source"], default_label=s["defaultLabel"],
