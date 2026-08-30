@@ -1,6 +1,6 @@
 # mishne.ai — state of the project
 
-*Last updated 2026-08-29 (B1 persistence, B2 storage, B3 orchestration, B4 auth).*
+*Last updated 2026-08-30 (B1–B4; C3 cost and telemetry, C1 billing).*
 
 **Read this first if you are picking the project up cold**, in a new session, on
 a new machine, or in a new account. It says what exists, what it does, what it
@@ -77,10 +77,27 @@ Verified on two pieces of real material:
   three roles, and an audit log. The org on a request comes from the session and
   never from a header; `app.org_id` is set per transaction and the policies do
   the isolation. See ADR-0015 and `tests/test_pool_isolation.py`.
-- **No live billing.** `billing/credits.py` and `billing/ledger.py` model the
-  hold/settle design; nothing charges anyone.
+- ~~No live billing.~~ **Stripe, as of C1.** Checkout behind a payment provider
+  interface, credits granted on the webhook and never on the redirect, deduped
+  on the Stripe event id, and a `FakeProvider` that signs and verifies for real
+  so the whole path is testable with no account or network. Per-project spend
+  and a low-balance warning whose threshold scales to what the org's own jobs
+  cost. **Not connected to a Stripe account** — `payment_provider` is `fake`
+  until keys exist.
+- ~~Nothing measures cost.~~ **The schema does, as of C3.** Migration 0005 adds
+  per-asset timings, a cache flag and per-stage model spend to `job_steps`, plus
+  a `job_llm_calls` row per model call; `jobs.cost_cents` finally has a writer
+  and is a projection of those rows. OpenTelemetry spans, one per attempt, with
+  the exporter behind config so no vendor is named. Alerting that pages on a job
+  out of retries and stays quiet for one that merely retried.
+  `python -m mishne.report --org ORG JOB_ID` reads it back.
+  **The number still does not exist**: no job has run with a vendor key and a
+  model scorer, so `job_llm_calls` is empty and `--baseline` says so.
 - **The web app is mockups.** Ten screens against fixtures in `src/lib/`, no API.
 - **No deployment of any kind.** No infra, no CI, no environments.
+
+**Tests: 367 pass**, including the reference run, which needs the sample AAF and
+its stored ASR response (see below).
 
 ---
 
@@ -185,7 +202,8 @@ python ../../infra/s3_cors.py --apply --origin https://app.mishne.ai
 ### The reference run
 
 The regression target for the whole orchestration workstream. Needs a sample,
-which is not in the repository:
+which is not in the repository — and until C3 it was **skipping** in most runs
+for exactly that reason, which is worth knowing before trusting a green suite:
 
 ```bash
 MISHNE_SAMPLE_AAF=../../samples/SyncDaniel.aaf \
@@ -286,6 +304,27 @@ Every one of these cost real time to find.
 - **An audit row written on a failing request is rolled back with it.** A failed
   login is the case that matters, and `audit.record_even_if_the_request_fails`
   is the one that opens its own transaction.
+- **A ledger `delta` is the change in AVAILABLE credits, and a `settle` row is
+  therefore POSITIVE.** `hold` is `-cap`, `release` is `+cap`, and `settle` is
+  `+(cap - charged)` — the unused part of the hold coming back. What the
+  customer paid is the hold and the settle together. Until C1 `settle` wrote
+  `-charged` against a `balance_after` that had gone *up* by `cap - charged`, so
+  a single row contradicted itself and summing `delta` double-counted the hold
+  of every completed job. The one ledger test asserted that a hold and its
+  *release* net to zero — true throughout, because release was never the broken
+  case — so nothing caught it.
+- **`credit_ledger` survives `purge_org`, but the `tenant` fixture resets
+  `org_balances`.** The ledger is append-only and a trigger refuses the delete,
+  so an org's entries are a true record of every test that has ever run while
+  its balance is a true record of one. Any test asserting an absolute ledger
+  total, or treating the entries as one continuous sequence, passes or fails by
+  run order. Assert on the *change* across the operation under test.
+- **`logging.scrub` blocks by key, and now also by suffix.** A key ending in
+  `_text`, `_path`, `_filename`, `_url`, `_prompt` or `_content` is redacted
+  whatever its prefix, and nested dicts and lists are walked. `_name` is
+  deliberately not a blocked suffix — it would take `step_name` and
+  `provider_name` with it and leave a trace of `<redacted>`, which is how a
+  safeguard gets switched off by the person it inconveniences.
 - **`inet` rejects a hostname.** A test client sends `testclient` as its
   address, an unparseable `X-Forwarded-For` is attacker-supplied, and writing
   either into `audit_log.ip` raises — failing the upload the customer was
