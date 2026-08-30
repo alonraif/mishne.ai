@@ -185,7 +185,7 @@ const harbourAsset = mockAssets[0];
 const tier = TIERS[mockOrg.tier];
 
 export const mockEstimate = estimateJob({
-  asset: harbourAsset,
+  assets: [harbourAsset],
   tier,
   balance: mockOrg.creditBalance,
 });

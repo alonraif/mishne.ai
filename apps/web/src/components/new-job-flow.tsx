@@ -100,7 +100,7 @@ export function NewJobFlow({
   const asset = assets.find((a) => a.id === assetId);
 
   const estimate = useMemo(
-    () => (asset ? estimateJob({ asset, tier, balance, mode }) : null),
+    () => (asset ? estimateJob({ assets: [asset], tier, balance, mode }) : null),
     [asset, tier, balance, mode]
   );
 

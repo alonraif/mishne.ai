@@ -47,23 +47,29 @@ async def estimate(
 ) -> CreditEstimate:
     """Price a job before submission. Shown to the user for explicit approval.
 
-    Still single-asset, while `Job.asset_ids` is not: a multi-asset job has to
-    be priced on the sum of its sources, and that is a billing change rather
-    than a persistence one. Tracked, not fixed here.
+    Priced on every asset the job will draw on. It used to price the first one
+    and so did submission, so the two agreed with each other and both
+    under-charged a multi-source job — the error was invisible precisely
+    because it was made consistently in two places.
     """
-    asset = store.get_asset(body.asset_id)
-    if asset is None:
-        raise HTTPException(404, "asset not found")
+    assets = [store.get_asset(a) for a in body.assets]
+    missing = [a for a, row in zip(body.assets, assets) if row is None]
+    if missing:
+        raise HTTPException(404, f"no such asset: {missing[0]}")
     org = store.get_org()
     if org is None:
         raise HTTPException(404, "organisation not found")
     tier = TIERS[org.tier]
-    if asset.duration_frames * asset.rate.den / asset.rate.num > tier.max_source_hours * 3600:
+    total_seconds = sum(
+        a.duration_frames * a.rate.den / a.rate.num for a in assets
+    )
+    if total_seconds > tier.max_source_hours * 3600:
         raise HTTPException(
             422,
-            f"source exceeds the {tier.max_source_hours}-hour limit on the {tier.name} plan",
+            f"{total_seconds / 3600:.1f} source hours exceeds the "
+            f"{tier.max_source_hours}-hour limit on the {tier.name} plan",
         )
-    return estimate_job(asset, tier, org.credit_balance, body.mode)
+    return estimate_job(assets, tier, org.credit_balance, body.mode)
 
 
 @router.post("/jobs", response_model=Job, status_code=202)
@@ -116,10 +122,9 @@ async def create_job(
             f"{tier.max_source_hours}-hour limit on the {tier.name} plan",
         )
 
-    # Still priced on the first asset, as `estimate` is: a multi-asset job has
-    # to be priced on the sum of its sources, and that is a billing change
-    # rather than an orchestration one. Tracked, not fixed here.
-    estimate = estimate_job(assets[0], tier, org.credit_balance, body.mode)
+    # Every asset, matching what `estimate` showed the user. Both used to price
+    # `assets[0]`, which is why the mismatch never tripped the cap check.
+    estimate = estimate_job(assets, tier, org.credit_balance, body.mode)
     if abs(estimate.cap - body.approved_cap) > CAP_TOLERANCE:
         raise HTTPException(
             409,

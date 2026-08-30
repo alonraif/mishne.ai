@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 Role = Literal["owner", "member", "viewer"]
 TierId = Literal["starter", "pro", "studio"]
@@ -414,9 +414,25 @@ class Session(BaseModel):
 
 
 class EstimateJobRequest(BaseModel):
-    asset_id: str
+    #: One upload, or the several a job will be cut from. `asset_id` is kept
+    #: because the web app sends it and an estimate for a single upload is a
+    #: real question; `asset_ids` is what a multi-source job asks. Exactly one
+    #: of the two is required, and the validator below is what says so — a
+    #: price computed from a silently empty list is worse than a 422.
+    asset_id: str = ""
+    asset_ids: list[str] = Field(default_factory=list)
     target_duration_s: int
     mode: JobMode = "ai"
+
+    @property
+    def assets(self) -> list[str]:
+        return self.asset_ids or ([self.asset_id] if self.asset_id else [])
+
+    @model_validator(mode="after")
+    def _needs_an_asset(self):
+        if not self.assets:
+            raise ValueError("give asset_id or asset_ids")
+        return self
 
 
 class CreateJobRequest(BaseModel):

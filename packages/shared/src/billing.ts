@@ -111,22 +111,40 @@ function round2(n: number): number {
 }
 
 /**
- * Estimate the credits a job will consume.
+ * Estimate the credits a job will consume, across every source it draws on.
  *
  * Everything scales with source duration, because that is what actually drives
  * cost: transcription is billed per minute of audio and the edit engine's token
  * count is a function of transcript length. Target cut length does not affect
  * the price — the work is in reading three hours, not in writing ten minutes.
+ *
+ * `assets` is a list because a job has been cut from several uploads since B2.
+ * This took one asset, and so did the API, so the displayed price and the
+ * charged price agreed with each other and both under-charged a multi-source
+ * job by everything after the first reel. Mirrors
+ * `apps/api/src/mishne/billing/credits.py`; the two are checked against each
+ * other and must be changed together.
+ *
+ * Transcription and the engine are summed across sources. **Artifacts are flat
+ * and charged once** — a job emits one AAF, one FCPXML, one EDL and one
+ * transcript however many uploads it was cut from. Extra audio tracks are per
+ * asset, priced on that asset's own duration.
  */
+type EstimateAsset = Pick<Asset, "durationFrames" | "rate" | "audioTracks">;
+
 export function estimateJob(params: {
-  asset: Pick<Asset, "durationFrames" | "rate" | "audioTracks">;
+  assets: EstimateAsset | EstimateAsset[];
   tier: Tier;
   balance: number;
   mode?: JobMode;
 }): CreditEstimate {
-  const { asset, tier, balance, mode = "ai" } = params;
-  const seconds = framesToSeconds(asset.durationFrames, asset.rate);
-  const sourceHours = seconds / 3600;
+  const { tier, balance, mode = "ai" } = params;
+  const sources = Array.isArray(params.assets) ? params.assets : [params.assets];
+  if (sources.length === 0) {
+    throw new Error("a job needs at least one asset to be priced");
+  }
+  const secondsOf = (a: EstimateAsset) => framesToSeconds(a.durationFrames, a.rate);
+  const sourceHours = sources.reduce((a, s) => a + secondsOf(s), 0) / 3600;
 
   const transcription = sourceHours * TRANSCRIPTION_RATE_PER_HOUR;
   const engine = sourceHours * engineRatePerHour(tier);
@@ -158,11 +176,22 @@ export function estimateJob(params: {
     credits: ARTIFACT_FLAT,
   });
 
-  if (asset.audioTracks > 2) {
-    const extra = round2(sourceHours * 0.5 * (asset.audioTracks - 2));
+  // Per asset, on that asset's own duration: the extra tracks belong to the
+  // upload that has them, not to the job's total.
+  const multitrack = sources.filter((a) => a.audioTracks > 2);
+  if (multitrack.length > 0) {
+    const extra = round2(
+      multitrack.reduce(
+        (a, s) => a + (secondsOf(s) / 3600) * 0.5 * (s.audioTracks - 2),
+        0,
+      ),
+    );
     lines.push({
       label: "Additional audio tracks",
-      detail: `${asset.audioTracks} tracks transcribed separately`,
+      detail:
+        multitrack.length === 1
+          ? `${multitrack[0].audioTracks} tracks transcribed separately`
+          : `${multitrack.length} sources with more than two tracks`,
       credits: extra,
     });
   }
@@ -172,7 +201,13 @@ export function estimateJob(params: {
 
   return {
     mode,
-    sourceDurationFrames: asset.durationFrames,
+    // At the FIRST source's rate. Summing raw frame counts across sources at
+    // different rates adds numbers that do not mean the same thing, and
+    // conforming to the first rate is what assembly does with a mixed-rate
+    // project — so this matches the timeline the customer gets.
+    sourceDurationFrames: Math.round(
+      (sourceHours * 3600 * sources[0].rate.num) / sources[0].rate.den,
+    ),
     sourceHours: round2(sourceHours),
     lines,
     subtotal,

@@ -46,6 +46,10 @@ ASSET_PROBED = "asset.probed"
 ARTIFACT_DOWNLOADED = "artifact.downloaded"
 JOB_CREATED = "job.created"
 RETENTION_CHANGED = "org.retention_changed"
+# Billing. 04-security names permission and billing changes explicitly, and
+# "who bought credits, and when" is the first question a disputed charge asks.
+CHECKOUT_STARTED = "billing.checkout_started"
+CREDITS_GRANTED = "billing.credits_granted"
 
 
 def _inet(value: str | None) -> str | None:
