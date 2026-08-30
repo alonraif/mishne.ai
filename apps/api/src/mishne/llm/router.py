@@ -159,11 +159,15 @@ class Router:
         gap mattered: parse compliance is one of the few things ADR-0011 can
         measure without a corpus, and it was the one thing not being recorded.
         """
-        for record in reversed(self.ledger.calls):
-            if record.model == completion.model and record.ok:
-                record.parsed = False
-                record.stop_reason = completion.stop_reason
-                return
+        record = self.ledger.by_seq(completion.record_seq)
+        if record is None:
+            for candidate in reversed(self.ledger.calls):
+                if candidate.model == completion.model and candidate.ok:
+                    record = candidate
+                    break
+        if record is not None:
+            record.parsed = False
+            record.stop_reason = completion.stop_reason
 
     def complete(self, task_name: str, *, system: str, user: str,
                  max_tokens: int = 4096, violations: int = 0,
@@ -207,7 +211,7 @@ class Router:
                 continue
 
             cost = model.cost_for(out.input_tokens, out.output_tokens)
-            self.ledger.add(CallRecord(
+            out.record_seq = self.ledger.add(CallRecord(
                 task=task_name, provider=model.provider, model=model.id,
                 ok=True, latency_ms=out.latency_ms,
                 input_tokens=out.input_tokens, output_tokens=out.output_tokens,
@@ -216,7 +220,7 @@ class Router:
                 violations=violations,
                 proposals=proposals,
                 fell_back_from=("" if model is first
-                                else f"{first.provider}/{first.id}")))
+                                else f"{first.provider}/{first.id}"))).seq
             return out
 
         raise LLMError(f"every model for '{task_name}' failed; "
@@ -257,7 +261,7 @@ class Router:
                 "policy": self.policy}
 
     def note_violations(self, task_name: str, violations: int,
-                        proposals: int) -> None:
+                        proposals: int, completion=None) -> None:
         """Attach a constraint result to the call that has just been recorded.
 
         The count is only known after the stage has checked the answer, which is
@@ -265,8 +269,16 @@ class Router:
         than a callback because the stage, not the router, decides what counts
         as a violation.
         """
-        for record in reversed(self.ledger.calls):
-            if record.task == task_name and record.ok:
-                record.violations += violations
-                record.proposals += proposals
-                return
+        record = (self.ledger.by_seq(completion.record_seq)
+                  if completion is not None else None)
+        if record is None:
+            # No completion given: the old backwards scan, kept for callers
+            # that have not been threaded through. Correct only while one call
+            # per task is in flight.
+            for candidate in reversed(self.ledger.calls):
+                if candidate.task == task_name and candidate.ok:
+                    record = candidate
+                    break
+        if record is not None:
+            record.violations += violations
+            record.proposals += proposals

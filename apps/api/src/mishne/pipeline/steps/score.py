@@ -234,9 +234,32 @@ class ModelScorer:
             {k: v for k, v in brief.to_dict().items() if k != "notes_raw"},
             indent=2)
 
-        for i in range(0, len(beats), self.chunk):
-            self._score_window(beats[i:i + self.chunk], brief_json, out,
-                               on_progress)
+        windows = [beats[i:i + self.chunk]
+                   for i in range(0, len(beats), self.chunk)]
+        if len(windows) > 1:
+            # Each window scores a different set of candidates and writes
+            # different keys, so they are independent in the same way the
+            # per-beat span calls are. Five windows at ~33s each was 163s of
+            # sequential waiting.
+            from concurrent.futures import ThreadPoolExecutor
+
+            from ...config import get_settings
+
+            try:
+                workers = max(1, int(get_settings().llm_concurrency))
+            except Exception:  # noqa: BLE001
+                workers = 8
+            # `out` is a plain dict written from several threads. Each window
+            # owns a disjoint set of ids, and CPython dict assignment is atomic,
+            # so there is nothing to guard — but the disjointness is the reason,
+            # not luck, and it stops being true if windows ever overlap.
+            with ThreadPoolExecutor(max_workers=min(workers, len(windows))) as pool:
+                list(pool.map(
+                    lambda w: self._score_window(w, brief_json, out, on_progress),
+                    windows))
+        else:
+            for window in windows:
+                self._score_window(window, brief_json, out, on_progress)
 
         for b in beats:
             out.setdefault(b.id, 0.0)

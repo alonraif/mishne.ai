@@ -288,8 +288,53 @@ class ModelProposer:
         # a corpus: how often this model asked for a cut the recording cannot
         # make. Recorded per call, reported per job, and not yet allowed to
         # change routing — see llm/router.py.
-        self.router.note_violations("spans", refused, offered)
+        self.router.note_violations("spans", refused, offered, completion)
         return out[:MAX_SPANS_PER_BEAT + 1]
+
+
+def _build_concurrent(beats: list[Beat], speech_for, brief, proposer) -> list[Beat]:
+    """`build`, with the model calls in flight together.
+
+    Span proposal is one call per beat and the calls share nothing — the
+    silence map is read-only, the beats are independent, and the router's
+    ledger numbers its own records. Running them one after another made this
+    stage 980 seconds of a 1,158-second job: 38 calls at ~26s each, 85% of the
+    wall clock, spent waiting.
+
+    Order is preserved by writing into a slot per beat rather than appending,
+    because the finished cut's order comes from beat order and a race would
+    reshuffle the timeline.
+
+    Bounded, and not by politeness: a provider that starts refusing at some
+    concurrency turns one slow job into a job full of retries, and the router's
+    failover would paper over it by moving vendors. `llm_concurrency` is the
+    dial.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    from ...config import get_settings
+
+    try:
+        workers = max(1, int(get_settings().llm_concurrency))
+    except Exception:  # noqa: BLE001 - a config problem must not stop a cut
+        workers = 8
+
+    slots: list[list[Beat]] = [[b] for b in beats]
+    failed: list[str] = []
+
+    def one(i: int, b: Beat) -> None:
+        try:
+            slots[i] = proposer.propose(b, speech_for(b.asset_id), brief)
+        except Exception as exc:  # noqa: BLE001 - see `build`
+            failed.append(type(exc).__name__)
+
+    with ThreadPoolExecutor(max_workers=min(workers, len(beats))) as pool:
+        list(pool.map(lambda p: one(*p), list(enumerate(beats))))
+
+    out = [s for slot in slots for s in slot]
+    build.carved = sum(1 for s in out if s.kind != "beat")
+    build.failed = failed
+    return out
 
 
 def get_proposer(name: str = "auto", router=None):
@@ -317,6 +362,9 @@ def build(beats: list[Beat], speech_for, brief, proposer=None) -> list[Beat]:
     property of one recording, and reading one asset's silence against another's
     timings is the class of bug that produces a plausible cut in the wrong place.
     """
+    if proposer is not None and len(beats) > 1:
+        return _build_concurrent(beats, speech_for, brief, proposer)
+
     out: list[Beat] = []
     failed: list[str] = []
     for b in beats:

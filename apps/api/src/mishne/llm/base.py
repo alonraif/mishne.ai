@@ -70,6 +70,8 @@ class Completion:
     #: "max_tokens"; OpenAI-compatible APIs say "length". Empty when a provider
     #: does not report one — absence is not evidence of completion.
     stop_reason: str = ""
+    #: Which ledger record this came from. See `CallRecord.seq`.
+    record_seq: int = 0
     #: Output tokens spent on reasoning blocks that were then discarded. Billed
     #: at the output rate and invisible until measured: on a 26-minute
     #: interview, span proposal spent 82k output tokens to return roughly 1.8
@@ -164,6 +166,13 @@ class CallRecord:
     provider: str
     model: str
     ok: bool
+    #: Position in the ledger, assigned on `add`. Stages report what they
+    #: learned about an answer AFTER `complete` returned — whether it parsed,
+    #: how many proposals the gate refused — and used to find the record by
+    #: scanning backwards for the last matching one. That is a race the moment
+    #: two beats are proposed at the same time: both threads find the same
+    #: record and one stage's result lands on the other's call.
+    seq: int = 0
     latency_ms: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -209,10 +218,28 @@ class Ledger:
     """Every call a job made, for the run report and for `model_versions`."""
 
     calls: list[CallRecord] = field(default_factory=list)
+    _lock: object = field(default_factory=lambda: __import__("threading").Lock(),
+                          repr=False, compare=False)
 
     def add(self, record: CallRecord) -> CallRecord:
-        self.calls.append(record)
+        """Append and number, atomically.
+
+        Span proposal runs one call per beat and those calls are independent,
+        so they run concurrently. A ledger that is appended to from several
+        threads has to number its own records, or nothing downstream can say
+        which call it is talking about.
+        """
+        with self._lock:
+            record.seq = len(self.calls) + 1
+            self.calls.append(record)
         return record
+
+    def by_seq(self, seq: int) -> CallRecord | None:
+        with self._lock:
+            for record in reversed(self.calls):
+                if record.seq == seq:
+                    return record
+        return None
 
     @property
     def cost_usd(self) -> float:

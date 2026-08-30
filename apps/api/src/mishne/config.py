@@ -74,6 +74,15 @@ class Settings(BaseSettings):
     low_balance_floor: float = 10.0
     low_balance_jobs: float = 2.0
 
+    # How many model calls may be in flight at once. Span proposal is one call
+    # per long beat and scoring is one per window; both are independent, and
+    # run sequentially they were 85% of a job's wall clock spent waiting.
+    #
+    # Bounded rather than unlimited: a provider that starts refusing at some
+    # concurrency turns one slow job into a job full of retries, and the
+    # router's failover would quietly paper over it by moving vendors.
+    llm_concurrency: int = 8
+
     # ── telemetry (C3) ─────────────────────────────────────────────────────
     #
     # Anything OTel-compatible. The vendor is deliberately not a code decision:
