@@ -109,10 +109,15 @@ def render(job_id: str, data: dict) -> list[str]:
         if r.cumulative_seconds and float(r.cumulative_seconds) > seconds:
             marks.append(f"+{float(r.cumulative_seconds) - seconds:.1f}s retried")
         note = ("  · " + ", ".join(marks)) if marks else ""
-        asset = f" [{r.asset_id}]" if r.asset_id else ""
-        out.append(f"   {r.idx:>3} {r.name:<16}{asset:<12} {seconds:>8.1f}s{note}")
+        # Fixed width, truncated: a job-phase step has no asset and must still
+        # line its duration up with the per-asset ones, or the column a reader
+        # is scanning for the slow stage stops being a column.
+        asset = f"[{r.asset_id}]" if r.asset_id else ""
+        out.append(
+            f"   {r.idx:>3} {r.name:<16} {asset:<24.24} {seconds:>8.1f}s{note}"
+        )
     out.append(
-        f"       {'':<16}{'':<12} {wall:>8.1f}s total"
+        f"       {'':<16} {'':<24} {wall:>8.1f}s total"
         + (f", of which {retried:.1f}s was retries" if retried > 0.05 else "")
     )
     if cached:
