@@ -64,8 +64,16 @@ TASKS = {
                   est_input=3_000, est_output=700),
     # Scoring beats against the brief, with enough spread for the solver to
     # have something to work with.
+    #
+    # `est_output` was 1_800, which assumed ~45 tokens per scored beat across a
+    # 40-beat window. Measured on real material it is closer to 128 — a model
+    # asked for a "one line" rationale writes three — and the window overran its
+    # budget mid-answer. The window is 25 now and the rationale is capped in the
+    # prompt, so this is 25 x 128 with a little room. `est_input` is unverified
+    # and is the next thing to measure: it scales with transcript length, which
+    # is the axis nobody has checked.
     "score": Task("score", min_tier="mid", prefers="frontier",
-                  est_input=6_000, est_output=1_800),
+                  est_input=6_000, est_output=3_200),
 }
 
 
@@ -134,6 +142,21 @@ class Router:
     def available_for(self, task_name: str) -> bool:
         return bool(self.plan(task_name))
 
+    def mark_unparsed(self, completion: Completion) -> None:
+        """Tell the ledger the answer could not be used.
+
+        `ok` records that the call returned; only the calling stage knows
+        whether the answer was usable, and until this existed the ledger said
+        `1/1 ok` for a call that produced nothing and still cost money. That
+        gap mattered: parse compliance is one of the few things ADR-0011 can
+        measure without a corpus, and it was the one thing not being recorded.
+        """
+        for record in reversed(self.ledger.calls):
+            if record.model == completion.model and record.ok:
+                record.parsed = False
+                record.stop_reason = completion.stop_reason
+                return
+
     def complete(self, task_name: str, *, system: str, user: str,
                  max_tokens: int = 4096, violations: int = 0,
                  proposals: int = 0) -> Completion:
@@ -181,6 +204,7 @@ class Router:
                 ok=True, latency_ms=out.latency_ms,
                 input_tokens=out.input_tokens, output_tokens=out.output_tokens,
                 cost_usd=cost or 0.0, priced=cost is not None,
+                stop_reason=out.stop_reason,
                 violations=violations,
                 proposals=proposals,
                 fell_back_from=("" if model is first

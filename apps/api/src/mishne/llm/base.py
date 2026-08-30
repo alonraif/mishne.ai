@@ -44,6 +44,20 @@ class LLMError(RuntimeError):
         self.retryable = retryable
 
 
+class Truncated(LLMError):
+    """The answer was cut off because it hit the token budget.
+
+    A distinct type because the response to it is distinct: the model did
+    nothing wrong and retrying the same request unchanged reproduces it exactly.
+    What has to change is the size of the question — a smaller window, or a
+    bigger budget.
+
+    Without this, truncation arrives as `did not return valid JSON`, which reads
+    as a model that cannot follow instructions and is the wrong conclusion to
+    draw about a model that was writing perfectly good JSON when we cut it off.
+    """
+
+
 @dataclass
 class Completion:
     text: str
@@ -52,6 +66,14 @@ class Completion:
     input_tokens: int = 0
     output_tokens: int = 0
     latency_ms: int = 0
+    #: The vendor's own word for why generation ended. Anthropic says
+    #: "max_tokens"; OpenAI-compatible APIs say "length". Empty when a provider
+    #: does not report one — absence is not evidence of completion.
+    stop_reason: str = ""
+
+    @property
+    def truncated(self) -> bool:
+        return self.stop_reason in ("max_tokens", "length")
 
     def cost_usd(self, price_in: float, price_out: float) -> float:
         """Prices are per million tokens, as every vendor quotes them."""
@@ -67,6 +89,14 @@ class Completion:
         which is why this raises something the router can count rather than
         returning None.
         """
+        # Checked before parsing: a truncated answer fails to parse for a
+        # reason that has nothing to do with the model's ability to write JSON,
+        # and diagnosing it from the JSONDecodeError is guesswork.
+        if self.truncated:
+            raise Truncated(
+                f"{self.provider}/{self.model} hit the token budget after "
+                f"{self.output_tokens} output tokens; ask for less at a time")
+
         text = re.sub(r"^```(?:json)?|```$", "", self.text.strip(),
                       flags=re.M).strip()
         # Some models preface with a sentence. Take the outermost array/object.
@@ -144,6 +174,14 @@ class CallRecord:
     violations: int = 0
     proposals: int = 0
     fell_back_from: str = ""
+    #: Whether the caller could USE the answer. `ok` means the call returned;
+    #: this means it parsed. They are different questions and the second is the
+    #: one that decides whether the money bought anything — a truncated answer
+    #: is a successful call that produced nothing. Set by the calling stage,
+    #: because only it knows what a valid answer looks like.
+    parsed: bool = True
+    #: Why generation stopped, when the vendor said.
+    stop_reason: str = ""
 
     def to_dict(self) -> dict:
         """The non-empty fields, for the job manifest.

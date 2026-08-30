@@ -92,7 +92,11 @@ class OpenAICompatible:
         return Completion(
             text=text, model=data.get("model", model), provider=self.name,
             input_tokens=usage.get("prompt_tokens", 0),
-            output_tokens=usage.get("completion_tokens", 0), latency_ms=ms)
+            output_tokens=usage.get("completion_tokens", 0), latency_ms=ms,
+            # The OpenAI-compatible spelling of the same fact: "length" is the
+            # budget running out, and every vendor on this path uses it.
+            stop_reason=(data.get("choices") or [{}])[0].get(
+                "finish_reason", "") or "")
 
 
 @dataclass
@@ -137,7 +141,10 @@ class Anthropic:
         return Completion(
             text=text, model=data.get("model", model), provider=self.name,
             input_tokens=usage.get("input_tokens", 0),
-            output_tokens=usage.get("output_tokens", 0), latency_ms=ms)
+            output_tokens=usage.get("output_tokens", 0), latency_ms=ms,
+            # "max_tokens" here means we cut the model off. Not reporting it
+            # turns a budget problem into an unexplained parse failure.
+            stop_reason=data.get("stop_reason", "") or "")
 
 
 def get(name: str):

@@ -16,6 +16,7 @@ import os
 import re
 from typing import Protocol
 
+from ...llm.base import LLMError, Truncated
 from .structure import Beat
 
 PROMPT_VERSION = "2026-08-29.1"
@@ -133,33 +134,83 @@ class ModelScorer:
         "language as the transcript so the editor can read it."
     )
 
-    def __init__(self, router, chunk: int = 40):
+    #: Output budget per window. One row is roughly 45 tokens by the estimate
+    #: in `llm/TASKS`, and was observed at 128 on real material because
+    #: "one line" is a request rather than a constraint. The budget is generous
+    #: because being wrong in this direction costs a fraction of a cent and
+    #: being wrong in the other direction used to cost the whole job.
+    MAX_TOKENS = 8192
+
+    #: A window this small that still truncates is not a budget problem.
+    MIN_CHUNK = 5
+
+    def __init__(self, router, chunk: int = 25):
         self.router = router
         self.chunk = chunk
 
-    def score(self, beats: list[Beat], brief) -> dict[str, float]:
+    def _score_window(self, window: list[Beat], brief_json: str,
+                      out: dict[str, float], on_progress=None) -> None:
+        """One window, halving and retrying if the answer comes back cut off.
+
+        Truncation is not a model failing to follow instructions — it is us
+        asking for more than the budget holds — so retrying the same request
+        unchanged reproduces it exactly. What has to change is the size of the
+        question, and halving converges in a couple of steps from any starting
+        point.
+
+        This replaces the failure mode that killed a 26-minute interview: one
+        window of 40 candidates overran the budget, `.json()` raised at the call
+        site where the router could not see it, and every already-scored window
+        was thrown away with the job.
+        """
+        say = on_progress or (lambda *_: None)
+        payload = [{"id": b.id, "speaker": b.speaker,
+                    "seconds": round(b.duration_ms / 1000, 1),
+                    "text": b.text, "flags": b.flags} for b in window]
+        completion = self.router.complete(
+            "score", system=self.SYSTEM, max_tokens=self.MAX_TOKENS,
+            user=(f"Brief:\n{brief_json}\n\nBeats:\n"
+                  f"{json.dumps(payload, ensure_ascii=False, indent=1)}\n\n"
+                  'Return ONLY a JSON array: [{"id":"...","score":0-100,'
+                  '"depends_on":[],"rationale":"one line"}]\n'
+                  # A limit rather than a wish. "one line" alone produced
+                  # rationales three times the estimated length, which is what
+                  # exhausted the budget in the first place.
+                  "Keep each rationale under 15 words. Return every beat."))
+        try:
+            rows = completion.json()
+        except Truncated:
+            self.router.mark_unparsed(completion)
+            if len(window) <= self.MIN_CHUNK:
+                # Not a budget problem any more. Let it raise: the router's
+                # retry and failover are better placed to judge this than a
+                # loop that can only make the question smaller.
+                raise
+            half = max(self.MIN_CHUNK, len(window) // 2)
+            say(f"answer truncated — retrying in windows of {half}")
+            for i in range(0, len(window), half):
+                self._score_window(window[i:i + half], brief_json, out, say)
+            return
+        except LLMError:
+            self.router.mark_unparsed(completion)
+            raise
+
+        for row in rows:
+            out[row["id"]] = float(row["score"])
+            for b in window:
+                if b.id == row["id"]:
+                    b.rationale = row.get("rationale", "")
+                    b.depends_on = row.get("depends_on", []) or []
+
+    def score(self, beats: list[Beat], brief, on_progress=None) -> dict[str, float]:
         out: dict[str, float] = {}
         brief_json = json.dumps(
             {k: v for k, v in brief.to_dict().items() if k != "notes_raw"},
             indent=2)
 
         for i in range(0, len(beats), self.chunk):
-            window = beats[i:i + self.chunk]
-            payload = [{"id": b.id, "speaker": b.speaker,
-                        "seconds": round(b.duration_ms / 1000, 1),
-                        "text": b.text, "flags": b.flags} for b in window]
-            completion = self.router.complete(
-                "score", system=self.SYSTEM, max_tokens=4096,
-                user=(f"Brief:\n{brief_json}\n\nBeats:\n"
-                      f"{json.dumps(payload, ensure_ascii=False, indent=1)}\n\n"
-                      'Return ONLY a JSON array: [{"id":"...","score":0-100,'
-                      '"depends_on":[],"rationale":"one line"}]'))
-            for row in completion.json():
-                out[row["id"]] = float(row["score"])
-                for b in window:
-                    if b.id == row["id"]:
-                        b.rationale = row.get("rationale", "")
-                        b.depends_on = row.get("depends_on", []) or []
+            self._score_window(beats[i:i + self.chunk], brief_json, out,
+                               on_progress)
 
         for b in beats:
             out.setdefault(b.id, 0.0)
