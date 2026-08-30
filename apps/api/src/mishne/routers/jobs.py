@@ -6,11 +6,19 @@ the estimate server-side and rejects a job whose approved cap does not match —
 never trust a client-supplied price.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from pathlib import Path
 
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
+
+from .. import audit
 from ..auth.sessions import Principal
 from ..billing import TIERS, estimate_job
-from ..deps import require_write
+from ..db import jobs as job_writes
+from ..db import repository
+from ..deps import current_principal, require_write, writable_db
+from ..logging import get_logger
+from ..orchestration import AssetSource, JobRequest, plan as plan_steps
 from ..schemas import (
     Artifact,
     CreateJobRequest,
@@ -23,6 +31,14 @@ from ..schemas import (
 from ..store import Store, get_store
 
 router = APIRouter(prefix="/v1", tags=["jobs"])
+
+log = get_logger(__name__)
+
+#: How far the recomputed estimate may differ from the figure the client says
+#: the user approved. Not zero: a price is rounded to two decimals in two
+#: places, and refusing a job over a hundredth of a credit is a support ticket.
+#: Wide enough to absorb rounding, narrow enough that a stale price is caught.
+CAP_TOLERANCE = 0.01
 
 
 @router.post("/jobs/estimate", response_model=CreditEstimate)
@@ -52,16 +68,115 @@ async def estimate(
 
 @router.post("/jobs", response_model=Job, status_code=202)
 async def create_job(
-    body: CreateJobRequest, _: Principal = Depends(require_write)
+    body: CreateJobRequest,
+    request: Request,
+    principal: Principal = Depends(require_write),
+    s: Session = Depends(writable_db),
 ) -> Job:
     """Accept a job.
 
-    Recompute the estimate, verify the client's approved_cap matches, place a
-    hold for that amount, then start the workflow. A hold at submission — rather
-    than a debit at completion — is what stops a user with five credits from
-    starting ten concurrent jobs.
+    Recompute the estimate, verify the client's approved cap matches, place a
+    hold for that amount, then write the steps the workflow will run. A hold at
+    submission — rather than a debit at completion — is what stops a user with
+    five credits starting ten concurrent jobs (ADR-0006).
+
+    **The price is recomputed here and never trusted from the request.** The
+    client sends what the user approved so that the two can be compared; a job
+    whose price has moved since the estimate was shown is refused rather than
+    quietly charged at the new one.
     """
-    raise HTTPException(501, "not implemented")
+    org_id = principal.org_id
+    if not body.asset_ids:
+        raise HTTPException(422, "a job needs at least one asset")
+
+    assets = [repository.get_asset(s, org_id, a) for a in body.asset_ids]
+    missing = [a for a, row in zip(body.asset_ids, assets) if row is None]
+    if missing:
+        raise HTTPException(404, f"no such asset: {missing[0]}")
+    not_ready = [a.id for a in assets if a.status != "ready"]
+    if not_ready:
+        # An `awaiting_media` sequence would transcribe silence; a `probing`
+        # asset has no duration yet and therefore no price.
+        raise HTTPException(
+            409, f"asset {not_ready[0]} is not ready to cut"
+        )
+
+    org = repository.get_org(s, org_id)
+    if org is None:  # pragma: no cover - the session just proved it exists
+        raise HTTPException(404, "organisation not found")
+    tier = TIERS[org.tier]
+
+    total_hours = sum(
+        a.duration_frames * a.rate.den / a.rate.num / 3600 for a in assets
+    )
+    if total_hours > tier.max_source_hours:
+        raise HTTPException(
+            422,
+            f"{total_hours:.1f} source hours exceeds the "
+            f"{tier.max_source_hours}-hour limit on the {tier.name} plan",
+        )
+
+    # Still priced on the first asset, as `estimate` is: a multi-asset job has
+    # to be priced on the sum of its sources, and that is a billing change
+    # rather than an orchestration one. Tracked, not fixed here.
+    estimate = estimate_job(assets[0], tier, org.credit_balance, body.mode)
+    if abs(estimate.cap - body.approved_cap) > CAP_TOLERANCE:
+        raise HTTPException(
+            409,
+            f"the price has changed since you approved it: "
+            f"{estimate.cap} credits, not {body.approved_cap}",
+        )
+
+    brief = {
+        "target_duration_s": body.target_duration_s,
+        "narrative_shape": body.narrative_shape,
+        "tone": body.tone,
+        "handle_frames": 6,
+    }
+    job_id = job_writes.create_job(
+        s, org_id,
+        project_id=assets[0].project_id,
+        asset_ids=body.asset_ids,
+        mode=body.mode,
+        notes=body.notes,
+        brief=brief,
+        estimate=estimate.model_dump(),
+        approved_cap=estimate.cap,
+    )
+    try:
+        job_writes.hold(s, org_id, job_id, assets[0].project_id, estimate.cap)
+    except job_writes.InsufficientCredits as exc:
+        raise HTTPException(
+            402,
+            f"this job needs {exc.required} credits and {exc.available} are available",
+        ) from exc
+
+    # The steps this job will run, written now so a queued job shows its shape
+    # rather than an empty panel.
+    job_writes.plan_steps(
+        s, org_id, job_id,
+        plan_steps(
+            JobRequest(
+                job_id=job_id, org_id=org_id, project_id=assets[0].project_id,
+                assets=[
+                    AssetSource(asset_id=a.id, path=Path(a.filename)) for a in assets
+                ],
+                out_dir=Path("."), work_dir=Path("."),
+            )
+        ),
+    )
+    audit.record(
+        s, org_id, audit.JOB_CREATED, resource_type="job", resource_id=job_id,
+        actor_user_id=principal.user_id, ip=audit.client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    log.info("job.accepted", job_id=job_id, assets=len(assets),
+             cap=float(estimate.cap), mode=body.mode)
+
+    job = repository.get_job(s, org_id, job_id)
+    if job is None:  # pragma: no cover
+        raise HTTPException(500, "the job was accepted but could not be read back")
+    return job
 
 
 @router.get("/jobs/{job_id}", response_model=Job)
@@ -73,9 +188,39 @@ async def get_job(job_id: str, store: Store = Depends(get_store)) -> Job:
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=Job)
-async def cancel_job(job_id: str, _: Principal = Depends(require_write)) -> Job:
-    """Cancel and release the whole hold."""
-    raise HTTPException(501, "not implemented")
+async def cancel_job(
+    job_id: str,
+    principal: Principal = Depends(require_write),
+    s: Session = Depends(writable_db),
+) -> Job:
+    """Cancel, and release the whole hold.
+
+    Cancellation is a row, not a signal: the status is set here and the worker
+    notices between steps. No inter-process signalling, and no stage is killed
+    part-way through — a stage is at most a few minutes, and interrupting one
+    mid-write is how a half-written artifact reaches a customer.
+    """
+    org_id = principal.org_id
+    job = repository.get_job(s, org_id, job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    if job.status in ("complete", "failed", "cancelled"):
+        raise HTTPException(409, f"this job is already {job.status}")
+
+    job_writes.set_status(s, org_id, job_id, "cancelled")
+    # Released now rather than when the worker notices: the user asked for their
+    # credits back, and a hold that outlives the job by however long a stage
+    # takes is a balance that looks wrong for no reason. The worker's own
+    # release is idempotent (ADR-0006).
+    job_writes.release(
+        s, org_id, job_id, float(job.estimate.cap if job.estimate else 0),
+        reason="job cancelled",
+    )
+    log.info("job.cancelled", job_id=job_id)
+    cancelled = repository.get_job(s, org_id, job_id)
+    if cancelled is None:  # pragma: no cover
+        raise HTTPException(404, "job not found")
+    return cancelled
 
 
 @router.get("/jobs/{job_id}/artifacts", response_model=list[Artifact])

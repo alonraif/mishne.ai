@@ -473,7 +473,7 @@ def list_ledger(s: Session, org_id: str, project_id: str | None = None) -> list[
 def _step_labels() -> dict[str, str]:
     from ..pipeline import STEPS
 
-    return dict(STEPS)
+    return {step.name: step.label for step in STEPS}
 
 
 _STEP_LABELS = _step_labels()

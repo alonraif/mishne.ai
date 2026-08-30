@@ -628,8 +628,13 @@ class CreditLedger(Base):
     __tablename__ = "credit_ledger"
     id = sa.Column(sa.Text, primary_key=True)
     org_id = sa.Column(sa.Text, nullable=False)
-    project_id = sa.Column(sa.Text, sa.ForeignKey("projects.id", ondelete="SET NULL"))
-    job_id = sa.Column(sa.Text, sa.ForeignKey("jobs.id", ondelete="SET NULL"))
+    # Plain columns, not foreign keys. `ON DELETE SET NULL` would make deleting
+    # a project *update* this table, and the append-only trigger refuses — so
+    # the two rules together made any project with billing history undeletable.
+    # The ledger says what happened and what it cost; a project that no longer
+    # exists changes neither. See migration 0004.
+    project_id = sa.Column(sa.Text)
+    job_id = sa.Column(sa.Text)
     kind = sa.Column(sa.Text, nullable=False)
     delta = sa.Column(CREDITS, nullable=False)
     balance_after = sa.Column(CREDITS, nullable=False)

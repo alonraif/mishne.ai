@@ -1,0 +1,448 @@
+{
+  "Comment": "mishne.ai \u2014 raw footage to an editable rough cut. Generated from mishne.pipeline.steps.STEPS; do not edit by hand.",
+  "StartAt": "Ingest",
+  "States": {
+    "Ingest": {
+      "Type": "Map",
+      "Comment": "Stages 0-4 per upload, cached on the asset's content and never repaid (ADR-0008).",
+      "ItemsPath": "$.assets",
+      "MaxConcurrency": 4,
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "org_id.$": "$.org_id",
+        "asset_id.$": "$$.Map.Item.Value"
+      },
+      "Iterator": {
+        "StartAt": "prepare",
+        "States": {
+          "prepare": {
+            "Type": "Task",
+            "Resource": "${worker_task_arn}",
+            "Comment": "Probe and normalize",
+            "Parameters": {
+              "job_id.$": "$.job_id",
+              "org_id.$": "$.org_id",
+              "step": "prepare",
+              "asset_id.$": "$.asset_id"
+            },
+            "ResultPath": null,
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "States.TaskFailed",
+                  "States.Timeout"
+                ],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 2,
+                "BackoffRate": 3.0
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "ReleaseAndFail",
+                "ResultPath": "$.error"
+              }
+            ],
+            "Next": "audio"
+          },
+          "audio": {
+            "Type": "Task",
+            "Resource": "${worker_task_arn}",
+            "Comment": "Extract audio",
+            "Parameters": {
+              "job_id.$": "$.job_id",
+              "org_id.$": "$.org_id",
+              "step": "audio",
+              "asset_id.$": "$.asset_id"
+            },
+            "ResultPath": null,
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "States.TaskFailed",
+                  "States.Timeout"
+                ],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 2,
+                "BackoffRate": 3.0
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "ReleaseAndFail",
+                "ResultPath": "$.error"
+              }
+            ],
+            "Next": "transcribe"
+          },
+          "transcribe": {
+            "Type": "Task",
+            "Resource": "${worker_task_arn}",
+            "Comment": "Transcribe with word timestamps",
+            "Parameters": {
+              "job_id.$": "$.job_id",
+              "org_id.$": "$.org_id",
+              "step": "transcribe",
+              "asset_id.$": "$.asset_id"
+            },
+            "ResultPath": null,
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "States.TaskFailed",
+                  "States.Timeout"
+                ],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 2,
+                "BackoffRate": 3.0
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "ReleaseAndFail",
+                "ResultPath": "$.error"
+              }
+            ],
+            "Next": "vad"
+          },
+          "vad": {
+            "Type": "Task",
+            "Resource": "${worker_task_arn}",
+            "Comment": "Build silence map",
+            "Parameters": {
+              "job_id.$": "$.job_id",
+              "org_id.$": "$.org_id",
+              "step": "vad",
+              "asset_id.$": "$.asset_id"
+            },
+            "ResultPath": null,
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "ReleaseAndFail",
+                "ResultPath": "$.error"
+              }
+            ],
+            "Next": "structure"
+          },
+          "structure": {
+            "Type": "Task",
+            "Resource": "${worker_task_arn}",
+            "Comment": "Structure into beats",
+            "Parameters": {
+              "job_id.$": "$.job_id",
+              "org_id.$": "$.org_id",
+              "step": "structure",
+              "asset_id.$": "$.asset_id"
+            },
+            "ResultPath": null,
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "ReleaseAndFail",
+                "ResultPath": "$.error"
+              }
+            ],
+            "Next": "speakers"
+          },
+          "speakers": {
+            "Type": "Task",
+            "Resource": "${worker_task_arn}",
+            "Comment": "Attribute speakers",
+            "Parameters": {
+              "job_id.$": "$.job_id",
+              "org_id.$": "$.org_id",
+              "step": "speakers",
+              "asset_id.$": "$.asset_id"
+            },
+            "ResultPath": null,
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "ReleaseAndFail",
+                "ResultPath": "$.error"
+              }
+            ],
+            "End": true
+          }
+        }
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ReleaseAndFail",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "brief"
+    },
+    "brief": {
+      "Type": "Task",
+      "Resource": "${worker_task_arn}",
+      "Comment": "Compile edit brief",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "org_id.$": "$.org_id",
+        "step": "brief"
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 1,
+          "BackoffRate": 3.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ReleaseAndFail",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "propose"
+    },
+    "propose": {
+      "Type": "Task",
+      "Resource": "${worker_task_arn}",
+      "Comment": "Propose candidate spans",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "org_id.$": "$.org_id",
+        "step": "propose"
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 1,
+          "BackoffRate": 3.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ReleaseAndFail",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "score"
+    },
+    "score": {
+      "Type": "Task",
+      "Resource": "${worker_task_arn}",
+      "Comment": "Score candidates",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "org_id.$": "$.org_id",
+        "step": "score"
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 1,
+          "BackoffRate": 3.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ReleaseAndFail",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "select"
+    },
+    "select": {
+      "Type": "Task",
+      "Resource": "${worker_task_arn}",
+      "Comment": "Solve selection",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "org_id.$": "$.org_id",
+        "step": "select"
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ReleaseAndFail",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "refine"
+    },
+    "refine": {
+      "Type": "Task",
+      "Resource": "${worker_task_arn}",
+      "Comment": "Refine cut points",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "org_id.$": "$.org_id",
+        "step": "refine"
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ReleaseAndFail",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "assemble"
+    },
+    "assemble": {
+      "Type": "Task",
+      "Resource": "${worker_task_arn}",
+      "Comment": "Assemble timeline",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "org_id.$": "$.org_id",
+        "step": "assemble"
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ReleaseAndFail",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "emit"
+    },
+    "emit": {
+      "Type": "Task",
+      "Resource": "${worker_task_arn}",
+      "Comment": "Generate artifacts",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "org_id.$": "$.org_id",
+        "step": "emit"
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ReleaseAndFail",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "validate"
+    },
+    "validate": {
+      "Type": "Task",
+      "Resource": "${worker_task_arn}",
+      "Comment": "Validate round-trip",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "org_id.$": "$.org_id",
+        "step": "validate"
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ReleaseAndFail",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "transcript_page"
+    },
+    "transcript_page": {
+      "Type": "Task",
+      "Resource": "${worker_task_arn}",
+      "Comment": "Build the transcript page",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "org_id.$": "$.org_id",
+        "step": "transcript_page"
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "ReleaseAndFail",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "Complete"
+    },
+    "Complete": {
+      "Type": "Task",
+      "Resource": "${worker_task_arn}",
+      "Comment": "Settle the hold at min(actual, approved cap) (ADR-0006).",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "org_id.$": "$.org_id",
+        "step": "__complete__"
+      },
+      "End": true
+    },
+    "ReleaseAndFail": {
+      "Type": "Task",
+      "Resource": "${worker_task_arn}",
+      "Comment": "Release the whole hold. A failed job is never charged.",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "org_id.$": "$.org_id",
+        "step": "__fail__",
+        "error.$": "$.error"
+      },
+      "Next": "Failed"
+    },
+    "Failed": {
+      "Type": "Fail",
+      "Error": "JobFailed",
+      "Cause": "A stage failed after its retries; the hold was released."
+    }
+  }
+}

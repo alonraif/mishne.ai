@@ -145,6 +145,150 @@ class _DirWorkspace:
         return None
 
 
+@dataclass
+class Prepared:
+    """What stage 0 established: the time base, and how to get at the audio.
+
+    `aaf` is set when the upload is a sequence rather than a media file. That is
+    a branch inside the stage, not a stage of its own — ffprobe cannot read an
+    AAF at all, so the two paths diverge here and converge again immediately.
+    """
+
+    info: object                       # prepare.MediaInfo
+    source: Path                       # what stage 1 extracts audio from
+    aaf: object | None = None          # aaf_ingest.AAFSource
+    provenance: str = "rushes"
+    seams: list[int] = field(default_factory=list)
+
+
+def stage_prepare(path: Path, adir: Path, assume_rate: Rate | None = None,
+                  on_progress=None) -> Prepared:
+    """Stage 0. Probe, and for a sequence, flatten it first.
+
+    Called by `ingest` on one machine and by the orchestrator's per-asset step
+    on a worker. One implementation: two drivers that disagree about what stage
+    0 means is how a re-run stops matching the reference run.
+    """
+    say = on_progress or (lambda *_: None)
+    path = Path(path)
+    if path.suffix.lower() != ".aaf":
+        return Prepared(info=prepare.probe(path, assume_rate=assume_rate), source=path)
+
+    aaf = aaf_ingest.parse(path)
+    say(f"AAF · {len(aaf.clips)} clips · {'embedded' if aaf.embedded else 'linked'}")
+    flat = aaf_ingest.flatten_audio(aaf, adir)
+    info = prepare.probe(flat, assume_rate=aaf.rate)
+    # The sequence's own coordinates, not the flattened file's.
+    info.start_tc_frames = aaf.start_tc_frames
+    info.duration_frames = aaf.duration_frames
+    # More than one clip means a person has already made cut decisions in this
+    # material. Their positions on the flattened timeline, in ms — the boundary
+    # between clips, not clip zero's start.
+    seams = ([round(c.tl_in / aaf.rate.fps * 1000) for c in aaf.clips[1:]]
+             if len(aaf.clips) > 1 else [])
+    return Prepared(
+        info=info, source=flat, aaf=aaf,
+        provenance="sequence" if seams else "rushes", seams=seams,
+    )
+
+
+def stage_audio(prepared: Prepared, adir: Path):
+    """Stage 1. One WAV per audio track, plus loudness."""
+    tracks = audio_step.extract(prepared.info, adir)
+    if not tracks:
+        raise ValueError("no audio in this upload")
+    return tracks
+
+
+def stage_vad(tracks) -> object:
+    """Stage 3, run before transcription because stage 4 needs both.
+
+    Whisper's word timestamps are contiguous by construction — a gap between
+    words is not silence — so the silence map has to come from the audio.
+    """
+    return vad.build(tracks[0].path)
+
+
+def stage_transcribe(tracks, adir: Path, *, provider: str = "faster-whisper",
+                     language: str | None = None, replay: Path | None = None,
+                     model: str = "base", model_path: str | None = None) -> ASRResult:
+    """Stage 2. The expensive one, and the one the cache exists for."""
+    kwargs = ({"path": replay} if replay else {"model": model, "model_path": model_path})
+    return transcribe.run(
+        tracks[0].path, adir,
+        provider="replay" if replay else provider,
+        language=language, **kwargs)
+
+
+def stage_speakers(asr: ASRResult, tracks, prepared: Prepared, *,
+                   diarize_models: Path | None = None, on_progress=None):
+    """Who said what.
+
+    Multi-track material needs no model: the loudest microphone is whoever is
+    talking. One track needs diarization, and without it the honest answer is
+    that the voices were never separated — not a confident "Speaker 1".
+    """
+    say = on_progress or (lambda *_: None)
+    if len(tracks) > 1:
+        return spk.attribute_from_files(
+            asr.words, {t.track_index: t.path for t in tracks})
+    if diarize_models:
+        from ..diarize import get_provider
+        say("separating voices")
+        # The source clips are what keeps the clustering about people rather
+        # than microphones — see diarize/sherpa_provider.py.
+        seams = prepared.seams
+        end = round(prepared.info.duration_frames / prepared.info.rate.fps * 1000)
+        regions = ([(s0, s1) for s0, s1 in zip([0] + seams, seams + [end])]
+                   if seams else None)
+        dia = get_provider("sherpa-onnx", model_dir=Path(diarize_models)
+                           ).diarize(tracks[0].path, regions=regions)
+        attribution = spk.attribute_from_diarization(asr.words, dia)
+        say(f"{len(attribution.speakers)} voice(s)"
+            + ("" if attribution.reliable else " — separation is weak"))
+        return attribution
+    return spk.single_track_unseparated(asr.words)
+
+
+def stage_structure(asr: ASRResult, speech, tracks, asset_id: str, seams: list[int]):
+    """Stage 4. Beats, and whatever the segmentation wants to warn about."""
+    beats = structure.build(asr.words, speech, language=asr.language,
+                            loudness_lufs=tracks[0].integrated_lufs,
+                            asset_id=asset_id, seams=seams)
+    return beats, list(getattr(structure.build, "warnings", []))
+
+
+def cached_ingest(adir: Path, path: Path, on_progress=None) -> AssetIngest | None:
+    """The cache read, shared by both drivers.
+
+    Stages 0-4 are keyed on the asset's content and survive every re-run, which
+    is what makes "add a reel and re-cut" cheap and is the economics of the
+    whole multi-upload feature (ADR-0008). `CACHE_VERSION` is why a worker
+    running new segmentation code does not serve beats built by code that no
+    longer exists.
+    """
+    say = on_progress or (lambda *_: None)
+    cached = adir / "ingest.json"
+    if not cached.exists():
+        return None
+    try:
+        hit = _load(cached, path, adir)
+        if hit is not None:
+            return hit
+        say("cache written by an older pipeline, re-ingesting")
+    except Exception:  # noqa: BLE001 — a stale cache is not worth dying for
+        say("cache unreadable, re-ingesting")
+    return None
+
+
+def finish_ingest(adir: Path, result: AssetIngest, ws=None) -> AssetIngest:
+    """Write the cache and publish it. The end of the per-asset phase."""
+    _save(result, adir / "ingest.json")
+    if ws is not None:
+        ws.publish_asset(result.asset_id)
+    return result
+
+
 def ingest(path: Path, work_dir, language: str | None = None,
            provider: str = "faster-whisper", replay: Path | None = None,
            model: str = "base", model_path: str | None = None,
@@ -161,6 +305,11 @@ def ingest(path: Path, work_dir, language: str | None = None,
     `work_dir` is either a `Path` (the concierge CLI) or a
     `mishne.workspace.Workspace` (a worker), which is what lets the cached
     ingest outlive the container that built it.
+
+    The stages are the functions above, called in order. The orchestrator calls
+    the same ones one at a time so it can record progress and resume between
+    them (`orchestration/graph.py`); this is the single-machine driver, and the
+    two must never grow separate ideas of what a stage does.
     """
     path = Path(path)
     ws = work_dir if hasattr(work_dir, "asset_dir") else _DirWorkspace(Path(work_dir))
@@ -168,91 +317,33 @@ def ingest(path: Path, work_dir, language: str | None = None,
     adir = ws.asset_dir(aid)
     say = on_progress or (lambda *_: None)
 
-    cached = adir / "ingest.json"
-    if cached.exists():
-        try:
-            hit = _load(cached, path, adir)
-            if hit is not None:
-                return hit
-            say("cache written by an older pipeline, re-ingesting")
-        except Exception:  # noqa: BLE001 — a stale cache is not worth dying for
-            say("cache unreadable, re-ingesting")
+    hit = cached_ingest(adir, path, say)
+    if hit is not None:
+        return hit
 
-    aaf = None
-    provenance, seams = "rushes", []
-    if path.suffix.lower() == ".aaf":
-        aaf = aaf_ingest.parse(path)
-        say(f"AAF · {len(aaf.clips)} clips · "
-            f"{'embedded' if aaf.embedded else 'linked'}")
-        flat = aaf_ingest.flatten_audio(aaf, adir)
-        info = prepare.probe(flat, assume_rate=aaf.rate)
-        info.start_tc_frames = aaf.start_tc_frames
-        info.duration_frames = aaf.duration_frames
-        tracks = audio_step.extract(info, adir)
-        # A sequence of more than one clip means a person has already made cut
-        # decisions in this material. Their positions on the flattened
-        # timeline, in ms — the boundary between clips, not clip zero's start.
-        if len(aaf.clips) > 1:
-            provenance = "sequence"
-            seams = [round(c.tl_in / aaf.rate.fps * 1000)
-                     for c in aaf.clips[1:]]
-    else:
-        info = prepare.probe(path, assume_rate=assume_rate)
-        tracks = audio_step.extract(info, adir)
-    if not tracks:
-        raise ValueError(f"{path.name} has no audio")
-
-    speech = vad.build(tracks[0].path)
+    prepared = stage_prepare(path, adir, assume_rate=assume_rate, on_progress=say)
+    tracks = stage_audio(prepared, adir)
+    speech = stage_vad(tracks)
     say(f"{len(speech.speech)} speech segments")
-
-    kwargs = ({"path": replay} if replay
-              else {"model": model, "model_path": model_path})
-    asr: ASRResult = transcribe.run(
-        tracks[0].path, adir,
-        provider="replay" if replay else provider,
-        language=language, **kwargs)
+    asr = stage_transcribe(tracks, adir, provider=provider, language=language,
+                           replay=replay, model=model, model_path=model_path)
     say(f"{len(asr.words)} words · {asr.language}")
-
-    # Multi-track material needs no model: the loudest microphone is whoever is
-    # talking. One track needs diarization, and without it the honest answer is
-    # that the voices were never separated — not a confident "Speaker 1".
-    if len(tracks) > 1:
-        attribution = spk.attribute_from_files(
-            asr.words, {t.track_index: t.path for t in tracks})
-    elif diarize_models:
-        from ..diarize import get_provider
-        say("separating voices")
-        # The source clips are what keeps the clustering about people rather
-        # than microphones — see diarize/sherpa_provider.py.
-        regions = ([(s0, s1) for s0, s1 in zip([0] + seams, seams
-                    + [round(info.duration_frames / info.rate.fps * 1000)])]
-                   if seams else None)
-        dia = get_provider("sherpa-onnx", model_dir=Path(diarize_models)
-                           ).diarize(tracks[0].path, regions=regions)
-        attribution = spk.attribute_from_diarization(asr.words, dia)
-        say(f"{len(attribution.speakers)} voice(s)"
-            + ("" if attribution.reliable else " — separation is weak"))
-    else:
-        attribution = spk.single_track_unseparated(asr.words)
-
-    beats = structure.build(asr.words, speech, language=asr.language,
-                            loudness_lufs=tracks[0].integrated_lufs,
-                            asset_id=aid, seams=seams)
-    warnings = list(getattr(structure.build, "warnings", []))
+    attribution = stage_speakers(asr, tracks, prepared,
+                                 diarize_models=diarize_models, on_progress=say)
+    beats, warnings = stage_structure(asr, speech, tracks, aid, prepared.seams)
     say(f"{len(beats)} beats")
 
+    info = prepared.info
     result = AssetIngest(
         asset_id=aid, path=path, rate=info.rate,
         start_tc_frames=info.start_tc_frames,
         duration_frames=info.duration_frames, language=asr.language,
         beats=beats, speakers=attribution.speakers, attribution=attribution,
-        speech=speech, audio_path=tracks[0].path, aaf=aaf,
-        audio_tracks=len(tracks), provenance=provenance, seams=seams,
-        warnings=warnings,
+        speech=speech, audio_path=tracks[0].path, aaf=prepared.aaf,
+        audio_tracks=len(tracks), provenance=prepared.provenance,
+        seams=prepared.seams, warnings=warnings,
     )
-    _save(result, cached)
-    ws.publish_asset(aid)
-    return result
+    return finish_ingest(adir, result, ws)
 
 
 def _save(a: AssetIngest, path: Path) -> None:

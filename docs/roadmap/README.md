@@ -42,7 +42,7 @@ then B3:
 | B1 persistence | [B-SESSION-PROMPT.md](B-SESSION-PROMPT.md) | — | **done** |
 | B2 storage | [B2-SESSION-PROMPT.md](B2-SESSION-PROMPT.md) | B1 | **done** |
 | B4 auth | [B4-SESSION-PROMPT.md](B4-SESSION-PROMPT.md) | B1 | **done** |
-| B3 orchestration | [B3-SESSION-PROMPT.md](B3-SESSION-PROMPT.md) | B1, B2 | **next** |
+| B3 orchestration | [B3-SESSION-PROMPT.md](B3-SESSION-PROMPT.md) | B1, B2 | **done** |
 | [B2](B2-storage-and-upload.md) | S3, multipart upload, presigned URLs | B1 |
 | [B3](B3-orchestration.md) | Step Functions, workers, the step contract | B1, B2 |
 | [B4](B4-auth-and-tenancy.md) | Accounts, orgs, session, tenant isolation | B1 |
@@ -83,4 +83,5 @@ A1 and A2 are the ones that matter.
 | Persistence (Postgres, RLS) | **Works.** Twenty tables, isolation proved at the database. |
 | Storage and upload | **Works.** Resumable direct-to-S3, probe on arrival, lifecycle rules. |
 | Auth and tenancy | **Works.** Sessions, roles, audit log, WorkOS behind an interface. |
-| Orchestration, billing, the ten screens | **Not built.** B3, C1, C2. |
+| Orchestration | **Works, undeployed.** Durable runner, generated state machine, worker image. |
+| Billing, the ten screens, observability | **Not built.** C1, C2, C3. |

@@ -170,7 +170,8 @@ ESTIMATE = estimate_job(ASSETS[0], TIERS["pro"], ORG.credit_balance)
 
 def _steps(active: int, failed_at: int | None = None) -> list[JobStep]:
     out = []
-    for i, (name, label) in enumerate(STEPS):
+    for i, spec in enumerate(STEPS):
+        name, label = spec.name, spec.label
         if failed_at is not None and i == failed_at:
             status = "failed"
         elif i < active:

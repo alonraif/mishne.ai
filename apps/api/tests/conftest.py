@@ -244,17 +244,47 @@ def asset_row(owner, asset_id: str):
         ).first()
 
 
+def purge_org(conn, org_id: str) -> None:
+    """Delete a tenant's rows, in the order the schema requires.
+
+    Two constraints make this an ordered operation rather than one statement,
+    and both are deliberate:
+
+    * **Nothing cascades from `orgs`.** `org_id` is a plain column on every
+      table by design — uniform policies, and no path where a forgotten join
+      leaks — so each table is named here.
+    * **`job_assets.asset_id` is `ON DELETE RESTRICT`.** An asset a job was cut
+      from cannot vanish while the job still refers to it, or the job's
+      provenance is a lie. So jobs go before assets.
+
+    `credit_ledger` and `audit_log` are deliberately NOT deleted: both are
+    append-only at the database, and a trigger refuses. What "delete this
+    tenant" means for a financial record and a security log is a real question
+    with a real answer — anonymise, or retain under the policy the customer
+    agreed to — and it is C4's to answer, not a teardown's to assume.
+
+    C4's retention and deletion work needs this same order against real
+    customer data; it is written down here because a single `DELETE FROM
+    projects` looks like it should work and does not.
+    """
+    for statement in (
+        "DELETE FROM jobs WHERE org_id = :o",
+        "DELETE FROM assets WHERE org_id = :o",
+        "DELETE FROM projects WHERE org_id = :o",
+        # sessions and credentials cascade from users; users do not cascade
+        # from the org.
+        "DELETE FROM users WHERE org_id = :o",
+        "DELETE FROM org_balances WHERE org_id = :o",
+        "DELETE FROM orgs WHERE id = :o",
+    ):
+        conn.execute(sa.text(statement), {"o": org_id})
+
+
 @pytest.fixture
 def tenant(owner):
     """An org and a project of this test's own, removed afterwards."""
     with owner.begin() as conn:
-        # `projects` carries org_id but no foreign key to `orgs` — org_id is on
-        # every table by design, not by reference — so nothing cascades from an
-        # org and the teardown has to name each table. Assets do cascade from
-        # their project.
-        conn.execute(sa.text("DELETE FROM projects WHERE org_id = :o"), {"o": ORG})
-        conn.execute(sa.text("DELETE FROM users WHERE org_id = :o"), {"o": ORG})
-        conn.execute(sa.text("DELETE FROM orgs WHERE id = :o"), {"o": ORG})
+        purge_org(conn, ORG)
         conn.execute(
             sa.text(
                 "INSERT INTO orgs (id, name, tier, retention_days) "
@@ -265,6 +295,15 @@ def tenant(owner):
         conn.execute(
             sa.text("INSERT INTO projects (id, org_id, name) VALUES (:p, :o, 'Upload test')"),
             {"p": PROJECT, "o": ORG},
+        )
+        # A balance to hold against. The projection is written alongside the
+        # ledger in normal operation; here it is the starting point.
+        conn.execute(
+            sa.text(
+                "INSERT INTO org_balances (org_id, available, held) "
+                "VALUES (:o, 500, 0)"
+            ),
+            {"o": ORG},
         )
         conn.execute(
             sa.text(
@@ -282,11 +321,7 @@ def tenant(owner):
         )
     yield
     with owner.begin() as conn:
-        conn.execute(sa.text("DELETE FROM projects WHERE org_id = :o"), {"o": ORG})
-        # sessions and credentials cascade from users; users do not cascade from
-        # the org, because org_id is a column and not a reference.
-        conn.execute(sa.text("DELETE FROM users WHERE org_id = :o"), {"o": ORG})
-        conn.execute(sa.text("DELETE FROM orgs WHERE id = :o"), {"o": ORG})
+        purge_org(conn, ORG)
 
 
 @pytest.fixture
@@ -350,8 +385,7 @@ def other_tenant(owner):
     other_org = "org_test_other"
     other_user = "usr_test_other"
     with owner.begin() as conn:
-        conn.execute(sa.text("DELETE FROM users WHERE org_id = :o"), {"o": other_org})
-        conn.execute(sa.text("DELETE FROM orgs WHERE id = :o"), {"o": other_org})
+        purge_org(conn, other_org)
         conn.execute(
             sa.text(
                 "INSERT INTO orgs (id, name, tier, retention_days) "
@@ -368,5 +402,4 @@ def other_tenant(owner):
         )
     yield mint_session(owner, other_org, other_user)
     with owner.begin() as conn:
-        conn.execute(sa.text("DELETE FROM users WHERE org_id = :o"), {"o": other_org})
-        conn.execute(sa.text("DELETE FROM orgs WHERE id = :o"), {"o": other_org})
+        purge_org(conn, other_org)

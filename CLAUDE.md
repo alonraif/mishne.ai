@@ -39,7 +39,9 @@ selection-quality spike reads. Stages 5–12 are still stubs.
 tables, `org_id` everywhere, RLS enabled and forced. B2 added object storage:
 presigned multipart upload straight to S3, a resumable browser client, probe on
 arrival, and lifecycle rules. B4 added identity: signup, login, SSO behind a
-provider interface, roles, and an audit log. B3 — orchestration — is next. See
+provider interface, roles, and an audit log. B3 added orchestration: a durable
+runner with retries, progress and cancellation, a generated Step Functions
+definition, and a worker image — none of it deployed yet. See
 [docs/HANDOVER.md](docs/HANDOVER.md) and [docs/roadmap/](docs/roadmap/).
 
 **The ten screens are still mockups**, apart from upload, login and signup.
@@ -66,6 +68,11 @@ never session-level, or a pooled connection carries one tenant into the next
 request with no error message anywhere.
 
 **Media never transits the API.** Uploads go browser → S3 via presigned multipart.
+
+**`run.py` is the specification.** The orchestrator runs the same stage
+functions in the same order; where the two could drift, they share the
+implementation instead (`project.stage_*`). If you change what a stage does,
+change it there — not in `orchestration/graph.py`.
 
 **Stage 9 runs in every mode.** A hand-marked cut still gets silence snapping,
 handles and frame quantization. The user picks *what*; stage 9 decides *where*.

@@ -1,6 +1,6 @@
 # mishne.ai — state of the project
 
-*Last updated 2026-08-29 (B1 persistence, B2 storage, B4 auth and tenancy).*
+*Last updated 2026-08-29 (B1 persistence, B2 storage, B3 orchestration, B4 auth).*
 
 **Read this first if you are picking the project up cold**, in a new session, on
 a new machine, or in a new account. It says what exists, what it does, what it
@@ -64,7 +64,14 @@ Verified on two pieces of real material:
   survives a closed laptop, probe-on-arrival, lifecycle and CORS rules in
   `infra/`, and linked AAFs that ask for the media they reference (ADR-0014).
   Media never transits the API and probing does not run in it.
-- **No orchestration.** `run.py` calls the stages in sequence, in process.
+- ~~No orchestration.~~ **A durable runner, as of B3.** The same fifteen stages
+  `run.py` runs, executed with per-stage retries, progress into `job_steps`,
+  cancellation between steps, and a credit hold that is settled or released.
+  Resume is idempotent re-execution rather than a checkpoint restore (ADR-0016):
+  a re-run performs zero transcription. The Step Functions definition is
+  generated from the registry into `infra/statemachine.json`, and a worker image
+  is in `apps/api/Dockerfile`. **Not deployed** — no Terraform, no AWS account;
+  what exists runs and is tested locally.
 - ~~No auth, no tenancy.~~ **Both, as of B4.** Signup, login, logout, SSO
   through WorkOS behind a provider interface, sessions in an httpOnly cookie,
   three roles, and an audit log. The org on a request comes from the session and
@@ -93,6 +100,7 @@ apps/api/                 the pipeline and the (mock-backed) API
     timecode.py           rational rates, drop-frame, the proven conversion pair
     routers/, mock.py     FastAPI surface; fixtures behind use_mocks
     auth/                 providers, sessions, password hashing
+    orchestration/        the runner, the step graph, the state machine, the worker
     audit.py              who did what, append-only
     storage.py            three buckets, the key scheme, presigned multipart
     workspace.py          objects in, real files on disk, derived files back out
@@ -100,7 +108,8 @@ apps/api/                 the pipeline and the (mock-backed) API
     db/                   models, session, query layer, seed script
   migrations/             Alembic — 0001 is the whole schema, and README.md
                           is the expand/contract contract
-  tests/                  238 tests
+  Dockerfile              the worker image: ffmpeg, the models, non-root
+  tests/                  300 tests
 apps/web/                 Next.js 15 mockups, Tailwind 4, shadcn/ui
 packages/shared/          types, timecode, billing, RTL direction — TS
 spikes/aaf-roundtrip/     Spike A: interchange, automated, passing
@@ -112,6 +121,12 @@ samples/                  real test material (gitignored, 443 MB)
 ```
 
 ## The pipeline, stage by stage
+
+The registry in `pipeline/steps/__init__.py` is the list, and it is now true:
+until B3 it omitted `speakers`, the AAF branch, span proposal and the transcript
+page, and listed `review` — which was never built. Three things read it (the
+generated state machine, the runner, the progress UI), so a test asserts it
+matches what runs.
 
 | # | Stage | File | Deterministic? |
 |---|---|---|---|
@@ -156,6 +171,7 @@ why the current shape is what it is.
 | [0013](adr/0013-stage-media-to-local-disk.md) | Media is staged to a worker's disk, never mounted |
 | [0014](adr/0014-linked-aaf-companions.md) | A linked AAF is accepted, and asks for the media it references |
 | [0015](adr/0015-identity-behind-a-provider-interface.md) | Identity behind a provider interface; one email is one person |
+| [0016](adr/0016-resume-is-re-execution.md) | Resume is idempotent re-execution, not a checkpoint restore |
 
 ## Things that will bite you
 
@@ -200,6 +216,19 @@ Every one of these cost real time to find.
 - **`projects`, `users` and `sessions` carry `org_id` but no foreign key to
   `orgs`.** Nothing cascades from an org, so deleting a tenant — and any test
   teardown — has to name each table.
+- **Deleting a project used to be impossible once it had been billed for.**
+  `credit_ledger.project_id` was a foreign key with `ON DELETE SET NULL`, so a
+  delete made Postgres *update* the ledger — and the append-only trigger
+  refused, correctly. Migration 0004 makes the ledger's ids plain columns. Two
+  correct rules can forbid something between them.
+- **Deleting a tenant is an ordered operation, not one statement.** Nothing
+  cascades from `orgs`, and `job_assets.asset_id` is `ON DELETE RESTRICT`, so
+  jobs go before assets and assets before projects. `tests/conftest.purge_org`
+  is the order; `credit_ledger` and `audit_log` are append-only and are not
+  deleted at all — what "delete this tenant" means for them is C4's question.
+- **An AAF is never byte-identical between two runs.** Generated MobIDs and a
+  modification date; same size, different bytes. Compare EDL, FCPXML, OTIO and
+  the transcript byte for byte, and hold the AAF to `validate` reading it back.
 - **A boto3 client built with the defaults signs with SigV2**, and every bucket
   created after 2018 rejects it — at upload time, long after the code that chose
   the signature returned. `storage.get_client` sets `s3v4` explicitly, which is
