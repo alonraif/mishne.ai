@@ -135,8 +135,13 @@ class Anthropic:
         data, ms = _post(f"{self.config.base_url}/messages", headers, body)
         # Content is a list of blocks; a thinking model puts reasoning blocks
         # before the text one, so take the text blocks rather than block zero.
-        text = "".join(b.get("text", "") for b in data.get("content", [])
+        blocks = data.get("content", [])
+        text = "".join(b.get("text", "") for b in blocks
                        if b.get("type") == "text")
+        # And measure what the discarded blocks cost. They are billed as output
+        # and were, until measured, the overwhelming majority of it.
+        thinking = sum(len(str(b.get("thinking", "") or b.get("text", "")))
+                       for b in blocks if b.get("type") != "text")
         usage = data.get("usage") or {}
         return Completion(
             text=text, model=data.get("model", model), provider=self.name,
@@ -144,7 +149,8 @@ class Anthropic:
             output_tokens=usage.get("output_tokens", 0), latency_ms=ms,
             # "max_tokens" here means we cut the model off. Not reporting it
             # turns a budget problem into an unexplained parse failure.
-            stop_reason=data.get("stop_reason", "") or "")
+            stop_reason=data.get("stop_reason", "") or "",
+            thinking_chars=thinking)
 
 
 def get(name: str):

@@ -70,6 +70,12 @@ class Completion:
     #: "max_tokens"; OpenAI-compatible APIs say "length". Empty when a provider
     #: does not report one — absence is not evidence of completion.
     stop_reason: str = ""
+    #: Output tokens spent on reasoning blocks that were then discarded. Billed
+    #: at the output rate and invisible until measured: on a 26-minute
+    #: interview, span proposal spent 82k output tokens to return roughly 1.8
+    #: proposals per call — about 30 tokens of JSON each. 97% of the output
+    #: bill was reasoning nobody reads.
+    thinking_chars: int = 0
 
     @property
     def truncated(self) -> bool:

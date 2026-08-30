@@ -124,6 +124,21 @@ class ModelScorer:
         "cut.\n\n"
         "Be decisive. A flat distribution around 50 is useless to the solver "
         "that consumes these scores — spread them out and mean it.\n\n"
+        "**Score density, not size.** You are shown both whole answers and "
+        "tighter spans carved out of them, and the solver spends a fixed number "
+        "of seconds on whatever scores highest. So a 45-second answer and the "
+        "12-second line at the heart of it are direct competitors for the same "
+        "budget, and scoring them alike hands the viewer the 45-second one.\n\n"
+        "When a long span and a shorter span carry substantially the same "
+        "point, the shorter one scores HIGHER. The long version's extra "
+        "material is not free — it is seconds taken from something else that "
+        "could have been in the cut. Score the long version above the short one "
+        "only when the extra seconds genuinely add something: a turn in the "
+        "thought, a second idea, a payoff the short version sets up and never "
+        "reaches.\n\n"
+        "Read `pacing` in the brief and mean it. On a tight or hard-cutting "
+        "brief, a span that runs beyond about a fifth of the target duration "
+        "needs to justify every second, and usually cannot.\n\n"
         "`depends_on` lists beat ids this beat needs in order to make sense. A "
         "payoff without its setup reads as a non-sequitur; this field is how "
         "that gets prevented, so use it wherever a beat genuinely depends on "
@@ -166,11 +181,22 @@ class ModelScorer:
         say = on_progress or (lambda *_: None)
         payload = [{"id": b.id, "speaker": b.speaker,
                     "seconds": round(b.duration_ms / 1000, 1),
+                    # Which answer this came out of, and whether it is the
+                    # whole thing. Without it the model cannot tell that a
+                    # 45-second block and a 12-second line are the same
+                    # material at two lengths — it sees two unrelated
+                    # candidates and scores them on merit alone, which is how
+                    # the long one wins. `parent` is what makes them
+                    # competitors rather than options.
+                    "parent": b.parent_id, "whole": b.kind == "beat",
                     "text": b.text, "flags": b.flags} for b in window]
         completion = self.router.complete(
             "score", system=self.SYSTEM, max_tokens=self.MAX_TOKENS,
             user=(f"Brief:\n{brief_json}\n\nBeats:\n"
                   f"{json.dumps(payload, ensure_ascii=False, indent=1)}\n\n"
+                  "Candidates sharing a `parent` are the same answer at "
+                  "different lengths and compete for the same seconds; "
+                  "`whole` marks the untrimmed original.\n\n"
                   'Return ONLY a JSON array: [{"id":"...","score":0-100,'
                   '"depends_on":[],"rationale":"one line"}]\n'
                   # A limit rather than a wish. "one line" alone produced
