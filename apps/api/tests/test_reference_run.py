@@ -140,19 +140,25 @@ def test_every_stage_ran_in_order_and_reported_something(through_the_runner):
 
 
 def test_the_shape_of_the_cut_is_what_the_brief_predicts(through_the_runner):
-    """23 beats, 30 candidates, 4 spans.
+    """23 beats, 30 candidates, 10 spans.
 
     Was 25 candidates when `CARVE_ABOVE_MS` was 12s. At 8s, seven beats are
     carved rather than two — an 8-12s answer is 7-10% of a 120s piece and
-    should not be a take-it-or-leave-it candidate. The beat and pick counts are
-    unchanged, which is the point: more offers to the solver, same material.
+    should not be a take-it-or-leave-it candidate.
+
+    And 4 picks became 10 once no single clip could exceed its share of the
+    target. The extra offers had been there since the carving change and went
+    unused: the objective is quality-weighted screen time under a fixed
+    duration, which is indifferent to how that time is divided, so a long block
+    that scored well took the budget. Same material, same seconds, two and a
+    half times the clips.
     """
     _out, (result, _) = through_the_runner
     state = result.state
     assert len(state.assets) == 1
     assert len(state.beats) == 23
     assert len(state.candidates) == 30
-    assert len(state.picks) == 4
+    assert len(state.picks) == 10
     assert len(state.artifacts) == 4
     assert all(a.ok for a in state.artifacts)
 

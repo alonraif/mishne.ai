@@ -40,12 +40,37 @@ def solve(beats: list[Beat], scores: dict[str, float], brief,
     """
     from ortools.sat.python import cp_model
 
-    eligible = [b for b in beats if scores.get(b.id, 0) > 0]
-    if not eligible:
+    scored = [b for b in beats if scores.get(b.id, 0) > 0]
+    if not scored:
         return []
 
     target_ms = brief.target_duration_s * 1000
     tol_ms = brief.duration_tolerance_s * 1000
+
+    # No single clip may dominate the cut. Stated as a preference in the notes
+    # ("punchy", "cut hard"), enforced here — the same move as speaker balance
+    # below, and for the same reason: the solver is where a preference becomes
+    # a guarantee.
+    #
+    # Without it the objective is quality-weighted screen time under a fixed
+    # duration, which is indifferent to how that time is divided. A 45-second
+    # block that scores well is a perfectly correct answer, and three different
+    # models gave exactly that answer — four clips averaging 31 seconds against
+    # a 120-second target. None of them was wrong. None of them had been asked.
+    from .brief import max_clip_ms_for
+
+    cap_ms = max_clip_ms_for(brief)
+    eligible = [b for b in scored if b.duration_ms <= cap_ms]
+    solve.capped_out = len(scored) - len(eligible)
+
+    # The cap is a preference, not a physical law. If the material cannot fill
+    # the target out of short clips — a sparse interview of long unbroken
+    # answers, or a proposal stage that carved nothing — a near-miss the editor
+    # can trim beats a failed job. Relaxing is recorded, never silent.
+    solve.cap_relaxed = False
+    if sum(b.duration_ms for b in eligible) < max(0, target_ms - tol_ms):
+        eligible = scored
+        solve.cap_relaxed = True
 
     model = cp_model.CpModel()
     pick = {b.id: model.NewBoolVar(b.id) for b in eligible}

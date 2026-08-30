@@ -63,6 +63,14 @@ class EditBrief:
     must_exclude: list[str] = field(default_factory=list)
     speaker_priority: list[str] = field(default_factory=list)
     pacing: str = "tight"
+    #: No single clip may exceed this share of the target. None means derive it
+    #: from `pacing`. A cut is a sequence, and one clip that eats half the
+    #: running time is a clip with a title card, not an edit — but nothing in
+    #: the pipeline said so, and three models in a row happily returned four
+    #: clips averaging 31 seconds against a 120-second target because a long
+    #: block that scores well is a correct answer to "what are the best
+    #: seconds". This is the question they were never asked.
+    max_clip_share: float | None = None
     keep_filler: bool = False
     handle_frames: int = 0
     language: str = "en"
@@ -92,6 +100,23 @@ def parse_duration(text: str) -> int | None:
         unit = 60 if hit.group(3).lower().startswith(("min", "m")) else 1
         return int(value * unit)
     return None
+
+
+#: Share of the target any one clip may occupy, by pacing. "tight" wants a
+#: sequence of landings; "breathing" is allowed to sit in an answer. Derived
+#: rather than asked for, because an editor writes "punchy", not "no clip over
+#: 24 seconds".
+PACING_MAX_SHARE = {"tight": 0.20, "breathing": 0.40}
+DEFAULT_MAX_SHARE = 0.25
+
+
+def max_clip_ms_for(brief) -> int:
+    """The longest single clip this brief tolerates, in milliseconds."""
+    share = getattr(brief, "max_clip_share", None)
+    if share is None:
+        share = PACING_MAX_SHARE.get(
+            getattr(brief, "pacing", "tight"), DEFAULT_MAX_SHARE)
+    return int(brief.target_duration_s * 1000 * share)
 
 
 def compile_deterministic(notes: str, target_duration_s: int | None = None,
