@@ -39,6 +39,7 @@ import os
 from pathlib import Path
 
 from . import catalog, chunking
+from ..logging import get_logger
 from .base import ASRError, ASRResult, Word
 from .transport import (delete, post_capture_headers, post_json,
                         timeout_for)
@@ -46,6 +47,8 @@ from .transport import (delete, post_capture_headers, post_json,
 BASE_URL = os.environ.get(
     "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com")
 API_KEY_ENV = "GEMINI_API_KEY"
+
+log = get_logger(__name__)
 
 
 def _dump_raw(audio: Path, data: dict) -> None:
@@ -216,15 +219,35 @@ class GeminiProvider:
                 "were requested and are required", retryable=False)
 
         usage = _usage(data)
-        audio_tokens = _count(usage, "audioTokenCount", "audio_input_tokens",
-                              "promptTokenCount", "inputTokenCount",
-                              "input_tokens")
-        text_tokens = _count(usage, "candidatesTokenCount", "outputTokenCount",
-                             "output_tokens", "text_output_tokens")
+        audio_tokens = (
+            _by_modality(usage, "input_tokens_by_modality", "audio")
+            or _count(usage, "total_input_tokens", "audioTokenCount",
+                      "promptTokenCount", "input_tokens")
+        )
+        # Reported as zero on a transcription, and reported *explicitly* —
+        # alongside tool-use and thought tokens, also zero, with input broken
+        # down by modality. This is a complete accounting saying the transcript
+        # is not billed as output, not an absent field. It contradicts the
+        # pricing page's text-output line, which is why the first invoice is
+        # worth checking against `report --baseline`.
+        text_tokens = _count(usage, "total_output_tokens", "candidatesTokenCount",
+                             "outputTokenCount", "output_tokens")
+        # Google caches audio across requests, so re-running the same file is
+        # cheaper than the first time. Recorded because a benchmark that runs
+        # one sample repeatedly would otherwise report a price no customer ever
+        # pays — the same trap `report.transcription_baseline` excludes cached
+        # steps for. Priced at full rate: the cache discount is undocumented
+        # here, so this figure is an upper bound rather than a guess.
+        cached = _by_modality(usage, "cached_tokens_by_modality", "audio")
         seconds = float(usage.get("audioSeconds") or usage.get("audio_seconds")
                         or 0.0) or fallback_seconds
         cost = self.engine.cost_for(seconds, audio_tokens=audio_tokens,
                                     text_tokens=text_tokens)
+        if audio_tokens:
+            log.info("asr.usage", model=self.model_name,
+                     audio_tokens=audio_tokens, text_tokens=text_tokens,
+                     cached_audio_tokens=cached,
+                     tokens_per_second=round(audio_tokens / max(seconds, 1), 2))
 
         return ASRResult(
             words=words,
@@ -239,16 +262,10 @@ class GeminiProvider:
         )
 
 
-#: Where a usage object might be, and what its numbers might be called.
-#:
-#: The documentation for this endpoint does not say. Google's REST APIs answer
-#: in camelCase (`usageMetadata`, `promptTokenCount`) while its Python SDK
-#: surfaces snake_case, and this model is days old — so the honest thing is to
-#: accept every spelling rather than pick one and silently fall back to an
-#: estimate when it is the wrong one. `MISHNE_ASR_DEBUG_RAW` settles it for
-#: real: it writes the response beside the audio, and then this list can be
-#: cut down to what the vendor actually sends.
-_USAGE_KEYS = ("usageMetadata", "usage_metadata", "usage")
+#: Where a usage object might be. `usage` is what a real response carries; the
+#: camelCase spellings are kept because the endpoint's documentation describes
+#: none of this and a model days old may yet change its mind.
+_USAGE_KEYS = ("usage", "usageMetadata", "usage_metadata")
 
 
 def _usage(data: dict) -> dict:
@@ -263,6 +280,20 @@ def _usage(data: dict) -> dict:
             if isinstance(found, dict) and found:
                 return found
     return {}
+
+
+def _by_modality(usage: dict, key: str, modality: str) -> int:
+    """One modality's tokens out of a `*_by_modality` breakdown.
+
+    A real response reports input as `[{"modality": "audio", "tokens": 5551},
+    {"modality": "text", "tokens": 1}]` — the single text token being the
+    prompt. Audio is what this is billed on and mixing the two into one number
+    would price a modality at the wrong rate, so they are taken apart here.
+    """
+    for entry in usage.get(key) or []:
+        if isinstance(entry, dict) and entry.get("modality") == modality:
+            return int(entry.get("tokens") or 0)
+    return 0
 
 
 def _count(usage: dict, *names: str) -> int:

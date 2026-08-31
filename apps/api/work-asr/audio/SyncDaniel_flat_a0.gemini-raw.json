@@ -1,0 +1,4322 @@
+{
+ "id": "v1_ChdUR1NWYXVUQ0MtS0Vuc0VQbmNHajhBSRIXVEdTVmF1VENDLUtFbnNFUG5jR2o4QUk",
+ "status": "completed",
+ "usage": {
+  "total_tokens": 5552,
+  "total_input_tokens": 5552,
+  "input_tokens_by_modality": [
+   {
+    "modality": "audio",
+    "tokens": 5551
+   },
+   {
+    "modality": "text",
+    "tokens": 1
+   }
+  ],
+  "total_cached_tokens": 3500,
+  "cached_tokens_by_modality": [
+   {
+    "modality": "audio",
+    "tokens": 3500
+   }
+  ],
+  "total_output_tokens": 0,
+  "total_tool_use_tokens": 0,
+  "total_thought_tokens": 0,
+  "raw_prompt_token": 6495
+ },
+ "created": "2026-08-31T11:23:56Z",
+ "updated": "2026-08-31T11:23:56Z",
+ "service_tier": "standard",
+ "steps": [
+  {
+   "content": [
+    {
+     "text": "עשינו את הטקס של שביל הכניסה. אנחנו קודם כל מגיעים מול דלת זכוכית שקופה שעליה שמתם אלמנט משربייה בדיוק כמו שעשיתם בחזית המאוד מאוד גדולה של הבית. אנחנו נכנסים לאזור שהוא יחסית נמוך ואז בום, הבית נפתח ויש את ה חזיתות הענקיים שלו. אז חברים, אני רוצה להודות לכם על סיור שמרגיש לגמרי כמו חוץ לארץ, מיקונוס, איביזה, וכל כך יפה לראות את שיתוף הפעולה ביניכם. אתם על האדריכלות, אתן על העיצוב הפנים, איך החומרים, הצבעוניות, הנפחים, הכל עובד בצורה כל כך יפה ונקייה ביחד. ובפעם הבאה, חברים, שיש פה מסיבה, לא לשכוח להזמין אותi.סגור.תודה.תודה רבה.בקצה הגשר אנחנו מגיעים לקוביה יהודית שהיא בעצם חדר השינה של ההורים, הרצפה הלבנה שהייתה בכל הבית בעצם הפכה פה לפישבון, אלון מעט אגוזי, יש את אלמנט חיפוי הקיר שזה אותו עץ שראינו למטה, גב המיטה המרופד, מנורות הצד. ספרו לי על זה בנות. ועברנו למה ש אמור להיות סלון. ואני אומר את זה כי יש פפה מאוד מעניינת, דו-צדדית. עוד פעם, התחושה הלובי מלונאי הזה הוא גם פה, כי בלובי מלונאי אנחנו נקבל איזה מין מולטי-יוניט לשני כיוונים וזה בתוך כל הדאבל ווליום, זה מאוד מעניין. בואו נדבר על זה בנות. והמשחק הזה שלכם בבז, לבן, טיפה קפה, טיפה עץ, מאוד מאוד נעים, מאוד מאוד שקט. פינת האוכל, פינת זכוכית על רגליים באותה גרניט פורצלן טרוורטינית, כיסאות בגוון שמנת מול איזה שהו וילון מאוד גבוה בשמנת, שמנת על שמנת על זכוכית על לבן. אז נהדר, בית לבן, ילדים מוגדרים באזורים שלהם, בית מארח ו עכשיו אני רוצה להתמקד במטבח עצמו. כשאני מסתכל על המטבח, אז יש את הקיר הגדול בעץ שיצרתם עם אלמנט של קונספט המאוד גדולה שנפתחת ונסגרת וממול אי מה האם האופנתיים שאנחנו רואים בזמן האחרון, שני איים כאשר אחד הוא עם בישול, אחד הוא יותר להכנה, עם איזה ביס באמצע לייצר עם איזה ביס באמצע לייצר איזה שהו מתח. שלום למעיין וגל, אתם מעצבות את הפנים של הפרויקט. עד עכשיו דיברנו אדריכלות, דיברנו על הנפחים, על הפתחים, אבל איתכם אני רוצה לדבר על החומריות, על הפונקציות ועל כל מה שעשיתם פפה. אנחנו נכנסים לחלל שהוא מאוד מאוד בהיר, אני אגזזים ואגיד הוא אפילו מאוד מאוד לבן, רצפה חלקה לגמרי. זה טדלק?רזינה.רזינה. רצפת רזינה, לבנה לגמרי, קירות לבנים, תקרות לבנות, האלמנטים שמרחפים בתקרה לבנים, מאהל לבן, אפילו השס שיש לנו, אפילו השס שיש לנו בטיפוס במדרגות הוא לבן.אמת.ופה אתם מייצרים איזה שהו טיול עד שאנחנו מגיעים לדלת הכניסה, איזה שהו טקס שכזה ופה הכל הרבה יותר סגור עד שמגיעים לדלת הכניסה והיא נפתחת. שלום. דנה ודניאל, אתם האדריכלים של הבית ואנחנו נפגשים בפינה האהובה עליכם וכבר מהסתכלות אני מרגיש שיש כאן משהו של איזה שהי פתיחות. יש פה זוויות, יש פפה פתחים, יש פפה קורות שחוצות ונותנות פרופורציה ועם كل זאת מוציאות אותנו מהפרופורציה. זאת אומרת לרגע אתה מרגיש גדול, לרגע אתה מרגיש קטן וזוהו החוכמה באדריכלות. בואו נדבר על זה. בואו תראו את בית המסיבות האולטימטיבי שכולه בלבן.",
+     "annotations": [
+      {
+       "start_index": 0,
+       "end_index": 10,
+       "text": "עשינו",
+       "start_offset": "0.300s",
+       "end_offset": "0.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 11,
+       "end_index": 15,
+       "text": "את",
+       "start_offset": "0.700s",
+       "end_offset": "0.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 16,
+       "end_index": 24,
+       "text": "הטקס",
+       "start_offset": "0.800s",
+       "end_offset": "1.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 25,
+       "end_index": 29,
+       "text": "של",
+       "start_offset": "1.100s",
+       "end_offset": "1.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 30,
+       "end_index": 38,
+       "text": "שביל",
+       "start_offset": "1.200s",
+       "end_offset": "1.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 39,
+       "end_index": 52,
+       "text": "הכניסה.",
+       "start_offset": "1.600s",
+       "end_offset": "2.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 53,
+       "end_index": 63,
+       "text": "אנחנו",
+       "start_offset": "2.600s",
+       "end_offset": "3s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 64,
+       "end_index": 72,
+       "text": "קודם",
+       "start_offset": "3s",
+       "end_offset": "3.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 73,
+       "end_index": 77,
+       "text": "כל",
+       "start_offset": "3.200s",
+       "end_offset": "3.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 78,
+       "end_index": 90,
+       "text": "מגיעים",
+       "start_offset": "3.400s",
+       "end_offset": "3.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 91,
+       "end_index": 97,
+       "text": "מול",
+       "start_offset": "3.700s",
+       "end_offset": "3.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 98,
+       "end_index": 104,
+       "text": "דלת",
+       "start_offset": "3.900s",
+       "end_offset": "4.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 105,
+       "end_index": 117,
+       "text": "זכוכית",
+       "start_offset": "4.200s",
+       "end_offset": "4.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 118,
+       "end_index": 128,
+       "text": "שקופה",
+       "start_offset": "4.600s",
+       "end_offset": "5.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 129,
+       "end_index": 139,
+       "text": "שעליה",
+       "start_offset": "5.100s",
+       "end_offset": "6.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 140,
+       "end_index": 148,
+       "text": "שמתם",
+       "start_offset": "6.200s",
+       "end_offset": "6.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 149,
+       "end_index": 159,
+       "text": "אלמנט",
+       "start_offset": "6.900s",
+       "end_offset": "7.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 160,
+       "end_index": 174,
+       "text": "משربייה",
+       "start_offset": "7.400s",
+       "end_offset": "8s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 175,
+       "end_index": 185,
+       "text": "בדיוק",
+       "start_offset": "8.100s",
+       "end_offset": "8.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 186,
+       "end_index": 192,
+       "text": "כמו",
+       "start_offset": "8.500s",
+       "end_offset": "8.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 193,
+       "end_index": 205,
+       "text": "שעשיתם",
+       "start_offset": "8.700s",
+       "end_offset": "9.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 206,
+       "end_index": 216,
+       "text": "בחזית",
+       "start_offset": "9.600s",
+       "end_offset": "10s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 217,
+       "end_index": 227,
+       "text": "המאוד",
+       "start_offset": "10s",
+       "end_offset": "10.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 228,
+       "end_index": 236,
+       "text": "מאוד",
+       "start_offset": "10.400s",
+       "end_offset": "10.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 237,
+       "end_index": 247,
+       "text": "גדולה",
+       "start_offset": "10.600s",
+       "end_offset": "11.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 248,
+       "end_index": 252,
+       "text": "של",
+       "start_offset": "11.100s",
+       "end_offset": "11.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 253,
+       "end_index": 262,
+       "text": "הבית.",
+       "start_offset": "11.300s",
+       "end_offset": "11.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 263,
+       "end_index": 273,
+       "text": "אנחנו",
+       "start_offset": "12s",
+       "end_offset": "12.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 274,
+       "end_index": 286,
+       "text": "נכנסים",
+       "start_offset": "12.300s",
+       "end_offset": "12.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 287,
+       "end_index": 297,
+       "text": "לאזור",
+       "start_offset": "12.800s",
+       "end_offset": "13.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 298,
+       "end_index": 306,
+       "text": "שהוא",
+       "start_offset": "13.400s",
+       "end_offset": "13.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 307,
+       "end_index": 317,
+       "text": "יחסית",
+       "start_offset": "13.500s",
+       "end_offset": "13.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 318,
+       "end_index": 326,
+       "text": "נמוך",
+       "start_offset": "13.900s",
+       "end_offset": "14.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 327,
+       "end_index": 333,
+       "text": "ואז",
+       "start_offset": "14.300s",
+       "end_offset": "14.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 334,
+       "end_index": 341,
+       "text": "בום,",
+       "start_offset": "14.600s",
+       "end_offset": "15.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 342,
+       "end_index": 350,
+       "text": "הבית",
+       "start_offset": "15.700s",
+       "end_offset": "16.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 351,
+       "end_index": 359,
+       "text": "נפתח",
+       "start_offset": "16.200s",
+       "end_offset": "16.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 360,
+       "end_index": 366,
+       "text": "ויש",
+       "start_offset": "16.700s",
+       "end_offset": "16.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 367,
+       "end_index": 371,
+       "text": "את",
+       "start_offset": "16.900s",
+       "end_offset": "17s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 372,
+       "end_index": 374,
+       "text": "ה",
+       "start_offset": "17s",
+       "end_offset": "17.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 375,
+       "end_index": 387,
+       "text": "חזיתות",
+       "start_offset": "17.400s",
+       "end_offset": "17.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 388,
+       "end_index": 402,
+       "text": "הענקיים",
+       "start_offset": "17.900s",
+       "end_offset": "18.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 403,
+       "end_index": 410,
+       "text": "שלו.",
+       "start_offset": "18.600s",
+       "end_offset": "18.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 411,
+       "end_index": 415,
+       "text": "אז",
+       "start_offset": "18.800s",
+       "end_offset": "19.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 416,
+       "end_index": 427,
+       "text": "חברים,",
+       "start_offset": "19.100s",
+       "end_offset": "19.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 428,
+       "end_index": 434,
+       "text": "אני",
+       "start_offset": "19.500s",
+       "end_offset": "19.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 435,
+       "end_index": 443,
+       "text": "רוצה",
+       "start_offset": "19.600s",
+       "end_offset": "19.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 444,
+       "end_index": 456,
+       "text": "להודות",
+       "start_offset": "19.800s",
+       "end_offset": "20s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 457,
+       "end_index": 463,
+       "text": "לכם",
+       "start_offset": "20s",
+       "end_offset": "20.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 464,
+       "end_index": 468,
+       "text": "על",
+       "start_offset": "20.300s",
+       "end_offset": "20.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 469,
+       "end_index": 477,
+       "text": "סיור",
+       "start_offset": "20.500s",
+       "end_offset": "20.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 478,
+       "end_index": 490,
+       "text": "שמרגיש",
+       "start_offset": "20.900s",
+       "end_offset": "21.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 491,
+       "end_index": 501,
+       "text": "לגמרי",
+       "start_offset": "21.400s",
+       "end_offset": "22.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 502,
+       "end_index": 508,
+       "text": "כמו",
+       "start_offset": "22.300s",
+       "end_offset": "22.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 509,
+       "end_index": 515,
+       "text": "חוץ",
+       "start_offset": "22.800s",
+       "end_offset": "23.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 516,
+       "end_index": 525,
+       "text": "לארץ,",
+       "start_offset": "23.200s",
+       "end_offset": "23.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 526,
+       "end_index": 541,
+       "text": "מיקונוס,",
+       "start_offset": "23.700s",
+       "end_offset": "24.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 542,
+       "end_index": 555,
+       "text": "איביזה,",
+       "start_offset": "24.500s",
+       "end_offset": "25.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 556,
+       "end_index": 562,
+       "text": "וכל",
+       "start_offset": "25.400s",
+       "end_offset": "25.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 563,
+       "end_index": 567,
+       "text": "כך",
+       "start_offset": "25.600s",
+       "end_offset": "25.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 568,
+       "end_index": 574,
+       "text": "יפה",
+       "start_offset": "25.800s",
+       "end_offset": "26s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 575,
+       "end_index": 585,
+       "text": "לראות",
+       "start_offset": "26s",
+       "end_offset": "26.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 586,
+       "end_index": 590,
+       "text": "את",
+       "start_offset": "26.200s",
+       "end_offset": "26.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 591,
+       "end_index": 601,
+       "text": "שיתוף",
+       "start_offset": "26.300s",
+       "end_offset": "26.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 602,
+       "end_index": 614,
+       "text": "הפעולה",
+       "start_offset": "26.600s",
+       "end_offset": "27.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 615,
+       "end_index": 628,
+       "text": "ביניכם.",
+       "start_offset": "27.100s",
+       "end_offset": "27.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 629,
+       "end_index": 635,
+       "text": "אתם",
+       "start_offset": "27.800s",
+       "end_offset": "28s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 636,
+       "end_index": 640,
+       "text": "על",
+       "start_offset": "28s",
+       "end_offset": "28.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 641,
+       "end_index": 660,
+       "text": "האדריכלות,",
+       "start_offset": "28.100s",
+       "end_offset": "28.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 661,
+       "end_index": 667,
+       "text": "אתן",
+       "start_offset": "28.800s",
+       "end_offset": "29.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 668,
+       "end_index": 672,
+       "text": "על",
+       "start_offset": "29.100s",
+       "end_offset": "29.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 673,
+       "end_index": 685,
+       "text": "העיצוב",
+       "start_offset": "29.200s",
+       "end_offset": "29.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 686,
+       "end_index": 697,
+       "text": "הפנים,",
+       "start_offset": "29.600s",
+       "end_offset": "30.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 698,
+       "end_index": 704,
+       "text": "איך",
+       "start_offset": "30.500s",
+       "end_offset": "30.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 705,
+       "end_index": 720,
+       "text": "החומרים,",
+       "start_offset": "30.600s",
+       "end_offset": "31.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 721,
+       "end_index": 740,
+       "text": "הצבעוניות,",
+       "start_offset": "31.400s",
+       "end_offset": "32.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 741,
+       "end_index": 754,
+       "text": "הנפחים,",
+       "start_offset": "32.200s",
+       "end_offset": "32.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 755,
+       "end_index": 761,
+       "text": "הכל",
+       "start_offset": "32.700s",
+       "end_offset": "33.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 762,
+       "end_index": 770,
+       "text": "עובד",
+       "start_offset": "33.300s",
+       "end_offset": "33.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 771,
+       "end_index": 781,
+       "text": "בצורה",
+       "start_offset": "33.500s",
+       "end_offset": "33.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 782,
+       "end_index": 786,
+       "text": "כל",
+       "start_offset": "33.900s",
+       "end_offset": "34.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 787,
+       "end_index": 791,
+       "text": "כך",
+       "start_offset": "34.200s",
+       "end_offset": "34.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 792,
+       "end_index": 798,
+       "text": "יפה",
+       "start_offset": "34.700s",
+       "end_offset": "35.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 799,
+       "end_index": 811,
+       "text": "ונקייה",
+       "start_offset": "35.100s",
+       "end_offset": "35.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 812,
+       "end_index": 821,
+       "text": "ביחד.",
+       "start_offset": "35.800s",
+       "end_offset": "36.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 822,
+       "end_index": 832,
+       "text": "ובפעם",
+       "start_offset": "36.600s",
+       "end_offset": "37.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 833,
+       "end_index": 842,
+       "text": "הבאה,",
+       "start_offset": "37.100s",
+       "end_offset": "37.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 843,
+       "end_index": 854,
+       "text": "חברים,",
+       "start_offset": "37.400s",
+       "end_offset": "37.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 855,
+       "end_index": 861,
+       "text": "שיש",
+       "start_offset": "37.700s",
+       "end_offset": "38s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 862,
+       "end_index": 866,
+       "text": "פה",
+       "start_offset": "38s",
+       "end_offset": "38.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 867,
+       "end_index": 878,
+       "text": "מסיבה,",
+       "start_offset": "38.200s",
+       "end_offset": "38.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 879,
+       "end_index": 883,
+       "text": "לא",
+       "start_offset": "38.800s",
+       "end_offset": "39s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 884,
+       "end_index": 894,
+       "text": "לשכוח",
+       "start_offset": "39s",
+       "end_offset": "39.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 895,
+       "end_index": 907,
+       "text": "להזמין",
+       "start_offset": "39.300s",
+       "end_offset": "39.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 908,
+       "end_index": 916,
+       "text": "אותi.",
+       "start_offset": "39.600s",
+       "end_offset": "39.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 916,
+       "end_index": 925,
+       "text": "סגור.",
+       "start_offset": "40.300s",
+       "end_offset": "40.600s",
+       "speaker": "spk:1",
+       "type": "word_info"
+      },
+      {
+       "start_index": 925,
+       "end_index": 934,
+       "text": "תודה.",
+       "start_offset": "41s",
+       "end_offset": "41.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 934,
+       "end_index": 942,
+       "text": "תודה",
+       "start_offset": "41.600s",
+       "end_offset": "41.800s",
+       "speaker": "spk:2",
+       "type": "word_info"
+      },
+      {
+       "start_index": 943,
+       "end_index": 950,
+       "text": "רבה.",
+       "start_offset": "41.800s",
+       "end_offset": "42.100s",
+       "speaker": "spk:2",
+       "type": "word_info"
+      },
+      {
+       "start_index": 950,
+       "end_index": 958,
+       "text": "בקצה",
+       "start_offset": "42.900s",
+       "end_offset": "43.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 959,
+       "end_index": 967,
+       "text": "הגשר",
+       "start_offset": "43.400s",
+       "end_offset": "43.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 968,
+       "end_index": 978,
+       "text": "אנחנו",
+       "start_offset": "43.700s",
+       "end_offset": "44s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 979,
+       "end_index": 991,
+       "text": "מגיעים",
+       "start_offset": "44s",
+       "end_offset": "44.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 992,
+       "end_index": 1004,
+       "text": "לקוביה",
+       "start_offset": "44.400s",
+       "end_offset": "45.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1005,
+       "end_index": 1017,
+       "text": "יהודית",
+       "start_offset": "45.100s",
+       "end_offset": "45.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1018,
+       "end_index": 1026,
+       "text": "שהיא",
+       "start_offset": "45.800s",
+       "end_offset": "46s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1027,
+       "end_index": 1035,
+       "text": "בעצם",
+       "start_offset": "46s",
+       "end_offset": "46.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1036,
+       "end_index": 1042,
+       "text": "חדר",
+       "start_offset": "47.100s",
+       "end_offset": "47.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1043,
+       "end_index": 1053,
+       "text": "השינה",
+       "start_offset": "47.400s",
+       "end_offset": "47.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1054,
+       "end_index": 1058,
+       "text": "של",
+       "start_offset": "47.700s",
+       "end_offset": "47.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1059,
+       "end_index": 1072,
+       "text": "ההורים,",
+       "start_offset": "47.900s",
+       "end_offset": "48.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1073,
+       "end_index": 1083,
+       "text": "הרצפה",
+       "start_offset": "48.800s",
+       "end_offset": "49.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1084,
+       "end_index": 1094,
+       "text": "הלבנה",
+       "start_offset": "49.400s",
+       "end_offset": "49.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1095,
+       "end_index": 1107,
+       "text": "שהייתה",
+       "start_offset": "49.900s",
+       "end_offset": "50.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1108,
+       "end_index": 1114,
+       "text": "בכל",
+       "start_offset": "50.300s",
+       "end_offset": "50.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1115,
+       "end_index": 1123,
+       "text": "הבית",
+       "start_offset": "50.800s",
+       "end_offset": "51.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1124,
+       "end_index": 1132,
+       "text": "בעצם",
+       "start_offset": "51.200s",
+       "end_offset": "51.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1133,
+       "end_index": 1141,
+       "text": "הפכה",
+       "start_offset": "51.800s",
+       "end_offset": "52.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1142,
+       "end_index": 1146,
+       "text": "פה",
+       "start_offset": "52.200s",
+       "end_offset": "52.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1147,
+       "end_index": 1162,
+       "text": "לפישבון,",
+       "start_offset": "52.300s",
+       "end_offset": "53.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1163,
+       "end_index": 1171,
+       "text": "אלון",
+       "start_offset": "53.500s",
+       "end_offset": "54.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1172,
+       "end_index": 1178,
+       "text": "מעט",
+       "start_offset": "54.400s",
+       "end_offset": "54.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1179,
+       "end_index": 1190,
+       "text": "אגוזי,",
+       "start_offset": "54.700s",
+       "end_offset": "55.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1191,
+       "end_index": 1195,
+       "text": "יש",
+       "start_offset": "55.700s",
+       "end_offset": "56.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1196,
+       "end_index": 1200,
+       "text": "את",
+       "start_offset": "56.100s",
+       "end_offset": "56.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1201,
+       "end_index": 1211,
+       "text": "אלמנט",
+       "start_offset": "56.400s",
+       "end_offset": "57.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1212,
+       "end_index": 1222,
+       "text": "חיפוי",
+       "start_offset": "57.100s",
+       "end_offset": "57.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1223,
+       "end_index": 1231,
+       "text": "הקיר",
+       "start_offset": "57.500s",
+       "end_offset": "58s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1232,
+       "end_index": 1238,
+       "text": "שזה",
+       "start_offset": "58s",
+       "end_offset": "58.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1239,
+       "end_index": 1247,
+       "text": "אותו",
+       "start_offset": "58.300s",
+       "end_offset": "58.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1248,
+       "end_index": 1252,
+       "text": "עץ",
+       "start_offset": "58.600s",
+       "end_offset": "58.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1253,
+       "end_index": 1265,
+       "text": "שראינו",
+       "start_offset": "58.800s",
+       "end_offset": "59.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1266,
+       "end_index": 1275,
+       "text": "למטה,",
+       "start_offset": "59.200s",
+       "end_offset": "59.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1276,
+       "end_index": 1280,
+       "text": "גב",
+       "start_offset": "60.100s",
+       "end_offset": "60.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1281,
+       "end_index": 1291,
+       "text": "המיטה",
+       "start_offset": "60.400s",
+       "end_offset": "60.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1292,
+       "end_index": 1305,
+       "text": "המרופד,",
+       "start_offset": "60.900s",
+       "end_offset": "61.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1306,
+       "end_index": 1318,
+       "text": "מנורות",
+       "start_offset": "62s",
+       "end_offset": "62.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1319,
+       "end_index": 1326,
+       "text": "הצד.",
+       "start_offset": "62.800s",
+       "end_offset": "63.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1327,
+       "end_index": 1335,
+       "text": "ספרו",
+       "start_offset": "63.800s",
+       "end_offset": "64.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1336,
+       "end_index": 1340,
+       "text": "לי",
+       "start_offset": "64.100s",
+       "end_offset": "64.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1341,
+       "end_index": 1345,
+       "text": "על",
+       "start_offset": "64.200s",
+       "end_offset": "64.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1346,
+       "end_index": 1350,
+       "text": "זה",
+       "start_offset": "64.300s",
+       "end_offset": "64.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1351,
+       "end_index": 1360,
+       "text": "בנות.",
+       "start_offset": "64.400s",
+       "end_offset": "64.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1361,
+       "end_index": 1373,
+       "text": "ועברנו",
+       "start_offset": "64.900s",
+       "end_offset": "65.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1374,
+       "end_index": 1380,
+       "text": "למה",
+       "start_offset": "65.400s",
+       "end_offset": "65.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1381,
+       "end_index": 1383,
+       "text": "ש",
+       "start_offset": "65.800s",
+       "end_offset": "66.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1384,
+       "end_index": 1392,
+       "text": "אמור",
+       "start_offset": "66.600s",
+       "end_offset": "66.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1393,
+       "end_index": 1403,
+       "text": "להיות",
+       "start_offset": "66.800s",
+       "end_offset": "67.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1404,
+       "end_index": 1413,
+       "text": "סלון.",
+       "start_offset": "67.100s",
+       "end_offset": "67.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1414,
+       "end_index": 1422,
+       "text": "ואני",
+       "start_offset": "68.900s",
+       "end_offset": "69.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1423,
+       "end_index": 1431,
+       "text": "אומר",
+       "start_offset": "69.100s",
+       "end_offset": "69.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1432,
+       "end_index": 1436,
+       "text": "את",
+       "start_offset": "69.400s",
+       "end_offset": "69.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1437,
+       "end_index": 1441,
+       "text": "זה",
+       "start_offset": "69.500s",
+       "end_offset": "69.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1442,
+       "end_index": 1446,
+       "text": "כי",
+       "start_offset": "69.600s",
+       "end_offset": "69.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1447,
+       "end_index": 1451,
+       "text": "יש",
+       "start_offset": "69.700s",
+       "end_offset": "69.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1452,
+       "end_index": 1458,
+       "text": "פפה",
+       "start_offset": "69.800s",
+       "end_offset": "70.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1459,
+       "end_index": 1467,
+       "text": "מאוד",
+       "start_offset": "70.300s",
+       "end_offset": "70.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1468,
+       "end_index": 1483,
+       "text": "מעניינת,",
+       "start_offset": "70.600s",
+       "end_offset": "71.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1484,
+       "end_index": 1500,
+       "text": "דו-צדדית.",
+       "start_offset": "71.600s",
+       "end_offset": "72.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1501,
+       "end_index": 1507,
+       "text": "עוד",
+       "start_offset": "72.600s",
+       "end_offset": "72.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1508,
+       "end_index": 1515,
+       "text": "פעם,",
+       "start_offset": "72.800s",
+       "end_offset": "73.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1516,
+       "end_index": 1528,
+       "text": "התחושה",
+       "start_offset": "73.200s",
+       "end_offset": "73.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1529,
+       "end_index": 1539,
+       "text": "הלובי",
+       "start_offset": "73.900s",
+       "end_offset": "74.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1540,
+       "end_index": 1552,
+       "text": "מלונאי",
+       "start_offset": "74.700s",
+       "end_offset": "75.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1553,
+       "end_index": 1559,
+       "text": "הזה",
+       "start_offset": "75.400s",
+       "end_offset": "75.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1560,
+       "end_index": 1566,
+       "text": "הוא",
+       "start_offset": "76.300s",
+       "end_offset": "76.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1567,
+       "end_index": 1571,
+       "text": "גם",
+       "start_offset": "76.500s",
+       "end_offset": "76.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1572,
+       "end_index": 1577,
+       "text": "פה,",
+       "start_offset": "76.700s",
+       "end_offset": "77s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1578,
+       "end_index": 1582,
+       "text": "כי",
+       "start_offset": "77s",
+       "end_offset": "77.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1583,
+       "end_index": 1593,
+       "text": "בלובי",
+       "start_offset": "77.200s",
+       "end_offset": "77.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1594,
+       "end_index": 1606,
+       "text": "מלונאי",
+       "start_offset": "77.600s",
+       "end_offset": "78s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1607,
+       "end_index": 1617,
+       "text": "אנחנו",
+       "start_offset": "78s",
+       "end_offset": "78.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1618,
+       "end_index": 1626,
+       "text": "נקבל",
+       "start_offset": "78.300s",
+       "end_offset": "78.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1627,
+       "end_index": 1635,
+       "text": "איזה",
+       "start_offset": "78.600s",
+       "end_offset": "78.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1636,
+       "end_index": 1642,
+       "text": "מין",
+       "start_offset": "78.800s",
+       "end_offset": "79.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1643,
+       "end_index": 1664,
+       "text": "מולטי-יוניט",
+       "start_offset": "79.300s",
+       "end_offset": "80.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1665,
+       "end_index": 1673,
+       "text": "לשני",
+       "start_offset": "80.300s",
+       "end_offset": "80.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1674,
+       "end_index": 1688,
+       "text": "כיוונים",
+       "start_offset": "80.700s",
+       "end_offset": "81.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1689,
+       "end_index": 1695,
+       "text": "וזה",
+       "start_offset": "81.800s",
+       "end_offset": "82.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1696,
+       "end_index": 1704,
+       "text": "בתוך",
+       "start_offset": "82.100s",
+       "end_offset": "82.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1705,
+       "end_index": 1709,
+       "text": "כל",
+       "start_offset": "82.400s",
+       "end_offset": "82.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1710,
+       "end_index": 1720,
+       "text": "הדאבל",
+       "start_offset": "82.700s",
+       "end_offset": "83.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1721,
+       "end_index": 1734,
+       "text": "ווליום,",
+       "start_offset": "83.100s",
+       "end_offset": "83.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1735,
+       "end_index": 1739,
+       "text": "זה",
+       "start_offset": "83.500s",
+       "end_offset": "83.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1740,
+       "end_index": 1748,
+       "text": "מאוד",
+       "start_offset": "83.600s",
+       "end_offset": "83.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1749,
+       "end_index": 1762,
+       "text": "מעניין.",
+       "start_offset": "83.800s",
+       "end_offset": "84.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1763,
+       "end_index": 1771,
+       "text": "בואו",
+       "start_offset": "84.800s",
+       "end_offset": "85s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1772,
+       "end_index": 1780,
+       "text": "נדבר",
+       "start_offset": "85s",
+       "end_offset": "85.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1781,
+       "end_index": 1785,
+       "text": "על",
+       "start_offset": "85.400s",
+       "end_offset": "85.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1786,
+       "end_index": 1790,
+       "text": "זה",
+       "start_offset": "85.400s",
+       "end_offset": "85.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1791,
+       "end_index": 1800,
+       "text": "בנות.",
+       "start_offset": "85.600s",
+       "end_offset": "86s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1801,
+       "end_index": 1813,
+       "text": "והמשחק",
+       "start_offset": "86.600s",
+       "end_offset": "87.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1814,
+       "end_index": 1820,
+       "text": "הזה",
+       "start_offset": "87.300s",
+       "end_offset": "87.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1821,
+       "end_index": 1829,
+       "text": "שלכם",
+       "start_offset": "87.600s",
+       "end_offset": "88.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1830,
+       "end_index": 1837,
+       "text": "בבז,",
+       "start_offset": "88.200s",
+       "end_offset": "88.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1838,
+       "end_index": 1845,
+       "text": "לבן,",
+       "start_offset": "88.900s",
+       "end_offset": "89.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1846,
+       "end_index": 1854,
+       "text": "טיפה",
+       "start_offset": "90s",
+       "end_offset": "90.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1855,
+       "end_index": 1862,
+       "text": "קפה,",
+       "start_offset": "90.400s",
+       "end_offset": "91s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1863,
+       "end_index": 1871,
+       "text": "טיפה",
+       "start_offset": "91.200s",
+       "end_offset": "91.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1872,
+       "end_index": 1877,
+       "text": "עץ,",
+       "start_offset": "91.600s",
+       "end_offset": "91.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1878,
+       "end_index": 1886,
+       "text": "מאוד",
+       "start_offset": "92.300s",
+       "end_offset": "92.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1887,
+       "end_index": 1895,
+       "text": "מאוד",
+       "start_offset": "92.800s",
+       "end_offset": "93.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1896,
+       "end_index": 1905,
+       "text": "נעים,",
+       "start_offset": "93.100s",
+       "end_offset": "93.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1906,
+       "end_index": 1914,
+       "text": "מאוד",
+       "start_offset": "93.400s",
+       "end_offset": "93.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1915,
+       "end_index": 1923,
+       "text": "מאוד",
+       "start_offset": "93.700s",
+       "end_offset": "94.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1924,
+       "end_index": 1931,
+       "text": "שקט.",
+       "start_offset": "94.100s",
+       "end_offset": "94.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1932,
+       "end_index": 1940,
+       "text": "פינת",
+       "start_offset": "94.900s",
+       "end_offset": "95.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1941,
+       "end_index": 1952,
+       "text": "האוכל,",
+       "start_offset": "95.200s",
+       "end_offset": "95.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1953,
+       "end_index": 1961,
+       "text": "פינת",
+       "start_offset": "95.800s",
+       "end_offset": "96.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1962,
+       "end_index": 1974,
+       "text": "זכוכית",
+       "start_offset": "96.100s",
+       "end_offset": "96.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1975,
+       "end_index": 1979,
+       "text": "על",
+       "start_offset": "96.600s",
+       "end_offset": "96.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1980,
+       "end_index": 1992,
+       "text": "רגליים",
+       "start_offset": "96.700s",
+       "end_offset": "97.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 1993,
+       "end_index": 2003,
+       "text": "באותה",
+       "start_offset": "97.100s",
+       "end_offset": "97.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2004,
+       "end_index": 2014,
+       "text": "גרניט",
+       "start_offset": "97.700s",
+       "end_offset": "98.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2015,
+       "end_index": 2027,
+       "text": "פורצלן",
+       "start_offset": "98.200s",
+       "end_offset": "98.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2028,
+       "end_index": 2049,
+       "text": "טרוורטינית,",
+       "start_offset": "98.600s",
+       "end_offset": "99.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2050,
+       "end_index": 2062,
+       "text": "כיסאות",
+       "start_offset": "99.700s",
+       "end_offset": "100.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2063,
+       "end_index": 2073,
+       "text": "בגוון",
+       "start_offset": "100.200s",
+       "end_offset": "100.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2074,
+       "end_index": 2082,
+       "text": "שמנת",
+       "start_offset": "100.700s",
+       "end_offset": "101.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2083,
+       "end_index": 2089,
+       "text": "מול",
+       "start_offset": "101.300s",
+       "end_offset": "101.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2090,
+       "end_index": 2098,
+       "text": "איזה",
+       "start_offset": "102s",
+       "end_offset": "102.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2099,
+       "end_index": 2105,
+       "text": "שהו",
+       "start_offset": "102.500s",
+       "end_offset": "102.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2106,
+       "end_index": 2116,
+       "text": "וילון",
+       "start_offset": "102.900s",
+       "end_offset": "103.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2117,
+       "end_index": 2125,
+       "text": "מאוד",
+       "start_offset": "103.400s",
+       "end_offset": "103.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2126,
+       "end_index": 2134,
+       "text": "גבוה",
+       "start_offset": "103.800s",
+       "end_offset": "104s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2135,
+       "end_index": 2146,
+       "text": "בשמנת,",
+       "start_offset": "104s",
+       "end_offset": "104.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2147,
+       "end_index": 2155,
+       "text": "שמנת",
+       "start_offset": "104.800s",
+       "end_offset": "105.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2156,
+       "end_index": 2160,
+       "text": "על",
+       "start_offset": "105.400s",
+       "end_offset": "105.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2161,
+       "end_index": 2169,
+       "text": "שמנת",
+       "start_offset": "105.600s",
+       "end_offset": "106.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2170,
+       "end_index": 2174,
+       "text": "על",
+       "start_offset": "106.200s",
+       "end_offset": "106.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2175,
+       "end_index": 2187,
+       "text": "זכוכית",
+       "start_offset": "106.400s",
+       "end_offset": "107s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2188,
+       "end_index": 2192,
+       "text": "על",
+       "start_offset": "107s",
+       "end_offset": "107.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2193,
+       "end_index": 2200,
+       "text": "לבן.",
+       "start_offset": "107.100s",
+       "end_offset": "107.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2201,
+       "end_index": 2205,
+       "text": "אז",
+       "start_offset": "108.600s",
+       "end_offset": "108.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2206,
+       "end_index": 2215,
+       "text": "נהדר,",
+       "start_offset": "108.600s",
+       "end_offset": "109.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2216,
+       "end_index": 2222,
+       "text": "בית",
+       "start_offset": "109.100s",
+       "end_offset": "109.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2223,
+       "end_index": 2230,
+       "text": "לבן,",
+       "start_offset": "109.400s",
+       "end_offset": "109.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2231,
+       "end_index": 2241,
+       "text": "ילדים",
+       "start_offset": "109.800s",
+       "end_offset": "110.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2242,
+       "end_index": 2256,
+       "text": "מוגדרים",
+       "start_offset": "110.200s",
+       "end_offset": "110.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2257,
+       "end_index": 2271,
+       "text": "באזורים",
+       "start_offset": "110.700s",
+       "end_offset": "111.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2272,
+       "end_index": 2281,
+       "text": "שלהם,",
+       "start_offset": "111.300s",
+       "end_offset": "111.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2282,
+       "end_index": 2288,
+       "text": "בית",
+       "start_offset": "111.700s",
+       "end_offset": "112s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2289,
+       "end_index": 2297,
+       "text": "מארח",
+       "start_offset": "112s",
+       "end_offset": "112.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2298,
+       "end_index": 2300,
+       "text": "ו",
+       "start_offset": "113.100s",
+       "end_offset": "113.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2301,
+       "end_index": 2311,
+       "text": "עכשיו",
+       "start_offset": "113.900s",
+       "end_offset": "114.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2312,
+       "end_index": 2318,
+       "text": "אני",
+       "start_offset": "114.200s",
+       "end_offset": "114.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2319,
+       "end_index": 2327,
+       "text": "רוצה",
+       "start_offset": "114.300s",
+       "end_offset": "114.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2328,
+       "end_index": 2340,
+       "text": "להתמקד",
+       "start_offset": "114.800s",
+       "end_offset": "115.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2341,
+       "end_index": 2351,
+       "text": "במטבח",
+       "start_offset": "115.600s",
+       "end_offset": "116.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2352,
+       "end_index": 2361,
+       "text": "עצמו.",
+       "start_offset": "116.400s",
+       "end_offset": "116.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2362,
+       "end_index": 2372,
+       "text": "כשאני",
+       "start_offset": "116.700s",
+       "end_offset": "117s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2373,
+       "end_index": 2383,
+       "text": "מסתכל",
+       "start_offset": "117s",
+       "end_offset": "117.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2384,
+       "end_index": 2388,
+       "text": "על",
+       "start_offset": "117.400s",
+       "end_offset": "117.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2389,
+       "end_index": 2400,
+       "text": "המטבח,",
+       "start_offset": "117.500s",
+       "end_offset": "118.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2401,
+       "end_index": 2405,
+       "text": "אז",
+       "start_offset": "118.400s",
+       "end_offset": "118.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2406,
+       "end_index": 2410,
+       "text": "יש",
+       "start_offset": "118.500s",
+       "end_offset": "118.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2411,
+       "end_index": 2415,
+       "text": "את",
+       "start_offset": "118.600s",
+       "end_offset": "118.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2416,
+       "end_index": 2424,
+       "text": "הקיר",
+       "start_offset": "118.800s",
+       "end_offset": "119.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2425,
+       "end_index": 2435,
+       "text": "הגדול",
+       "start_offset": "119.200s",
+       "end_offset": "119.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2436,
+       "end_index": 2442,
+       "text": "בעץ",
+       "start_offset": "119.900s",
+       "end_offset": "120.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2443,
+       "end_index": 2455,
+       "text": "שיצרתם",
+       "start_offset": "120.300s",
+       "end_offset": "121.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2456,
+       "end_index": 2460,
+       "text": "עם",
+       "start_offset": "121.200s",
+       "end_offset": "121.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2461,
+       "end_index": 2471,
+       "text": "אלמנט",
+       "start_offset": "121.400s",
+       "end_offset": "121.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2472,
+       "end_index": 2476,
+       "text": "של",
+       "start_offset": "121.800s",
+       "end_offset": "121.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2477,
+       "end_index": 2489,
+       "text": "קונספט",
+       "start_offset": "121.900s",
+       "end_offset": "122.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2490,
+       "end_index": 2500,
+       "text": "המאוד",
+       "start_offset": "122.400s",
+       "end_offset": "122.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2501,
+       "end_index": 2511,
+       "text": "גדולה",
+       "start_offset": "122.800s",
+       "end_offset": "123s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2512,
+       "end_index": 2524,
+       "text": "שנפתחת",
+       "start_offset": "123s",
+       "end_offset": "123.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2525,
+       "end_index": 2537,
+       "text": "ונסגרת",
+       "start_offset": "123.600s",
+       "end_offset": "124.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2538,
+       "end_index": 2548,
+       "text": "וממול",
+       "start_offset": "124.700s",
+       "end_offset": "125.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2549,
+       "end_index": 2553,
+       "text": "אי",
+       "start_offset": "125.600s",
+       "end_offset": "125.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2554,
+       "end_index": 2558,
+       "text": "מה",
+       "start_offset": "125.800s",
+       "end_offset": "126s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2559,
+       "end_index": 2565,
+       "text": "האם",
+       "start_offset": "126s",
+       "end_offset": "126.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2566,
+       "end_index": 2584,
+       "text": "האופנתיים",
+       "start_offset": "126.300s",
+       "end_offset": "127.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2585,
+       "end_index": 2597,
+       "text": "שאנחנו",
+       "start_offset": "127.200s",
+       "end_offset": "127.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2598,
+       "end_index": 2608,
+       "text": "רואים",
+       "start_offset": "127.600s",
+       "end_offset": "128s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2609,
+       "end_index": 2617,
+       "text": "בזמן",
+       "start_offset": "128s",
+       "end_offset": "128.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2618,
+       "end_index": 2631,
+       "text": "האחרון,",
+       "start_offset": "128.500s",
+       "end_offset": "129.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2632,
+       "end_index": 2638,
+       "text": "שני",
+       "start_offset": "129.600s",
+       "end_offset": "130.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2639,
+       "end_index": 2647,
+       "text": "איים",
+       "start_offset": "130.600s",
+       "end_offset": "131s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2648,
+       "end_index": 2656,
+       "text": "כאשר",
+       "start_offset": "131s",
+       "end_offset": "131.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2657,
+       "end_index": 2663,
+       "text": "אחד",
+       "start_offset": "131.400s",
+       "end_offset": "131.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2664,
+       "end_index": 2670,
+       "text": "הוא",
+       "start_offset": "131.800s",
+       "end_offset": "131.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2671,
+       "end_index": 2675,
+       "text": "עם",
+       "start_offset": "131.800s",
+       "end_offset": "132s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2676,
+       "end_index": 2687,
+       "text": "בישול,",
+       "start_offset": "132s",
+       "end_offset": "132.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2688,
+       "end_index": 2694,
+       "text": "אחד",
+       "start_offset": "132.400s",
+       "end_offset": "132.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2695,
+       "end_index": 2701,
+       "text": "הוא",
+       "start_offset": "132.800s",
+       "end_offset": "132.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2702,
+       "end_index": 2710,
+       "text": "יותר",
+       "start_offset": "132.800s",
+       "end_offset": "133.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2711,
+       "end_index": 2722,
+       "text": "להכנה,",
+       "start_offset": "133.200s",
+       "end_offset": "133.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2723,
+       "end_index": 2727,
+       "text": "עם",
+       "start_offset": "134s",
+       "end_offset": "134.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2728,
+       "end_index": 2736,
+       "text": "איזה",
+       "start_offset": "134.200s",
+       "end_offset": "134.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2737,
+       "end_index": 2743,
+       "text": "ביס",
+       "start_offset": "134.400s",
+       "end_offset": "134.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2744,
+       "end_index": 2754,
+       "text": "באמצע",
+       "start_offset": "134.800s",
+       "end_offset": "135.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2755,
+       "end_index": 2765,
+       "text": "לייצר",
+       "start_offset": "135.400s",
+       "end_offset": "135.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2766,
+       "end_index": 2770,
+       "text": "עם",
+       "start_offset": "136.700s",
+       "end_offset": "136.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2771,
+       "end_index": 2779,
+       "text": "איזה",
+       "start_offset": "136.800s",
+       "end_offset": "137.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2780,
+       "end_index": 2786,
+       "text": "ביס",
+       "start_offset": "137.100s",
+       "end_offset": "137.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2787,
+       "end_index": 2797,
+       "text": "באמצע",
+       "start_offset": "137.400s",
+       "end_offset": "137.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2798,
+       "end_index": 2808,
+       "text": "לייצר",
+       "start_offset": "137.800s",
+       "end_offset": "138.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2809,
+       "end_index": 2817,
+       "text": "איזה",
+       "start_offset": "138.100s",
+       "end_offset": "138.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2818,
+       "end_index": 2824,
+       "text": "שהו",
+       "start_offset": "138.300s",
+       "end_offset": "138.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2825,
+       "end_index": 2832,
+       "text": "מתח.",
+       "start_offset": "138.500s",
+       "end_offset": "138.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2833,
+       "end_index": 2841,
+       "text": "שלום",
+       "start_offset": "139.800s",
+       "end_offset": "140s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2842,
+       "end_index": 2854,
+       "text": "למעיין",
+       "start_offset": "140s",
+       "end_offset": "140.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2855,
+       "end_index": 2862,
+       "text": "וגל,",
+       "start_offset": "140.400s",
+       "end_offset": "140.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2863,
+       "end_index": 2869,
+       "text": "אתם",
+       "start_offset": "140.800s",
+       "end_offset": "141s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2870,
+       "end_index": 2882,
+       "text": "מעצבות",
+       "start_offset": "141s",
+       "end_offset": "141.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2883,
+       "end_index": 2887,
+       "text": "את",
+       "start_offset": "141.400s",
+       "end_offset": "141.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2888,
+       "end_index": 2898,
+       "text": "הפנים",
+       "start_offset": "141.500s",
+       "end_offset": "141.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2899,
+       "end_index": 2903,
+       "text": "של",
+       "start_offset": "141.900s",
+       "end_offset": "142.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2904,
+       "end_index": 2919,
+       "text": "הפרויקט.",
+       "start_offset": "142.100s",
+       "end_offset": "142.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2920,
+       "end_index": 2924,
+       "text": "עד",
+       "start_offset": "142.400s",
+       "end_offset": "142.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2925,
+       "end_index": 2935,
+       "text": "עכשיו",
+       "start_offset": "142.500s",
+       "end_offset": "142.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2936,
+       "end_index": 2948,
+       "text": "דיברנו",
+       "start_offset": "142.700s",
+       "end_offset": "143.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2949,
+       "end_index": 2966,
+       "text": "אדריכלות,",
+       "start_offset": "143.100s",
+       "end_offset": "143.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2967,
+       "end_index": 2979,
+       "text": "דיברנו",
+       "start_offset": "143.800s",
+       "end_offset": "144.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2980,
+       "end_index": 2984,
+       "text": "על",
+       "start_offset": "144.100s",
+       "end_offset": "144.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2985,
+       "end_index": 2998,
+       "text": "הנפחים,",
+       "start_offset": "144.200s",
+       "end_offset": "144.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 2999,
+       "end_index": 3003,
+       "text": "על",
+       "start_offset": "144.800s",
+       "end_offset": "144.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3004,
+       "end_index": 3017,
+       "text": "הפתחים,",
+       "start_offset": "144.900s",
+       "end_offset": "145.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3018,
+       "end_index": 3024,
+       "text": "אבל",
+       "start_offset": "145.900s",
+       "end_offset": "146.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3025,
+       "end_index": 3035,
+       "text": "איתכם",
+       "start_offset": "146.100s",
+       "end_offset": "146.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3036,
+       "end_index": 3042,
+       "text": "אני",
+       "start_offset": "146.500s",
+       "end_offset": "146.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3043,
+       "end_index": 3051,
+       "text": "רוצה",
+       "start_offset": "146.600s",
+       "end_offset": "146.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3052,
+       "end_index": 3060,
+       "text": "לדבר",
+       "start_offset": "146.800s",
+       "end_offset": "147.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3061,
+       "end_index": 3065,
+       "text": "על",
+       "start_offset": "147.500s",
+       "end_offset": "147.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3066,
+       "end_index": 3083,
+       "text": "החומריות,",
+       "start_offset": "147.600s",
+       "end_offset": "148.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3084,
+       "end_index": 3088,
+       "text": "על",
+       "start_offset": "148.400s",
+       "end_offset": "148.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3089,
+       "end_index": 3107,
+       "text": "הפונקציות",
+       "start_offset": "148.500s",
+       "end_offset": "148.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3108,
+       "end_index": 3114,
+       "text": "ועל",
+       "start_offset": "148.900s",
+       "end_offset": "149.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3115,
+       "end_index": 3119,
+       "text": "כל",
+       "start_offset": "149.200s",
+       "end_offset": "149.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3120,
+       "end_index": 3124,
+       "text": "מה",
+       "start_offset": "150s",
+       "end_offset": "150.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3125,
+       "end_index": 3137,
+       "text": "שעשיתם",
+       "start_offset": "150.300s",
+       "end_offset": "150.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3138,
+       "end_index": 3145,
+       "text": "פפה.",
+       "start_offset": "150.900s",
+       "end_offset": "151.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3146,
+       "end_index": 3156,
+       "text": "אנחנו",
+       "start_offset": "151.500s",
+       "end_offset": "151.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3157,
+       "end_index": 3169,
+       "text": "נכנסים",
+       "start_offset": "151.800s",
+       "end_offset": "152.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3170,
+       "end_index": 3178,
+       "text": "לחלל",
+       "start_offset": "152.200s",
+       "end_offset": "152.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3179,
+       "end_index": 3187,
+       "text": "שהוא",
+       "start_offset": "153.100s",
+       "end_offset": "153.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3188,
+       "end_index": 3196,
+       "text": "מאוד",
+       "start_offset": "153.300s",
+       "end_offset": "153.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3197,
+       "end_index": 3205,
+       "text": "מאוד",
+       "start_offset": "153.800s",
+       "end_offset": "154.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3206,
+       "end_index": 3215,
+       "text": "בהיר,",
+       "start_offset": "154.300s",
+       "end_offset": "154.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3216,
+       "end_index": 3222,
+       "text": "אני",
+       "start_offset": "154.900s",
+       "end_offset": "155.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3223,
+       "end_index": 3235,
+       "text": "אגזזים",
+       "start_offset": "155.100s",
+       "end_offset": "155.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3236,
+       "end_index": 3246,
+       "text": "ואגיד",
+       "start_offset": "155.600s",
+       "end_offset": "155.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3247,
+       "end_index": 3253,
+       "text": "הוא",
+       "start_offset": "155.900s",
+       "end_offset": "156s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3254,
+       "end_index": 3264,
+       "text": "אפילו",
+       "start_offset": "156s",
+       "end_offset": "156.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3265,
+       "end_index": 3273,
+       "text": "מאוד",
+       "start_offset": "156.200s",
+       "end_offset": "156.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3274,
+       "end_index": 3282,
+       "text": "מאוד",
+       "start_offset": "156.400s",
+       "end_offset": "156.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3283,
+       "end_index": 3290,
+       "text": "לבן,",
+       "start_offset": "156.600s",
+       "end_offset": "157.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3291,
+       "end_index": 3299,
+       "text": "רצפה",
+       "start_offset": "157.600s",
+       "end_offset": "158.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3300,
+       "end_index": 3308,
+       "text": "חלקה",
+       "start_offset": "158.400s",
+       "end_offset": "159.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3309,
+       "end_index": 3320,
+       "text": "לגמרי.",
+       "start_offset": "159.200s",
+       "end_offset": "159.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3321,
+       "end_index": 3325,
+       "text": "זה",
+       "start_offset": "159.800s",
+       "end_offset": "159.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3326,
+       "end_index": 3335,
+       "text": "טדלק?",
+       "start_offset": "159.900s",
+       "end_offset": "160.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3335,
+       "end_index": 3346,
+       "text": "רזינה.",
+       "start_offset": "161.100s",
+       "end_offset": "161.500s",
+       "speaker": "spk:2",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3346,
+       "end_index": 3357,
+       "text": "רזינה.",
+       "start_offset": "161.600s",
+       "end_offset": "162s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3358,
+       "end_index": 3366,
+       "text": "רצפת",
+       "start_offset": "162.400s",
+       "end_offset": "163s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3367,
+       "end_index": 3378,
+       "text": "רזינה,",
+       "start_offset": "163s",
+       "end_offset": "163.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3379,
+       "end_index": 3387,
+       "text": "לבנה",
+       "start_offset": "163.700s",
+       "end_offset": "164.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3388,
+       "end_index": 3399,
+       "text": "לגמרי,",
+       "start_offset": "164.400s",
+       "end_offset": "165s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3400,
+       "end_index": 3410,
+       "text": "קירות",
+       "start_offset": "165s",
+       "end_offset": "165.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3411,
+       "end_index": 3422,
+       "text": "לבנים,",
+       "start_offset": "165.500s",
+       "end_offset": "166s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3423,
+       "end_index": 3433,
+       "text": "תקרות",
+       "start_offset": "166s",
+       "end_offset": "166.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3434,
+       "end_index": 3445,
+       "text": "לבנות,",
+       "start_offset": "166.400s",
+       "end_offset": "166.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3446,
+       "end_index": 3462,
+       "text": "האלמנטים",
+       "start_offset": "166.800s",
+       "end_offset": "167.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3463,
+       "end_index": 3477,
+       "text": "שמרחפים",
+       "start_offset": "167.400s",
+       "end_offset": "168.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3478,
+       "end_index": 3488,
+       "text": "בתקרה",
+       "start_offset": "168.100s",
+       "end_offset": "168.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3489,
+       "end_index": 3500,
+       "text": "לבנים,",
+       "start_offset": "169s",
+       "end_offset": "169.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3501,
+       "end_index": 3509,
+       "text": "מאהל",
+       "start_offset": "169.600s",
+       "end_offset": "169.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3510,
+       "end_index": 3517,
+       "text": "לבן,",
+       "start_offset": "169.900s",
+       "end_offset": "170.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3518,
+       "end_index": 3528,
+       "text": "אפילו",
+       "start_offset": "170.600s",
+       "end_offset": "171s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3529,
+       "end_index": 3535,
+       "text": "השס",
+       "start_offset": "171s",
+       "end_offset": "171.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3536,
+       "end_index": 3542,
+       "text": "שיש",
+       "start_offset": "171.700s",
+       "end_offset": "172.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3543,
+       "end_index": 3550,
+       "text": "לנו,",
+       "start_offset": "172.200s",
+       "end_offset": "172.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3551,
+       "end_index": 3561,
+       "text": "אפילו",
+       "start_offset": "172.800s",
+       "end_offset": "173.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3562,
+       "end_index": 3568,
+       "text": "השס",
+       "start_offset": "173.800s",
+       "end_offset": "174.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3569,
+       "end_index": 3575,
+       "text": "שיש",
+       "start_offset": "174.200s",
+       "end_offset": "174.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3576,
+       "end_index": 3582,
+       "text": "לנו",
+       "start_offset": "174.500s",
+       "end_offset": "174.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3583,
+       "end_index": 3595,
+       "text": "בטיפוס",
+       "start_offset": "174.800s",
+       "end_offset": "175.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3596,
+       "end_index": 3610,
+       "text": "במדרגות",
+       "start_offset": "175.300s",
+       "end_offset": "175.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3611,
+       "end_index": 3617,
+       "text": "הוא",
+       "start_offset": "176.300s",
+       "end_offset": "176.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3618,
+       "end_index": 3625,
+       "text": "לבן.",
+       "start_offset": "176.400s",
+       "end_offset": "176.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3625,
+       "end_index": 3632,
+       "text": "אמת.",
+       "start_offset": "177.700s",
+       "end_offset": "178s",
+       "speaker": "spk:2",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3632,
+       "end_index": 3638,
+       "text": "ופה",
+       "start_offset": "178s",
+       "end_offset": "178.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3639,
+       "end_index": 3645,
+       "text": "אתם",
+       "start_offset": "178.200s",
+       "end_offset": "178.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3646,
+       "end_index": 3660,
+       "text": "מייצרים",
+       "start_offset": "178.400s",
+       "end_offset": "179s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3661,
+       "end_index": 3669,
+       "text": "איזה",
+       "start_offset": "179.100s",
+       "end_offset": "179.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3670,
+       "end_index": 3676,
+       "text": "שהו",
+       "start_offset": "179.400s",
+       "end_offset": "180s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3677,
+       "end_index": 3685,
+       "text": "טיול",
+       "start_offset": "180.200s",
+       "end_offset": "180.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3686,
+       "end_index": 3690,
+       "text": "עד",
+       "start_offset": "180.700s",
+       "end_offset": "180.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3691,
+       "end_index": 3703,
+       "text": "שאנחנו",
+       "start_offset": "180.800s",
+       "end_offset": "181.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3704,
+       "end_index": 3716,
+       "text": "מגיעים",
+       "start_offset": "181.200s",
+       "end_offset": "181.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3717,
+       "end_index": 3725,
+       "text": "לדלת",
+       "start_offset": "181.400s",
+       "end_offset": "181.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3726,
+       "end_index": 3739,
+       "text": "הכניסה,",
+       "start_offset": "181.800s",
+       "end_offset": "182.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3740,
+       "end_index": 3748,
+       "text": "איזה",
+       "start_offset": "182.200s",
+       "end_offset": "182.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3749,
+       "end_index": 3755,
+       "text": "שהו",
+       "start_offset": "182.300s",
+       "end_offset": "182.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3756,
+       "end_index": 3762,
+       "text": "טקס",
+       "start_offset": "182.600s",
+       "end_offset": "183s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3763,
+       "end_index": 3771,
+       "text": "שכזה",
+       "start_offset": "183s",
+       "end_offset": "183.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3772,
+       "end_index": 3778,
+       "text": "ופה",
+       "start_offset": "184.100s",
+       "end_offset": "184.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3779,
+       "end_index": 3785,
+       "text": "הכל",
+       "start_offset": "184.500s",
+       "end_offset": "184.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3786,
+       "end_index": 3794,
+       "text": "הרבה",
+       "start_offset": "184.700s",
+       "end_offset": "185s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3795,
+       "end_index": 3803,
+       "text": "יותר",
+       "start_offset": "185s",
+       "end_offset": "185.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3804,
+       "end_index": 3812,
+       "text": "סגור",
+       "start_offset": "185.300s",
+       "end_offset": "186.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3813,
+       "end_index": 3817,
+       "text": "עד",
+       "start_offset": "186.400s",
+       "end_offset": "186.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3818,
+       "end_index": 3832,
+       "text": "שמגיעים",
+       "start_offset": "186.600s",
+       "end_offset": "186.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3833,
+       "end_index": 3841,
+       "text": "לדלת",
+       "start_offset": "186.900s",
+       "end_offset": "187.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3842,
+       "end_index": 3854,
+       "text": "הכניסה",
+       "start_offset": "187.100s",
+       "end_offset": "187.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3855,
+       "end_index": 3863,
+       "text": "והיא",
+       "start_offset": "187.800s",
+       "end_offset": "188s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3864,
+       "end_index": 3875,
+       "text": "נפתחת.",
+       "start_offset": "188s",
+       "end_offset": "188.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3876,
+       "end_index": 3885,
+       "text": "שלום.",
+       "start_offset": "190.500s",
+       "end_offset": "192s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3886,
+       "end_index": 3892,
+       "text": "דנה",
+       "start_offset": "192.500s",
+       "end_offset": "192.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3893,
+       "end_index": 3906,
+       "text": "ודניאל,",
+       "start_offset": "192.900s",
+       "end_offset": "194.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3907,
+       "end_index": 3913,
+       "text": "אתם",
+       "start_offset": "194.100s",
+       "end_offset": "194.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3914,
+       "end_index": 3932,
+       "text": "האדריכלים",
+       "start_offset": "194.400s",
+       "end_offset": "195.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3933,
+       "end_index": 3937,
+       "text": "של",
+       "start_offset": "195.400s",
+       "end_offset": "195.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3938,
+       "end_index": 3946,
+       "text": "הבית",
+       "start_offset": "195.600s",
+       "end_offset": "196.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3947,
+       "end_index": 3959,
+       "text": "ואנחנו",
+       "start_offset": "196.300s",
+       "end_offset": "196.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3960,
+       "end_index": 3972,
+       "text": "נפגשים",
+       "start_offset": "196.800s",
+       "end_offset": "197.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3973,
+       "end_index": 3983,
+       "text": "בפינה",
+       "start_offset": "197.200s",
+       "end_offset": "197.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3984,
+       "end_index": 3996,
+       "text": "האהובה",
+       "start_offset": "197.700s",
+       "end_offset": "198.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 3997,
+       "end_index": 4007,
+       "text": "עליכם",
+       "start_offset": "198.500s",
+       "end_offset": "199s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4008,
+       "end_index": 4016,
+       "text": "וכבר",
+       "start_offset": "199.500s",
+       "end_offset": "200.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4017,
+       "end_index": 4033,
+       "text": "מהסתכלות",
+       "start_offset": "200.200s",
+       "end_offset": "200.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4034,
+       "end_index": 4040,
+       "text": "אני",
+       "start_offset": "200.900s",
+       "end_offset": "201s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4041,
+       "end_index": 4051,
+       "text": "מרגיש",
+       "start_offset": "201s",
+       "end_offset": "201.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4052,
+       "end_index": 4058,
+       "text": "שיש",
+       "start_offset": "201.300s",
+       "end_offset": "201.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4059,
+       "end_index": 4065,
+       "text": "כאן",
+       "start_offset": "201.500s",
+       "end_offset": "201.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4066,
+       "end_index": 4074,
+       "text": "משהו",
+       "start_offset": "201.700s",
+       "end_offset": "202s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4075,
+       "end_index": 4079,
+       "text": "של",
+       "start_offset": "202s",
+       "end_offset": "202.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4080,
+       "end_index": 4088,
+       "text": "איזה",
+       "start_offset": "202.200s",
+       "end_offset": "202.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4089,
+       "end_index": 4095,
+       "text": "שהי",
+       "start_offset": "202.300s",
+       "end_offset": "202.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4096,
+       "end_index": 4109,
+       "text": "פתיחות.",
+       "start_offset": "203s",
+       "end_offset": "203.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4110,
+       "end_index": 4114,
+       "text": "יש",
+       "start_offset": "204s",
+       "end_offset": "204.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4115,
+       "end_index": 4119,
+       "text": "פה",
+       "start_offset": "204.200s",
+       "end_offset": "204.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4120,
+       "end_index": 4133,
+       "text": "זוויות,",
+       "start_offset": "204.600s",
+       "end_offset": "205.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4134,
+       "end_index": 4138,
+       "text": "יש",
+       "start_offset": "205.500s",
+       "end_offset": "205.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4139,
+       "end_index": 4145,
+       "text": "פפה",
+       "start_offset": "205.600s",
+       "end_offset": "205.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4146,
+       "end_index": 4157,
+       "text": "פתחים,",
+       "start_offset": "205.800s",
+       "end_offset": "206.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4158,
+       "end_index": 4162,
+       "text": "יש",
+       "start_offset": "206.400s",
+       "end_offset": "206.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4163,
+       "end_index": 4169,
+       "text": "פפה",
+       "start_offset": "206.600s",
+       "end_offset": "206.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4170,
+       "end_index": 4180,
+       "text": "קורות",
+       "start_offset": "206.700s",
+       "end_offset": "207.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4181,
+       "end_index": 4193,
+       "text": "שחוצות",
+       "start_offset": "207.200s",
+       "end_offset": "207.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4194,
+       "end_index": 4208,
+       "text": "ונותנות",
+       "start_offset": "207.800s",
+       "end_offset": "208.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4209,
+       "end_index": 4227,
+       "text": "פרופורציה",
+       "start_offset": "208.300s",
+       "end_offset": "208.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4228,
+       "end_index": 4234,
+       "text": "ועם",
+       "start_offset": "208.800s",
+       "end_offset": "209.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4235,
+       "end_index": 4239,
+       "text": "كل",
+       "start_offset": "209.100s",
+       "end_offset": "209.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4240,
+       "end_index": 4246,
+       "text": "זאת",
+       "start_offset": "209.300s",
+       "end_offset": "209.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4247,
+       "end_index": 4261,
+       "text": "מוציאות",
+       "start_offset": "210s",
+       "end_offset": "210.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4262,
+       "end_index": 4272,
+       "text": "אותנו",
+       "start_offset": "210.600s",
+       "end_offset": "210.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4273,
+       "end_index": 4296,
+       "text": "מהפרופורציה.",
+       "start_offset": "210.900s",
+       "end_offset": "211.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4297,
+       "end_index": 4303,
+       "text": "זאת",
+       "start_offset": "211.700s",
+       "end_offset": "211.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4304,
+       "end_index": 4314,
+       "text": "אומרת",
+       "start_offset": "211.800s",
+       "end_offset": "212s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4315,
+       "end_index": 4323,
+       "text": "לרגע",
+       "start_offset": "212s",
+       "end_offset": "212.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4324,
+       "end_index": 4330,
+       "text": "אתה",
+       "start_offset": "212.300s",
+       "end_offset": "212.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4331,
+       "end_index": 4341,
+       "text": "מרגיש",
+       "start_offset": "212.400s",
+       "end_offset": "212.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4342,
+       "end_index": 4351,
+       "text": "גדול,",
+       "start_offset": "212.700s",
+       "end_offset": "213.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4352,
+       "end_index": 4360,
+       "text": "לרגע",
+       "start_offset": "213.300s",
+       "end_offset": "213.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4361,
+       "end_index": 4367,
+       "text": "אתה",
+       "start_offset": "213.600s",
+       "end_offset": "213.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4368,
+       "end_index": 4378,
+       "text": "מרגיש",
+       "start_offset": "213.700s",
+       "end_offset": "214.100s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4379,
+       "end_index": 4385,
+       "text": "קטן",
+       "start_offset": "214.100s",
+       "end_offset": "214.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4386,
+       "end_index": 4396,
+       "text": "וזוהו",
+       "start_offset": "214.600s",
+       "end_offset": "215.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4397,
+       "end_index": 4409,
+       "text": "החוכמה",
+       "start_offset": "215.200s",
+       "end_offset": "215.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4410,
+       "end_index": 4429,
+       "text": "באדריכלות.",
+       "start_offset": "215.800s",
+       "end_offset": "216.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4430,
+       "end_index": 4438,
+       "text": "בואו",
+       "start_offset": "217.300s",
+       "end_offset": "217.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4439,
+       "end_index": 4447,
+       "text": "נדבר",
+       "start_offset": "217.400s",
+       "end_offset": "217.800s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4448,
+       "end_index": 4452,
+       "text": "על",
+       "start_offset": "217.800s",
+       "end_offset": "217.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4453,
+       "end_index": 4458,
+       "text": "זה.",
+       "start_offset": "217.900s",
+       "end_offset": "218s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4459,
+       "end_index": 4467,
+       "text": "בואו",
+       "start_offset": "218s",
+       "end_offset": "218.300s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4468,
+       "end_index": 4476,
+       "text": "תראו",
+       "start_offset": "218.300s",
+       "end_offset": "218.500s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4477,
+       "end_index": 4481,
+       "text": "את",
+       "start_offset": "218.500s",
+       "end_offset": "218.600s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4482,
+       "end_index": 4488,
+       "text": "בית",
+       "start_offset": "218.600s",
+       "end_offset": "218.900s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4489,
+       "end_index": 4503,
+       "text": "המסיבות",
+       "start_offset": "218.900s",
+       "end_offset": "219.400s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4504,
+       "end_index": 4526,
+       "text": "האולטימטיבי",
+       "start_offset": "219.400s",
+       "end_offset": "220.200s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4527,
+       "end_index": 4537,
+       "text": "שכולه",
+       "start_offset": "220.200s",
+       "end_offset": "221s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      },
+      {
+       "start_index": 4538,
+       "end_index": 4547,
+       "text": "בלבן.",
+       "start_offset": "221.200s",
+       "end_offset": "221.700s",
+       "speaker": "spk:0",
+       "type": "word_info"
+      }
+     ],
+     "type": "text"
+    }
+   ],
+   "type": "model_output"
+  }
+ ],
+ "object": "interaction",
+ "model": "gemini-3.5-transcribe"
+}

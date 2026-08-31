@@ -241,8 +241,22 @@ GEMINI_RESPONSE = {
             {"type": "other", "text": "ignored"},
         ],
     }]}],
-    "usage": {"audio_input_tokens": 90_000, "output_tokens": 10_500,
-              "audio_seconds": 3600.0},
+    # The shape a real response carries, from a recorded run: input broken down
+    # by modality, output explicitly zero, and a cached count.
+    "usage": {
+        "total_tokens": 90_001,
+        "total_input_tokens": 90_001,
+        "input_tokens_by_modality": [
+            {"modality": "audio", "tokens": 90_000},
+            {"modality": "text", "tokens": 1},
+        ],
+        "total_cached_tokens": 0,
+        "cached_tokens_by_modality": [{"modality": "audio", "tokens": 0}],
+        "total_output_tokens": 0,
+        "total_tool_use_tokens": 0,
+        "total_thought_tokens": 0,
+        "audio_seconds": 3600.0,
+    },
 }
 
 
@@ -292,20 +306,21 @@ def test_gemini_parses_protobuf_durations_and_reports_a_measured_cost(
     assert result.words[0].start_ms == 100 and result.words[0].end_ms == 450
     assert result.words[1].speaker == "spk_1"
     assert not result.cost_estimated, "the vendor reported usage"
-    assert result.cost_usd == pytest.approx(0.306)
+    # 90,000 audio tokens at $2/M, and nothing for the transcript: the vendor
+    # reports total_output_tokens as zero on a transcription.
+    assert result.cost_usd == pytest.approx(0.180)
 
 
 @pytest.mark.parametrize("shape", [
-    {"usageMetadata": {"audioTokenCount": 90_000, "candidatesTokenCount": 10_500}},
-    {"usage_metadata": {"promptTokenCount": 90_000, "outputTokenCount": 10_500}},
-    {"usage": {"audio_input_tokens": 90_000, "output_tokens": 10_500}},
+    {"usage": {"total_input_tokens": 90_000, "total_output_tokens": 0}},
+    {"usageMetadata": {"audioTokenCount": 90_000, "outputTokenCount": 0}},
+    {"usage_metadata": {"promptTokenCount": 90_000, "output_tokens": 0}},
 ])
 def test_usage_is_read_whatever_the_vendor_calls_it(monkeypatch, tmp_path, shape):
-    """The endpoint's documentation does not describe its usage fields, and
-    Google answers in camelCase over REST while its SDK reports snake_case.
-    Picking one spelling means a real cost arrives under another name and
-    quietly reads as an estimate — which is the exact confusion migration 0006
-    exists to keep out of the billing data."""
+    """The endpoint's documentation describes none of this, and a model days
+    old may rename it. Picking one spelling means a real cost arrives under
+    another name and quietly reads as an estimate — the exact confusion
+    migration 0006 added a column to keep out of the billing data."""
     response = {k: v for k, v in GEMINI_RESPONSE.items() if k != "usage"}
     response.update(shape)
     provider = _gemini(monkeypatch, response)
@@ -313,7 +328,32 @@ def test_usage_is_read_whatever_the_vendor_calls_it(monkeypatch, tmp_path, shape
     result = provider.transcribe(wav(tmp_path / "he.wav"), language="he")
 
     assert not result.cost_estimated
-    assert result.cost_usd == pytest.approx(0.306)
+    assert result.cost_usd == pytest.approx(0.180)
+
+
+def test_the_prompt_token_is_not_priced_as_audio(monkeypatch, tmp_path):
+    """Input arrives split by modality — audio, and a single text token for the
+    prompt. Summing them prices text at the audio rate, which is wrong in a way
+    no total would reveal."""
+    provider = _gemini(monkeypatch, GEMINI_RESPONSE)
+
+    result = provider.transcribe(wav(tmp_path / "he.wav"), language="he")
+
+    # 90,000 audio tokens, not the 90,001 the total reports.
+    assert result.cost_usd == pytest.approx(90_000 * 2.00 / 1_000_000)
+
+
+def test_a_transcript_billed_as_output_would_be_charged_for(monkeypatch, tmp_path):
+    """Today the vendor reports zero output tokens for a transcription, which
+    is why the catalog's estimate assumes none. If that ever changes, the cost
+    has to follow the report rather than the assumption."""
+    response = dict(GEMINI_RESPONSE)
+    response["usage"] = {**GEMINI_RESPONSE["usage"], "total_output_tokens": 10_500}
+    provider = _gemini(monkeypatch, response)
+
+    result = provider.transcribe(wav(tmp_path / "he.wav"), language="he")
+
+    assert result.cost_usd == pytest.approx(0.180 + 10_500 * 12.00 / 1_000_000)
 
 
 def test_gemini_falls_back_to_its_published_rates_and_says_it_estimated(
