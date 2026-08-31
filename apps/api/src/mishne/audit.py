@@ -38,6 +38,12 @@ LOGOUT = "user.logout"
 SIGNUP = "org.created"
 MEMBER_ADDED = "member.added"
 MEMBER_ROLE_CHANGED = "member.role_changed"
+# Who was offered a way in, who withdrew it, and who walked through it. An
+# invitation is a membership grant with a delay in the middle, and each half is
+# worth its own row.
+MEMBER_INVITED = "member.invited"
+MEMBER_INVITE_REVOKED = "member.invite_revoked"
+MEMBER_JOINED = "member.joined"
 MEMBER_REMOVED = "member.removed"
 UPLOAD_STARTED = "asset.upload_started"
 UPLOAD_COMPLETED = "asset.upload_completed"

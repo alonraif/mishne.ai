@@ -71,6 +71,8 @@ setup() {
 
   echo
   echo "   ${D}ready. seed demo data with: cd apps/api && .venv/bin/python -m mishne.db.seed --reset${X}"
+  echo "   ${D}first owner: PUBLIC_SIGNUP=true ./dev.sh api, sign up once, then turn it off${X}"
+  echo "   ${D}invitations print to the API's terminal — MAIL_PROVIDER=console${X}"
 }
 
 api()    { cd "$API" && exec "$PY" -m uvicorn mishne.main:app --reload --port 8000; }

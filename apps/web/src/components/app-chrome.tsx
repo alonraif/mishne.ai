@@ -48,6 +48,12 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
               Projects
             </Link>
             <Link
+              href="/team"
+              className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              Team
+            </Link>
+            <Link
               href="/billing"
               className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >

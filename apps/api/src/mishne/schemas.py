@@ -447,6 +447,40 @@ class CreateJobRequest(BaseModel):
     approved_cap: float
 
 
+class InviteRequest(BaseModel):
+    email: str
+    role: Role = "member"
+
+
+class Invitation(BaseModel):
+    """An outstanding invitation. Never carries the token — it is not stored."""
+
+    id: str
+    email: str
+    role: Role
+    expires_at: datetime
+    created_at: datetime
+
+
+class InvitationPreview(BaseModel):
+    """What the accept page shows before anyone types a password.
+
+    The organisation's name and the address it was sent to, and nothing else:
+    the person holding this link is not yet a member of anything, and the reply
+    to an unauthenticated request should not describe the tenant it belongs to.
+    """
+
+    org_name: str
+    email: str
+    role: Role
+    expires_at: datetime
+
+
+class AcceptInviteRequest(BaseModel):
+    name: str = ""
+    password: str
+
+
 class RenameSpeakerRequest(BaseModel):
     """What a person calls this voice. Empty clears the name."""
 

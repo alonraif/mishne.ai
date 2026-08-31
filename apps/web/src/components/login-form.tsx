@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,11 +98,11 @@ export function LoginForm() {
         Continue with SSO
       </Button>
 
+      {/* Access is by invitation (`Settings.public_signup`), so the honest
+          answer to "no account?" is not a sign-up form. Pointing at one that
+          answers 403 is a worse first impression than saying so. */}
       <p className="text-center text-sm text-muted-foreground">
-        No account?{" "}
-        <Link href="/signup" className="text-foreground underline underline-offset-4">
-          Create one
-        </Link>
+        No account? Ask someone in your organisation to invite you.
       </p>
     </form>
   );

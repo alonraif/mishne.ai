@@ -201,6 +201,33 @@ class Settings(BaseSettings):
 
     presign_ttl_seconds: int = 900
 
+    # ── email (invitations) ────────────────────────────────────────────────
+    #
+    # `console` prints the message and its link to stdout, which is what a
+    # developer's machine should do: the whole invitation path is then
+    # exercisable with no account anywhere and no risk of mailing a real person
+    # from a test. It is not a mock — the alternative, silently doing nothing,
+    # produces a flow that appears to work and delivers nothing.
+    mail_provider: Literal["console", "smtp"] = "console"
+    mail_from: str = "mishne.ai <no-reply@localhost>"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+
+    # How long an invitation is good for. Long enough to survive a holiday,
+    # short enough that a forwarded email does not stay a way in forever.
+    invitation_ttl_days: int = 7
+
+    # Whether anyone reaching /signup may create an organisation.
+    #
+    # Off. Access is by invitation: an organisation holds unreleased footage
+    # and membership is the whole of the access model, so a public sign-up form
+    # is a door beside the one being guarded. Turned on deliberately — for a
+    # self-serve trial, or a developer's machine wanting a first org — and the
+    # first owner of a new deployment is created with it on, or by seeding.
+    public_signup: bool = False
+
     # Serve fixtures instead of querying Postgres.
     use_mocks: bool = True
 

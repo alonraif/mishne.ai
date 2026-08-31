@@ -20,10 +20,17 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..auth import passwords, sessions
 from ..auth.sessions import Principal
+from ..config import Settings, get_settings
+from ..db import invitations
 from ..db import models as m
 from ..deps import current_principal, require_owner, writable_db
+from ..logging import get_logger
+from ..mail import MailError, Message, get_mailer
+from ..schemas import Invitation, InviteRequest
 
 router = APIRouter(prefix="/v1/org", tags=["org"])
+
+log = get_logger(__name__)
 
 
 def _members(s: Session, org_id: str) -> list[dict]:
@@ -117,6 +124,126 @@ async def add_member(
     )
     return {"id": user_id, "email": email, "name": name, "role": role,
             "auth_provider": "local" if password else ""}
+
+
+@router.post("/members/invite", response_model=Invitation, status_code=201)
+async def invite_member(
+    body: InviteRequest,
+    request: Request,
+    principal: Principal = Depends(require_owner),
+    s: Session = Depends(writable_db),
+    settings: Settings = Depends(get_settings),
+) -> Invitation:
+    """Offer someone membership, and email them a link to accept it.
+
+    The same decision `POST /members` makes — an owner deciding who may see
+    this organisation's footage — with the account created by the person it
+    belongs to. Nobody has to choose a stranger's password and then find a
+    channel to tell them what it is.
+
+    **The email is sent inside the transaction, and a failure to send undoes
+    the invitation.** An invitation row nobody was told about is a link that
+    exists and will never be used, sitting in a table an owner reads as "these
+    people have been asked". If the mail did not go, the invitation did not
+    happen.
+    """
+    org_id = principal.org_id
+    email = body.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(422, "that does not look like an email address")
+
+    users = m.User.__table__
+    if s.execute(
+        sa.select(users.c.id).where(
+            users.c.org_id == org_id, sa.func.lower(users.c.email) == email
+        )
+    ).first():
+        raise HTTPException(409, "they are already in this organisation")
+    if invitations.outstanding_for(s, org_id, email):
+        # Not silently replaced: two live links for one address is two ways in,
+        # and the owner should know one is already out there.
+        raise HTTPException(409, "they already have an invitation waiting")
+
+    invitation_id, token = invitations.create(
+        s, org_id,
+        email=email,
+        role=body.role,
+        invited_by=principal.user_id,
+        ttl_days=settings.invitation_ttl_days,
+    )
+    org_name = s.execute(
+        sa.select(m.Org.__table__.c.name).where(m.Org.__table__.c.id == org_id)
+    ).scalar_one()
+
+    link = f"{settings.app_origin.rstrip('/')}/invite/{token}"
+    try:
+        get_mailer(settings).send(Message(
+            to=email,
+            subject=f"{org_name} on mishne.ai",
+            body=(
+                f"{principal.name or principal.email} has invited you to "
+                f"{org_name} on mishne.ai.\n\n"
+                f"{link}\n\n"
+                f"The link is good for {settings.invitation_ttl_days} days and "
+                f"can be used once. If you were not expecting this, ignore it — "
+                f"nothing happens until you set a password.\n"
+            ),
+        ))
+    except MailError as exc:
+        raise HTTPException(
+            502, f"the invitation could not be emailed ({exc}); nothing was sent"
+        ) from exc
+
+    audit.record(
+        s, org_id, audit.MEMBER_INVITED, resource_type="invitation",
+        resource_id=invitation_id, actor_user_id=principal.user_id,
+        ip=audit.client_ip(request), user_agent=request.headers.get("user-agent"),
+    )
+    log.info("member.invited", org_id=org_id, role=body.role)
+    row = next(i for i in invitations.pending(s, org_id) if i["id"] == invitation_id)
+    return Invitation(**{k: row[k] for k in
+                         ("id", "email", "role", "expires_at", "created_at")})
+
+
+@router.get("/invitations", response_model=list[Invitation])
+async def list_invitations(
+    principal: Principal = Depends(require_owner),
+    s: Session = Depends(writable_db),
+) -> list[Invitation]:
+    """Who has been asked and has not yet joined.
+
+    Owner only. The member list is readable by anyone in the organisation —
+    that is the team — but who has been *offered* a way in is an access-control
+    question rather than a roster.
+    """
+    return [
+        Invitation(**{k: row[k] for k in
+                      ("id", "email", "role", "expires_at", "created_at")})
+        for row in invitations.pending(s, principal.org_id)
+    ]
+
+
+@router.delete("/invitations/{invitation_id}", status_code=204)
+async def revoke_invitation(
+    invitation_id: str,
+    request: Request,
+    principal: Principal = Depends(require_owner),
+    s: Session = Depends(writable_db),
+) -> None:
+    """Withdraw an invitation that has not been accepted.
+
+    The row stays and is marked. An invitation thought better of is the same
+    kind of record as one accepted, and deleting it loses the fact that
+    somebody was once asked.
+    """
+    if not invitations.revoke(s, principal.org_id, invitation_id):
+        raise HTTPException(404, "no invitation waiting with that id")
+    audit.record(
+        s, principal.org_id, audit.MEMBER_INVITE_REVOKED,
+        resource_type="invitation", resource_id=invitation_id,
+        actor_user_id=principal.user_id, ip=audit.client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
 
 @router.patch("/members/{user_id}")

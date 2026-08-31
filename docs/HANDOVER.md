@@ -36,6 +36,11 @@ with their CORS and lifecycle rules, and then the API, the web app and a job
 runner. `./dev.sh setup` stops before the processes; `./dev.sh api|web|worker`
 runs one of them in its own terminal.
 
+Access is by invitation. `/signup` is closed unless `PUBLIC_SIGNUP=true`, which
+is how the first owner of a deployment is made — sign up once, then turn it off.
+After that an owner invites from the Team screen, and with `MAIL_PROVIDER=console`
+the invitation and its link print to the API's terminal.
+
 The job runner is the piece that is easy to miss: `worker.py` takes one job id,
 because in production Step Functions decides what runs. Locally nothing decided,
 so a job submitted in the browser sat at `queued` under a progress panel that

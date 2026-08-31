@@ -523,6 +523,34 @@ class Speaker(Base):
     )
 
 
+class Invitation(Base):
+    """An offer of membership, and the record of who accepted it.
+
+    The token is not here: `token_hash` is sha256 of it, exactly as `sessions`
+    stores a session token (migration 0003). It exists in an email and in the
+    invitee's URL bar, so a leaked database is not a way into an organisation.
+
+    A used or revoked invitation is kept rather than deleted. Who joined, when,
+    and on whose invitation is an access-control question, and the row is the
+    answer.
+    """
+
+    __tablename__ = "invitations"
+    id = sa.Column(sa.Text, primary_key=True)
+    org_id = sa.Column(sa.Text, nullable=False)
+    email = sa.Column(sa.Text, nullable=False)
+    role = sa.Column(sa.Text, nullable=False)
+    token_hash = sa.Column(sa.Text, nullable=False, unique=True)
+    #: Deliberately not a foreign key: an invitation outlives the person who
+    #: sent it, and their leaving is not a reason to lose who let somebody in.
+    invited_by = sa.Column(sa.Text)
+    expires_at = sa.Column(TS, nullable=False)
+    accepted_at = sa.Column(TS)
+    accepted_user_id = sa.Column(sa.Text)
+    revoked_at = sa.Column(TS)
+    created_at = sa.Column(TS, nullable=False, server_default=NOW)
+
+
 class SpeakerLink(Base):
     """A human saying "Tuesday's Mic 1 and Friday's Mic 1 are the same person".
 
@@ -835,6 +863,7 @@ ALL_TABLES = [
     # the RLS test walks this list, so a table that is not on it is a table
     # whose policy nobody checks.
     "job_llm_calls",
+    "invitations",
     "transcripts",
     "speakers",
     "speaker_links",

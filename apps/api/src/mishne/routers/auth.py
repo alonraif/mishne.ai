@@ -30,11 +30,20 @@ from ..auth import passwords, sessions
 from ..auth.providers import AuthError, LocalProvider, WorkOSProvider, get_provider
 from ..auth.sessions import Principal
 from ..config import Settings, get_settings
+from ..db import invitations
 from ..db import models as m
 from ..db.base import set_org
 from ..deps import current_principal, unscoped_session
 from ..logging import get_logger
-from ..schemas import LoginRequest, Member, Org, Session, SignupRequest
+from ..schemas import (
+    AcceptInviteRequest,
+    InvitationPreview,
+    LoginRequest,
+    Member,
+    Org,
+    Session,
+    SignupRequest,
+)
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
@@ -129,6 +138,17 @@ async def signup(
     it belongs to. There is no path that writes a row into a tenant the
     transaction is not already inside.
     """
+    if not settings.public_signup:
+        # Access is by invitation. An organisation holds unreleased footage and
+        # membership is the whole of the access model, so a public sign-up form
+        # is a second door beside the one being guarded. `PUBLIC_SIGNUP=true`
+        # opens it deliberately — for a self-serve trial, or to create the
+        # first owner of a new deployment.
+        raise HTTPException(
+            403,
+            "mishne.ai is invitation only. Ask someone in your organisation to "
+            "invite you.",
+        )
     email = body.email.strip().lower()
     if "@" not in email:
         raise HTTPException(422, "that does not look like an email address")
@@ -191,6 +211,101 @@ async def signup(
         s,
         Principal(user_id=user_id, org_id=org_id, role="owner", session_id="",
                   email=email, name=body.name.strip()),
+    )
+
+
+@router.get("/invitations/{token}", response_model=InvitationPreview)
+async def preview_invitation(
+    token: str,
+    s: DbSession = Depends(unscoped_session),
+) -> InvitationPreview:
+    """What this link is for, before anyone types anything.
+
+    Unauthenticated by necessity — the person holding it is not a member of
+    anything yet. The reply is the organisation's name, the address it was sent
+    to and the role offered, and nothing else: a stranger with a guessed token
+    should not learn a tenant's shape.
+
+    Expired, revoked, already accepted and never-existed are one 404 between
+    them. Four distinct answers tell somebody guessing which guess was closest.
+    """
+    row = invitations.find_by_token(s, token)
+    if row is None:
+        raise HTTPException(404, "this invitation is no longer valid")
+    # Reading the org needs the tenant set; the invitation just proved which.
+    set_org(s, row.org_id)
+    org_name = s.execute(
+        sa.select(m.Org.__table__.c.name).where(m.Org.__table__.c.id == row.org_id)
+    ).scalar_one()
+    return InvitationPreview(org_name=org_name, email=row.email, role=row.role,
+                             expires_at=row.expires_at)
+
+
+@router.post("/invitations/{token}/accept", response_model=Session, status_code=201)
+async def accept_invitation(
+    token: str,
+    body: AcceptInviteRequest,
+    request: Request,
+    response: Response,
+    s: DbSession = Depends(unscoped_session),
+    settings: Settings = Depends(get_settings),
+) -> Session:
+    """Create the account this invitation was for, and sign them in.
+
+    The address comes from the invitation and never from the request. Letting
+    the body carry an email would turn a link sent to one person into a way for
+    whoever holds it to create an account under any address at all — which is
+    the whole grant, handed to the wrong identity.
+
+    Everything after `set_org` happens inside the organisation the invitation
+    named, exactly as sign-up does: the escape that let this request read the
+    invitation reads, and never writes.
+    """
+    row = invitations.find_by_token(s, token)
+    if row is None:
+        raise HTTPException(404, "this invitation is no longer valid")
+    try:
+        passwords.check_strength(body.password)
+    except passwords.WeakPassword as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    if _find_user_by_email(s, row.email) is not None:
+        # An address identifies one person across the whole system (0003), so
+        # this is somebody who already has an account somewhere. Signing in and
+        # being added is a different flow and this one cannot fake it.
+        raise HTTPException(
+            409, "there is already an account with that email address"
+        )
+
+    org_id = row.org_id
+    user_id = f"usr_{secrets.token_hex(6)}"
+    set_org(s, org_id)
+    s.execute(
+        sa.insert(m.User.__table__).values(
+            id=user_id, org_id=org_id, email=row.email,
+            name=body.name.strip(), role=row.role, auth_provider="local",
+        )
+    )
+    s.execute(
+        sa.insert(m.UserCredential.__table__).values(
+            id=f"crd_{secrets.token_hex(8)}", org_id=org_id, user_id=user_id,
+            password_hash=passwords.hash_password(body.password),
+        )
+    )
+    invitations.mark_accepted(s, org_id, row.id, user_id)
+
+    token_value = sessions.issue(s, org_id, user_id)
+    audit.record(
+        s, org_id, audit.MEMBER_JOINED, resource_type="user",
+        resource_id=user_id, actor_user_id=user_id,
+        ip=audit.client_ip(request), user_agent=request.headers.get("user-agent"),
+    )
+    _set_session_cookie(response, token_value, settings)
+    log.info("member.joined", org_id=org_id, role=row.role)
+    return _session_body(
+        s,
+        Principal(user_id=user_id, org_id=org_id, role=row.role, session_id="",
+                  email=row.email, name=body.name.strip()),
     )
 
 

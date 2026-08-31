@@ -39,6 +39,10 @@ def app(app_login: str, monkeypatch, clear_caches):
     monkeypatch.setenv("USE_MOCKS", "false")
     monkeypatch.setenv("APP_DATABASE_URL", app_login)
     monkeypatch.setenv("AUTH_PROVIDER", "local")
+    # Sign-up is closed by default — access is by invitation. These tests are
+    # about what the endpoint does when it is open, and there is a test below
+    # for the door being shut.
+    monkeypatch.setenv("PUBLIC_SIGNUP", "true")
     clear_caches()
     from mishne.main import app as fastapi_app
 
@@ -70,6 +74,29 @@ def fresh_org(owner):
 
 
 # ────────────────────────────────────────────────────────────────────── signup
+
+
+def test_signing_up_is_closed_unless_it_is_opened(app_login, monkeypatch,
+                                                  clear_caches):
+    """An organisation holds unreleased footage and membership is the whole of
+    the access model, so a public sign-up form is a second door beside the one
+    being guarded. It opens deliberately, for a self-serve trial or to create
+    the first owner of a deployment."""
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    monkeypatch.setenv("USE_MOCKS", "false")
+    monkeypatch.setenv("APP_DATABASE_URL", app_login)
+    monkeypatch.delenv("PUBLIC_SIGNUP", raising=False)
+    clear_caches()
+    from mishne.main import app as fastapi_app
+
+    with TestClient(fastapi_app) as client:
+        resp = client.post("/v1/auth/signup", json={
+            "email": "stranger@example.test", "password": PASSWORD,
+            "org_name": "Uninvited", "name": "Stranger",
+        })
+
+    assert resp.status_code == 403
+    assert "invitation" in resp.json()["detail"].lower()
 
 
 def test_signing_up_creates_an_organisation_and_signs_you_in(app, fresh_org, owner):
