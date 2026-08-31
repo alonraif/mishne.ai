@@ -4,6 +4,8 @@
 #   ./dev.sh            # infra, schema, buckets, then API + web + job runner
 #   ./dev.sh setup      # everything except the three processes
 #   ./dev.sh api        # just one of them, in its own terminal
+#   ./dev.sh web
+#   ./dev.sh worker
 #
 # Why this file exists: end to end, this is eight steps across three terminals
 # — compose, migrate, the app login role, the buckets, their CORS and
@@ -26,23 +28,61 @@ step() { echo "${B}==>${X} $*"; }
 
 [ -x "$PY" ] || { echo "${Y}no venv — run apps/api/setup.sh first${X}"; exit 1; }
 
-# The API reads .env for its keys (config.load_env_file), and so does the
-# storage bootstrap below. Without S3_ENDPOINT_URL the bucket script would talk
-# to real AWS, which it refuses to do.
+# ── the settings this script needs, whatever .env says ─────────────────────
+#
+# Exported rather than only written to the file, because an environment
+# variable beats .env in pydantic-settings and every process below inherits
+# this shell. The first version of this script only wrote them when it created
+# .env from the example — so anyone who already had a .env (everyone who had
+# ever set an API key) got a bucket script talking to real AWS and an API
+# serving fixtures out of a database it had just migrated.
+export ENVIRONMENT=local
+export USE_MOCKS=false
+export S3_ENDPOINT_URL=http://localhost:9000
+export AWS_ACCESS_KEY_ID=minioadmin
+export AWS_SECRET_ACCESS_KEY=minioadmin
+
 if [ ! -f "$API/.env" ]; then
   step "creating apps/api/.env from the example"
   cp "$API/.env.example" "$API/.env"
-  cat >> "$API/.env" <<'ENV'
-
-# Written by dev.sh. MinIO from infra/docker-compose.yml.
-ENVIRONMENT=local
-USE_MOCKS=false
-S3_ENDPOINT_URL=http://localhost:9000
-AWS_ACCESS_KEY_ID=minioadmin
-AWS_SECRET_ACCESS_KEY=minioadmin
-ENV
   echo "   ${D}add XAI_API_KEY and GEMINI_API_KEY to it before running a job${X}"
 fi
+
+# And make the file agree, so `uvicorn` started by hand behaves the same. Only
+# missing keys are added; nothing already in the file is overwritten, except
+# USE_MOCKS — a stale `true` there is a booby trap that serves fixtures from a
+# real database, and it is the default in .env.example, so almost every .env
+# has it. Changing it says so out loud rather than doing it quietly.
+"$PY" - "$API/.env" <<'PYEOF'
+import sys
+from pathlib import Path
+
+env = Path(sys.argv[1])
+text = env.read_text()
+lines = text.splitlines()
+present = {line.split("=", 1)[0].strip() for line in lines if "=" in line
+           and not line.strip().startswith("#")}
+
+wanted = {
+    "S3_ENDPOINT_URL": "http://localhost:9000",
+    "AWS_ACCESS_KEY_ID": "minioadmin",
+    "AWS_SECRET_ACCESS_KEY": "minioadmin",
+}
+missing = {k: v for k, v in wanted.items() if k not in present}
+if missing:
+    text = text.rstrip("\n") + "\n\n# Added by dev.sh — MinIO from infra/docker-compose.yml.\n"
+    text += "".join(f"{k}={v}\n" for k, v in missing.items())
+    print("   added to apps/api/.env: " + ", ".join(missing))
+
+out = []
+for line in text.splitlines():
+    if line.strip().startswith("USE_MOCKS=") and line.strip() != "USE_MOCKS=false":
+        print("   apps/api/.env said USE_MOCKS=true — set to false, or the API "
+              "serves fixtures from a real database")
+        line = "USE_MOCKS=false"
+    out.append(line)
+env.write_text("\n".join(out) + "\n")
+PYEOF
 
 setup() {
   step "postgres and minio"
@@ -101,5 +141,8 @@ case "${1:-all}" in
     echo
     wait
     ;;
-  *) echo "usage: ./dev.sh [all|setup|api|web|worker]"; exit 2 ;;
+  *)
+    echo "usage: ./dev.sh [all|setup|api|web|worker]"
+    echo "  one word at a time — 'api|web|worker' is a shell pipeline, not a choice"
+    exit 2 ;;
 esac

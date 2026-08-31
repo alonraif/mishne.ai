@@ -33,8 +33,8 @@ inspectable, and it should not be relaxed without a very good reason.
 
 Postgres and MinIO, the schema, the application login role, the three buckets
 with their CORS and lifecycle rules, and then the API, the web app and a job
-runner. `./dev.sh setup` stops before the processes; `./dev.sh api|web|worker`
-runs one of them in its own terminal.
+runner. `./dev.sh setup` stops before the processes; `./dev.sh api`, `./dev.sh web` and
+`./dev.sh worker` each run one of them in its own terminal.
 
 Access is by invitation. `/signup` is closed unless `PUBLIC_SIGNUP=true`, which
 is how the first owner of a deployment is made — sign up once, then turn it off.
