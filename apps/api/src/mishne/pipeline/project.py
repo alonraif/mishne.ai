@@ -80,6 +80,13 @@ class AssetIngest:
     provenance: str = "rushes"
     seams: list[int] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    #: Which engine produced the transcript, for the `transcripts` row and the
+    #: reproducibility record. Defaulted and therefore last: a cache written
+    #: before these existed loads with them empty, which is the honest answer —
+    #: bumping CACHE_VERSION to learn a display field would re-transcribe every
+    #: asset in the system to fill in a string.
+    asr_provider: str = ""
+    asr_model: str = ""
 
     @property
     def duration_s(self) -> float:
@@ -362,6 +369,7 @@ def ingest(path: Path, work_dir, language: str | None = None,
         speech=speech, audio_path=tracks[0].path, aaf=prepared.aaf,
         audio_tracks=len(tracks), provenance=prepared.provenance,
         seams=prepared.seams, warnings=warnings,
+        asr_provider=asr.provider, asr_model=asr.model,
     )
     return finish_ingest(adir, result, ws)
 
@@ -380,6 +388,8 @@ def _save(a: AssetIngest, path: Path) -> None:
         "isAaf": a.aaf is not None,
         "audioTracks": a.audio_tracks,
         "provenance": a.provenance,
+        "asrProvider": a.asr_provider,
+        "asrModel": a.asr_model,
         "seams": a.seams,
         "warnings": a.warnings,
         "speakers": [s.to_dict() for s in a.speakers],
@@ -442,6 +452,7 @@ def _load(cached: Path, path: Path, adir: Path) -> AssetIngest | None:
         audio_tracks=d.get("audioTracks", 1),
         provenance=d.get("provenance", "rushes"), seams=d.get("seams", []),
         warnings=d.get("warnings", []),
+        asr_provider=d.get("asrProvider", ""), asr_model=d.get("asrModel", ""),
     )
 
 

@@ -17,6 +17,11 @@ What it is responsible for that the runner is not:
   whole hold on failure or cancellation. A job that dies without releasing its
   hold leaves a customer's balance wrong until somebody notices (ADR-0006).
 * **The artifacts.** Published to the artifacts bucket, and recorded as rows.
+* **The transcript.** The beats, the speakers, this job's scores and its cut,
+  into the tables the API reads. Until this existed, `repository.get_transcript`
+  had no writer at all: every row those tables had ever held came from the seed,
+  so `GET /v1/jobs/{id}/transcript` answered 404 for every job that had actually
+  run, and the cut editor had nothing to edit.
 * **The cost.** What the job spent on models, projected onto `jobs.cost_cents`
   from the rows the sink wrote per step. This is not the same number as the
   credits charged: the customer pays for source hours at their tier's rate, and
@@ -37,8 +42,10 @@ from .. import alerts, telemetry
 from ..config import Settings, get_settings
 from ..db import jobs as job_writes
 from ..db import models as m
+from ..db import transcripts as transcript_writes
 from ..db.base import session_for_org
 from ..llm import Router
+from ..pipeline.project import CACHE_VERSION
 from ..logging import get_logger
 from ..storage import ObjectRef
 from ..workspace import S3Workspace, SourceFile
@@ -201,6 +208,7 @@ def execute(org_id: str, job_id: str, settings: Settings | None = None) -> str:
         return "failed"
 
     published = _publish(result, workspace, org_id, job_id, request)
+    _record_transcript(result, org_id, job_id)
     actual = _credits_used(result, meta["tier"])
     with session_for_org(org_id) as s:
         charged = job_writes.settle(s, org_id, job_id, actual, cap)
@@ -216,6 +224,41 @@ def execute(org_id: str, job_id: str, settings: Settings | None = None) -> str:
         moved.emit()
     workspace.cleanup()
     return "complete"
+
+
+def _record_transcript(result, org_id: str, job_id: str) -> None:
+    """The beats, the speakers, the scores and the cut, into the read tables.
+
+    Outside the settle transaction, and failing softly, because of what each
+    failure costs. The artifacts are already published and validated at this
+    point: the customer has a deliverable that opens in their NLE. Failing the
+    job over the transcript would release the hold and mark a job failed that
+    demonstrably succeeded, and the customer would be looking at an error
+    beside four working files.
+
+    So a failure here is loud in the logs and does not touch the money. What it
+    costs is the transcript page for that job, which is recoverable by re-running
+    it — the ingest cache makes that free of transcription (ADR-0008).
+    """
+    state = result.state
+    try:
+        with session_for_org(org_id) as s:
+            for ingest in state.assets:
+                transcript_writes.record_asset(
+                    s, org_id, ingest, ingest_version=CACHE_VERSION
+                )
+            transcript_writes.record_job_view(
+                s, org_id, job_id,
+                candidates=state.candidates,
+                scores=state.scores,
+                cuts=state.cuts,
+            )
+    except Exception as exc:  # noqa: BLE001 — see the docstring
+        log.error(
+            "job.transcript_not_recorded",
+            job_id=job_id,
+            reason=type(exc).__name__,
+        )
 
 
 def _record_cost(s, org_id: str, job_id: str, request: JobRequest) -> int:

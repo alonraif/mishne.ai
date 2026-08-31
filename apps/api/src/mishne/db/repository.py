@@ -363,16 +363,31 @@ def get_transcript(s: Session, org_id: str, job_id: str) -> Transcript | None:
             existing.confirmed = existing.confirmed or r.confirmed
 
     # ── beats, with this job's scores and selections ────────────────────────
+    # One row per beat, whatever the cut did with it. A beat carved into two
+    # selected spans has two `selections` rows (ADR-0010, migration 0007), and
+    # joining it straight would return that beat twice — the same beat, at two
+    # positions, rendered as two paragraphs of identical text. `Beat.orderIdx`
+    # in the API is beat-level, so the first position is the honest answer here
+    # and the timeline is the record of the second.
+    cut_position = (
+        sa.select(
+            sel.c.beat_id.label("beat_id"),
+            sa.func.min(sel.c.order_idx).label("order_idx"),
+        )
+        .where(sel.c.org_id == org_id, sel.c.job_id == job_id)
+        .group_by(sel.c.beat_id)
+        .subquery()
+    )
     beat_rows = s.execute(
         sa.select(
             b.c.id, b.c.idx, b.c.asset_id, b.c.speaker, b.c.start_frames,
             b.c.end_frames, b.c.text, b.c.flags,
             bs.c.composite, bs.c.rationale,
-            sel.c.order_idx,
+            cut_position.c.order_idx,
         )
         .select_from(
             b.outerjoin(bs, sa.and_(bs.c.beat_id == b.c.id, bs.c.job_id == job_id))
-            .outerjoin(sel, sa.and_(sel.c.beat_id == b.c.id, sel.c.job_id == job_id))
+            .outerjoin(cut_position, cut_position.c.beat_id == b.c.id)
         )
         .where(b.c.org_id == org_id, b.c.asset_id.in_(job.asset_ids))
     ).all()

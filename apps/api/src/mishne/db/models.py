@@ -660,8 +660,12 @@ class Selection(Base):
     src_tc_in_frames = sa.Column(sa.BigInteger, nullable=False)
     src_tc_out_frames = sa.Column(sa.BigInteger, nullable=False)
     __table_args__ = (
+        # Ordered, with no duplicate positions. There is deliberately NO unique
+        # constraint on (job_id, beat_id): a beat carved into two candidate
+        # spans with the middle dropped is two clips from one beat (ADR-0010),
+        # which is the case the in/out columns above exist to express. See
+        # migration 0007.
         sa.UniqueConstraint("job_id", "order_idx", name="uq_selections_job_order"),
-        sa.UniqueConstraint("job_id", "beat_id", name="uq_selections_job_beat"),
         sa.CheckConstraint(
             "src_tc_out_frames > src_tc_in_frames", name="ck_selections_positive_duration"
         ),
