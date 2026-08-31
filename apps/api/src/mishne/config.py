@@ -219,6 +219,35 @@ class Settings(BaseSettings):
     # short enough that a forwarded email does not stay a way in forever.
     invitation_ttl_days: int = 7
 
+    # ── the back-office (0009) ─────────────────────────────────────────────
+    #
+    # The admin process connects as its own role, and that role is the ONLY one
+    # in the system with BYPASSRLS. It is a separate process on a separate port
+    # for a reason: the customer-facing API never gains a cross-tenant code
+    # path, so no bug in it can grow one.
+    #
+    # Locally this defaults to the compose superuser, which bypasses RLS by
+    # virtue of being a superuser. In staging and production it is a dedicated
+    # login role — see migration 0009 — and `mishne.admin.main` refuses to
+    # start if whatever it connected as cannot actually bypass RLS.
+    admin_database_url: str = "postgresql://mishne:mishne@localhost:5432/mishne"
+
+    # Where the back-office UI is served from. Its own origin, never
+    # `app_origin`: the admin cookie must not be sent by the customer app, and
+    # the two CORS policies have nothing to do with each other.
+    admin_origin: str = "http://localhost:3001"
+
+    # How long a back-office sign-in lasts. Much shorter than a customer
+    # session: this credential can see every tenant, and an unattended laptop
+    # is the realistic threat rather than an exotic one.
+    admin_session_hours: int = 8
+
+    # Whether the admin process may bind to something other than loopback.
+    # Off, and checked at startup. The back-office has no business being
+    # reachable from the internet, and the way that happens is not a decision
+    # anybody makes — it is a `--host 0.0.0.0` copied from the API's command.
+    admin_allow_public_bind: bool = False
+
     # Whether anyone reaching /signup may create an organisation.
     #
     # Off. Access is by invitation: an organisation holds unreleased footage

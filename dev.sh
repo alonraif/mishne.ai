@@ -125,6 +125,12 @@ setup() {
 # whatever is holding it.
 WEB_PORT=3000
 API_PORT=8000
+# The back-office. Its own ports, because it is its own application on its own
+# origin with its own cookie — see apps/admin/next.config.ts. Not started by
+# `all`: it is not part of building the product, and a process that can change
+# every customer's balance should be one you chose to start.
+ADMIN_WEB_PORT=3001
+ADMIN_API_PORT=8001
 
 port_is_free() {
   ! lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
@@ -143,6 +149,13 @@ require_port() {
 }
 
 api()    { cd "$API" && exec "$PY" -m uvicorn mishne.main:app --reload --port "$API_PORT"; }
+# 127.0.0.1 explicitly. `mishne.admin.main` refuses to start on anything else
+# without ADMIN_ALLOW_PUBLIC_BIND, and this is the command people copy.
+admin_api() {
+  cd "$API" && exec "$PY" -m uvicorn mishne.admin.main:app --reload \
+    --host 127.0.0.1 --port "$ADMIN_API_PORT"
+}
+admin_web() { cd "$ROOT/apps/admin" && exec npm run dev -- --port "$ADMIN_WEB_PORT"; }
 web()    { cd "$WEB" && exec npm run dev -- --port "$WEB_PORT"; }
 worker() { cd "$API" && exec "$PY" -m mishne.orchestration.devrunner; }
 
@@ -151,6 +164,19 @@ case "${1:-all}" in
   api)    require_port "$API_PORT" "the API" || exit 1; api ;;
   web)    require_port "$WEB_PORT" "the app" || exit 1; web ;;
   worker) worker ;;
+  admin)
+    require_port "$ADMIN_API_PORT" "the back-office API" || exit 1
+    require_port "$ADMIN_WEB_PORT" "the back-office" || exit 1
+    step "back-office"
+    echo "   ${D}first administrator: cd apps/api && .venv/bin/python -m mishne.admin.bootstrap --email you@example.com${X}"
+    pids=()
+    ( admin_api ) & pids+=($!)
+    ( admin_web ) & pids+=($!)
+    trap 'kill "${pids[@]}" 2>/dev/null || true' INT TERM
+    echo
+    echo "   back-office  http://localhost:$ADMIN_WEB_PORT"
+    wait
+    ;;
   all)
     require_port "$WEB_PORT" "the app" || exit 1
     require_port "$API_PORT" "the API" || exit 1
@@ -171,7 +197,7 @@ case "${1:-all}" in
     wait
     ;;
   *)
-    echo "usage: ./dev.sh [all|setup|api|web|worker]"
+    echo "usage: ./dev.sh [all|setup|api|web|worker|admin]"
     echo "  one word at a time — 'api|web|worker' is a shell pipeline, not a choice"
     exit 2 ;;
 esac

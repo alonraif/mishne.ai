@@ -50,6 +50,10 @@ class Org(Base):
     tier = sa.Column(sa.Text, nullable=False)
     retention_days = sa.Column(sa.Integer, nullable=False)
     created_at = sa.Column(TS, nullable=False, server_default=NOW)
+    # Set by the back-office (migration 0009). A suspended org's sessions stop
+    # resolving, so this is a lock rather than a label — see auth/sessions.py.
+    suspended_at = sa.Column(TS)
+    suspended_reason = sa.Column(sa.Text)
     __table_args__ = (_ck("ck_orgs_tier", "tier", vocab.ORG_TIERS),)
 
 
@@ -841,6 +845,87 @@ sa.Index(
 )
 sa.Index("ix_credit_ledger_project", CreditLedger.__table__.c.project_id)
 sa.Index("ix_audit_log_org_at", AuditLog.__table__.c.org_id, AuditLog.__table__.c.at)
+
+
+# ──────────────────────────────────────────────────────── the back-office
+#
+# These three are the only tables in this file with no `org_id` and no tenant
+# policy. They are not customer data: they are who may administer the platform,
+# and what they did to it. Migration 0009 grants them to `mishne_admin` alone
+# and gives them RLS with no policy at all, so the role the customer-facing API
+# connects as cannot read them even if somebody grants it access by mistake.
+#
+# They are deliberately absent from ALL_TABLES below. That list is what the RLS
+# test walks to prove every table has a tenant policy, and these have none on
+# purpose — PLATFORM_TABLES is walked by its own test, which asserts the
+# opposite property.
+
+
+class PlatformAdmin(Base):
+    """Platform staff. Not a customer, and not a promoted one.
+
+    Separate from `users` rather than a flag on it: a flag is something a bug
+    can set, and a shared table means a compromised product login is one
+    UPDATE away from every tenant's data. There is no path from a customer
+    account to this table.
+    """
+
+    __tablename__ = "platform_admins"
+    id = sa.Column(sa.Text, primary_key=True)
+    email = sa.Column(sa.Text, nullable=False, unique=True)
+    name = sa.Column(sa.Text, nullable=False, server_default=sa.text("''"))
+    password_hash = sa.Column(sa.Text, nullable=False)
+    created_at = sa.Column(TS, nullable=False, server_default=NOW)
+    created_by = sa.Column(sa.Text)
+    last_login_at = sa.Column(TS)
+    #: Disabled, never deleted: what they did stays attributable.
+    disabled_at = sa.Column(TS)
+
+
+class PlatformSession(Base):
+    """A signed-in back-office browser. The token is not stored."""
+
+    __tablename__ = "platform_sessions"
+    id = sa.Column(sa.Text, primary_key=True)
+    admin_id = sa.Column(
+        sa.Text, sa.ForeignKey("platform_admins.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash = sa.Column(sa.Text, nullable=False, unique=True)
+    created_at = sa.Column(TS, nullable=False, server_default=NOW)
+    last_seen_at = sa.Column(TS, nullable=False, server_default=NOW)
+    expires_at = sa.Column(TS, nullable=False)
+    revoked_at = sa.Column(TS)
+    ip = sa.Column(INET)
+
+
+class PlatformAction(Base):
+    """What the back-office did, across tenants. Append-only.
+
+    Distinct from `audit_log`, which is one organisation's record of its own
+    people and is disclosed to that customer. This is our record of what we did
+    to them, and it outlives their retention policy.
+    """
+
+    __tablename__ = "platform_actions"
+    id = sa.Column(sa.Text, primary_key=True)
+    admin_id = sa.Column(sa.Text)
+    action = sa.Column(sa.Text, nullable=False)
+    target_org_id = sa.Column(sa.Text)
+    target_type = sa.Column(sa.Text, nullable=False, server_default=sa.text("''"))
+    target_id = sa.Column(sa.Text)
+    #: Required by every mutating endpoint. "Who granted 500 credits, and why"
+    #: is what this table is for, and a blank reason cannot answer it later.
+    reason = sa.Column(sa.Text, nullable=False, server_default=sa.text("''"))
+    #: Ids and numbers only — never customer content, same rule as audit_log.
+    detail = sa.Column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    ip = sa.Column(INET)
+    user_agent = sa.Column(sa.Text)
+    created_at = sa.Column(TS, nullable=False, server_default=NOW)
+
+
+#: The tables that are NOT tenant-scoped, and must never become so. Walked by
+#: the isolation test, which asserts that `mishne_app` cannot read them.
+PLATFORM_TABLES = ["platform_admins", "platform_sessions", "platform_actions"]
 
 
 #: Every table, in dependency order. Creation order for the migration, reverse

@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   The back-office is not the product and should not look like it.
+
+   Deliberately plain: system fonts, one accent, high information density, and
+   no shared design system with `@mishne/web`. Two reasons. An operator with
+   both open should never be in doubt about which window can change every
+   customer's balance — and a back-office that inherits the product's tokens
+   acquires a second consumer for every visual change nobody remembers to test.
+--------------------------------------------------------------------------- */
+
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --panel-2: #1e222b;
+  --line: #2a2f3a;
+  --text: #e7e9ee;
+  --muted: #99a0ae;
+  --accent: #d98324;
+  --danger: #e5484d;
+  --ok: #3dd68c;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

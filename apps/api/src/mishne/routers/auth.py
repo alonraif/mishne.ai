@@ -354,6 +354,20 @@ async def login(
         )
         raise HTTPException(401, "that email and password do not match") from None
 
+    # Checked after the password, not before: whether an organisation is
+    # suspended is not something to tell somebody who cannot prove they belong
+    # to it. No session is issued, so there is nothing to revoke afterwards.
+    orgs = m.Org.__table__
+    org_row = s.execute(sa.select(orgs).where(orgs.c.id == row.org_id)).first()
+    if org_row is not None and org_row.suspended_at is not None:
+        log.warning("login_refused", reason="suspended", org_id=row.org_id)
+        raise HTTPException(
+            403,
+            "this organisation has been suspended"
+            + (f": {org_row.suspended_reason}" if org_row.suspended_reason else "")
+            + ". Contact support.",
+        )
+
     if passwords.needs_rehash(credential.password_hash):
         # The one moment the plaintext exists. Raising the cost parameters later
         # is otherwise a change nobody can ever apply.

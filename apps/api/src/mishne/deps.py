@@ -67,8 +67,18 @@ def current_principal(
     """Who this request is. 401 when the answer is nobody."""
     token = _token(request)
     if token:
-        with sessions.transaction() as s:
-            principal = sessions.resolve(s, token)
+        try:
+            with sessions.transaction() as s:
+                principal = sessions.resolve(s, token)
+        except sessions.Suspended as exc:
+            # 403, not 401. Signing in again cannot fix this, and a 401 sends
+            # the browser to the login screen, where the same thing happens.
+            raise HTTPException(
+                403,
+                "this organisation has been suspended"
+                + (f": {exc.reason}" if exc.reason else "")
+                + ". Contact support.",
+            ) from exc
         if principal is not None:
             request.state.principal = principal
             return principal

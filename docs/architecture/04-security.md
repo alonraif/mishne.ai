@@ -49,6 +49,44 @@ Resist adding granularity before a customer asks. Per-project ACLs are the first
 thing enterprises request and the first thing that makes the permission model hard;
 design the schema so `project_members` can be added later without migration pain.
 
+### Platform administration
+
+The three roles above are roles *within* an organisation. Administering the
+platform itself — adding credits, changing a tier, suspending a tenant — is
+outside that model entirely, and deliberately so. There is no fourth role and
+no `is_staff` flag on `users`: a flag is something a bug can set, and it would
+make a compromised customer login one `UPDATE` away from every tenant's data.
+
+Instead (migration 0009):
+
+* **A separate process.** `mishne.admin.main`, on its own port, bound to
+  loopback and refusing anything else without `ADMIN_ALLOW_PUBLIC_BIND`. The
+  customer-facing API never acquires a cross-tenant code path, so no bug in it
+  can grow one.
+* **A separate connection.** `mishne_admin`, the only role in the system with
+  BYPASSRLS. The alternative — an `app.is_platform_admin` setting that every
+  policy also accepts — puts the clause that decides whether one customer can
+  see another's footage into every policy in the database, and puts the code
+  that can set it inside the process facing the internet.
+* **A separate credential.** `platform_admins`, not `users`. It cannot sign
+  into the product and cannot be created by promoting a customer account. The
+  first one is made from a shell (`python -m mishne.admin.bootstrap`); there is
+  no sign-up form and there should never be one.
+* **Its own log.** `platform_actions`, append-only, with a mandatory reason.
+  `audit_log` is one organisation's record of its own people and is disclosed
+  to that customer; this is our record of what we did to them, and it outlives
+  their retention policy.
+
+`mishne_app` holds no privilege on any of those three tables, so the failure
+mode if the customer API ever reaches for one is `permission denied` from
+Postgres rather than a leak. They also carry RLS with no policy at all, which
+denies every row to every role without BYPASSRLS — so a grant added later by
+mistake still reads nothing.
+
+Suspension (`orgs.suspended_at`) is enforced in `auth/sessions.resolve` and at
+login, and suspending revokes the tenant's live sessions. A column nothing
+reads is not a lock.
+
 ## Storage
 
 Three buckets, distinct policies:

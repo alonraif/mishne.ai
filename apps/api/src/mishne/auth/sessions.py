@@ -83,6 +83,20 @@ class Principal:
         return False
 
 
+class Suspended(Exception):
+    """The organisation this session belongs to has been suspended.
+
+    Raised rather than returned as None: every other failure in `resolve` is
+    deliberately indistinguishable — absent, expired and revoked are one answer
+    so that a stolen token learns nothing — and this one is the opposite case.
+    The person is who they say they are; their organisation is locked.
+    """
+
+    def __init__(self, reason: str = "") -> None:
+        self.reason = reason
+        super().__init__(reason or "this organisation has been suspended")
+
+
 def new_token() -> str:
     """256 bits. Long enough that guessing is not a threat model."""
     return secrets.token_urlsafe(32)
@@ -158,6 +172,18 @@ def resolve(s: DbSession, token: str) -> Principal | None:
     # From here on the transaction is inside one tenant, and every statement —
     # including the one on the next line — is filtered by the policies.
     set_org(s, row.org_id)
+
+    orgs = m.Org.__table__
+    org = s.execute(sa.select(orgs).where(orgs.c.id == row.org_id)).first()
+    if org is not None and org.suspended_at is not None:
+        # Distinct from "no such session", and deliberately so. Suspension is
+        # something the customer is entitled to be told about — they will ring
+        # up either way, and "sign in again" sends them round a loop that
+        # cannot end. The back-office revokes their sessions when it suspends
+        # them, so this is the second line of defence rather than the first:
+        # what catches a session issued before the suspension, or restored from
+        # a backup.
+        raise Suspended(org.suspended_reason or "")
 
     users = m.User.__table__
     user = s.execute(

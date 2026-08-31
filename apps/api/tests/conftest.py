@@ -65,6 +65,14 @@ requires_postgres = pytest.mark.skipif(
     ),
 )
 
+#: The back-office schema (migration 0009). Its own guard so that a database
+#: sitting at 0008 skips these rather than failing with a missing table, which
+#: is what a stale local database should do.
+requires_platform_schema = pytest.mark.skipif(
+    not _probe("SELECT to_regclass('public.platform_admins') IS NOT NULL"),
+    reason=(_MISSING or "no platform schema — alembic upgrade head"),
+)
+
 #: A server with the schema already on it. Everything that queries real tables
 #: needs this, and `setup.sh` runs pytest before anyone has had the chance to
 #: migrate — so these skip rather than fail on a fresh clone.
@@ -403,3 +411,61 @@ def other_tenant(owner):
     yield mint_session(owner, other_org, other_user)
     with owner.begin() as conn:
         purge_org(conn, other_org)
+
+
+# ─────────────────────────────────────────────────── the back-office fixtures
+
+ADMIN_EMAIL = "ops@mishne.test"
+ADMIN_PASSWORD = "a-long-enough-passphrase"
+
+
+@pytest.fixture
+def admin_api(tenant, owner, monkeypatch, clear_caches):
+    """The back-office app, on the owner connection, with one admin signed in.
+
+    The owner connection is a superuser locally, which is what makes it exempt
+    from RLS — the same exemption a dedicated `BYPASSRLS` login role provides in
+    a deployment. `mishne.admin.main` asserts that exemption at startup, so this
+    fixture also proves the assertion passes for a correctly pointed process.
+    """
+    if _S3_MISSING:
+        pytest.skip(_S3_MISSING)
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    monkeypatch.setenv("USE_MOCKS", "false")
+    monkeypatch.setenv("ADMIN_DATABASE_URL", _owner_url())
+    monkeypatch.delenv("ADMIN_HOST", raising=False)
+    clear_caches()
+
+    from mishne.admin import db as admin_db
+
+    admin_db.get_engine.cache_clear()
+    admin_db.get_sessionmaker.cache_clear()
+
+    # A clean slate for the platform tables. They are global rather than
+    # tenant-scoped, so `purge_org` does not reach them.
+    with owner.begin() as conn:
+        conn.execute(sa.text("DELETE FROM platform_sessions"))
+        conn.execute(sa.text("ALTER TABLE platform_actions DISABLE TRIGGER USER"))
+        conn.execute(sa.text("DELETE FROM platform_actions"))
+        conn.execute(sa.text("ALTER TABLE platform_actions ENABLE TRIGGER USER"))
+        conn.execute(sa.text("DELETE FROM platform_admins"))
+
+    from mishne.admin import auth as admin_auth
+    from mishne.admin.db import transaction
+    from mishne.admin.main import app as admin_app
+
+    with transaction() as s:
+        admin_id = admin_auth.create_admin(
+            s, email=ADMIN_EMAIL, name="Ops", password=ADMIN_PASSWORD
+        )
+
+    with TestClient(admin_app) as http:
+        signed_in = http.post(
+            "/admin/v1/auth/login",
+            json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+        )
+        assert signed_in.status_code == 200, signed_in.text
+        yield http, admin_id
+
+    admin_db.get_engine.cache_clear()
+    admin_db.get_sessionmaker.cache_clear()

@@ -43,6 +43,7 @@ import secrets
 from datetime import datetime, timezone
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -544,6 +545,54 @@ def project_spend(s: Session, org_id: str) -> list[dict]:
         }
         for r in rows
     ]
+
+
+def grant(s: Session, org_id: str, credits: float, *, description: str) -> float:
+    """Credits put on an account by the platform rather than bought.
+
+    The back-office path (migration 0009), and in the early days the only way
+    credits arrive at all. Returns the new available balance.
+
+    It goes through `_entry` — the same ledger-row-plus-projection pair that
+    `purchase`, `hold` and `settle` use — rather than updating `org_balances`
+    directly. A hand-set balance is a number that no longer reconciles to the
+    ledger, and reconciling the ledger to what customers were charged is an
+    explicit requirement (ADR-0006). The grant is visible on the customer's own
+    billing screen for the same reason: credits appearing from nowhere is worse
+    for them than a line saying where these came from.
+
+    A negative amount is a correction and is recorded as `adjustment`, which is
+    the kind the schema already reserves for exactly this. It may not take an
+    account below zero: `held` is credits already committed to running jobs, and
+    a negative available balance is not a state any of the arithmetic here
+    expects.
+    """
+    # The projection row is created at sign-up, but an org restored from a
+    # partial import or created by a fixture may not have one, and `_entry`
+    # updates rather than upserts — so the ledger row would land and the
+    # balance would not move.
+    balances = m.OrgBalance.__table__
+    s.execute(
+        pg_insert(balances)
+        .values(org_id=org_id, available=0, held=0)
+        .on_conflict_do_nothing(index_elements=[balances.c.org_id])
+    )
+
+    available, held = balance(s, org_id)
+    after = round(available + credits, 2)
+    if after < 0:
+        raise InsufficientCredits(required=abs(credits), available=available)
+
+    _entry(
+        s,
+        org_id,
+        "grant" if credits >= 0 else "adjustment",
+        credits,
+        description=description,
+        available=after,
+        held=held,
+    )
+    return after
 
 
 def purchase(s: Session, org_id: str, credits: float, *, stripe_event_id: str = "") -> None:

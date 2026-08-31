@@ -2,14 +2,22 @@
   "name": "mishne",
   "private": true,
   "version": "0.0.0",
-  "workspaces": ["apps/web", "packages/*"],
+  "workspaces": [
+    "apps/web",
+    "apps/admin",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "npm run dev --workspace=@mishne/web",
     "build": "npm run build --workspace=@mishne/web",
     "lint": "npm run lint --workspace=@mishne/web",
-    "typecheck": "npm run typecheck --workspace=@mishne/web",
+    "typecheck": "npm run typecheck --workspace=@mishne/web && npm run typecheck --workspace=@mishne/admin",
     "api": "cd apps/api && uv run uvicorn mishne.main:app --reload --port 8000",
-    "db": "docker compose -f infra/docker-compose.yml up -d"
+    "db": "docker compose -f infra/docker-compose.yml up -d",
+    "admin": "npm run dev --workspace=@mishne/admin",
+    "admin-api": "cd apps/api && uv run uvicorn mishne.admin.main:app --reload --host 127.0.0.1 --port 8001"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }
