@@ -40,13 +40,20 @@ def turns(words: list[dict]) -> list[dict]:
     for w in words:
         text, start, end = w["t"], w["s"], w["e"]
         speaker = w.get("spk", "")
+        # A word `asr/script.py` repaired reads as ordinary Hebrew, and the
+        # reader has no way to tell it was not heard that way. Underlined here
+        # so the check this file exists for can include "is that the right
+        # letter" as well as "is that the right word".
+        marked = (f'<u class="fixed" title="script repaired">{html.escape(text)}</u>'
+                  if w.get("n") else html.escape(text))
         last = out[-1] if out else None
         if (last is None or speaker != last["speaker"]
                 or start - last["end"] > TURN_GAP_MS):
             out.append({"speaker": speaker, "start": start, "end": end,
-                        "words": [text]})
+                        "words": [text], "html": [marked]})
         else:
             last["words"].append(text)
+            last["html"].append(marked)
             last["end"] = end
     return out
 
@@ -69,8 +76,10 @@ def main(argv: list[str] | None = None) -> int:
     rtl = is_rtl_language(language)
     blocks = turns(data.get("words", []))
     engine = f"{data.get('provider', '?')}/{data.get('model', '?')}"
+    repaired = sum(1 for w in data.get("words", []) if w.get("n"))
     heading = (f"{args.transcript.name} · {engine} · {language} · "
-               f"{len(data.get('words', []))} words · {len(blocks)} turns")
+               f"{len(data.get('words', []))} words · {len(blocks)} turns"
+               + (f" · {repaired} script-repaired" if repaired else ""))
 
     txt = args.transcript.with_suffix(".txt")
     txt.write_text(
@@ -89,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         f'<div class="turn"><div class="meta"><span class="tc" dir="ltr">'
         f'{tc(b["start"])}</span> <span class="spk">'
         f'{html.escape(b["speaker"] or "—")}</span></div>'
-        f'<p dir="auto">{html.escape(" ".join(b["words"]))}</p></div>'
+        f'<p dir="auto">{" ".join(b["html"])}</p></div>'
         for b in blocks
     )
     args.transcript.with_suffix(".html").write_text(
@@ -104,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
  .tc {{ font-family: ui-monospace, monospace; unicode-bidi: isolate; }}
  .spk {{ text-transform: uppercase; letter-spacing: 0.04em; }}
  p {{ margin: 0; }}
+ .fixed {{ text-decoration: underline wavy #c98a00 1px; text-underline-offset: 3px; }}
  [dir="rtl"] {{ text-align: right; }}
  @media (prefers-color-scheme: dark) {{
    body {{ background: #14161a; color: #e8e8e8; }}

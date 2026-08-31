@@ -45,6 +45,12 @@ class Word:
     end_ms: int
     confidence: float = 1.0
     speaker: str = ""
+    #: This word was repaired after the vendor returned it — today only by
+    #: `asr/script.py`, converting Arabic letters that arrive inside Hebrew
+    #: words. Marked rather than done quietly: a repaired word reads as
+    #: ordinary Hebrew and an editor has no way to tell it was not heard that
+    #: way. Not a confidence score; the vendor's confidence is its own.
+    normalised: bool = False
 
     @property
     def duration_ms(self) -> int:
@@ -105,7 +111,8 @@ class ASRResult:
             "chunks": self.chunks,
             "words": [
                 {"t": w.text, "s": w.start_ms, "e": w.end_ms,
-                 "c": round(w.confidence, 3), "spk": w.speaker}
+                 "c": round(w.confidence, 3), "spk": w.speaker,
+                 **({"n": True} if w.normalised else {})}
                 for w in self.words
             ],
         }
@@ -113,7 +120,8 @@ class ASRResult:
     @classmethod
     def from_dict(cls, d: dict) -> "ASRResult":
         return cls(
-            words=[Word(w["t"], w["s"], w["e"], w.get("c", 1.0), w.get("spk", ""))
+            words=[Word(w["t"], w["s"], w["e"], w.get("c", 1.0),
+                        w.get("spk", ""), w.get("n", False))
                    for w in d["words"]],
             language=d.get("language", "en"),
             provider=d.get("provider", "replay"),

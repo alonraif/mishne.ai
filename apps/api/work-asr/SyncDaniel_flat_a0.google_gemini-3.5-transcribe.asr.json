@@ -3,10 +3,10 @@
  "model": "gemini-3.5-transcribe",
  "language": "he",
  "audioSeconds": 222.042,
- "costUsd": 0.018874,
+ "costUsd": 0.0,
  "priced": true,
- "costEstimated": true,
- "latencyMs": 9570,
+ "costEstimated": false,
+ "latencyMs": 0,
  "chunks": 1,
  "words": [
   {
@@ -129,11 +129,12 @@
    "spk": "spk:0"
   },
   {
-   "t": "משربייה",
+   "t": "משרבייה",
    "s": 7400,
    "e": 8000,
    "c": 1.0,
-   "spk": "spk:0"
+   "spk": "spk:0",
+   "n": true
   },
   {
    "t": "בדיוק",
@@ -3125,11 +3126,12 @@
    "spk": "spk:0"
   },
   {
-   "t": "كل",
+   "t": "כל",
    "s": 209100,
    "e": 209300,
    "c": 1.0,
-   "spk": "spk:0"
+   "spk": "spk:0",
+   "n": true
   },
   {
    "t": "זאת",
@@ -3321,11 +3323,12 @@
    "spk": "spk:0"
   },
   {
-   "t": "שכולه",
+   "t": "שכולה",
    "s": 220200,
    "e": 221000,
    "c": 1.0,
-   "spk": "spk:0"
+   "spk": "spk:0",
+   "n": true
   },
   {
    "t": "בלבן.",
