@@ -100,33 +100,60 @@ heard the two chunks together.
 Both engines on the same 25.7 minutes of unedited English rushes, and Gemini on
 3.7 minutes of Hebrew.
 
-| | xAI grok-stt | Gemini 3.5 Transcribe |
+| | xAI grok-stt | Gemini 3.5 Transcribe | faster-whisper large-v3 |
+|---|---|---|---|
+| words | 4,743 | 4,737 | **4,542** |
+| speakers found | 2 | 2 | **0** |
+| filler retained | 4.3% | 4.2% | **3.2%** |
+| wall clock, 25.7 min of audio | 17.9s (86x real time) | 71.6s (22x) | **3,702s (0.42x)** |
+| cost | $0.0429 | $0.0772 | 61.7 machine-minutes |
+| per source hour | $0.100 | $0.180 | **2.4 machine-hours** |
+
+### The boundaries, triangulated
+
+Median start-time difference on words each pair both returned:
+
+| | vs xAI | vs Gemini |
 |---|---|---|
-| words | 4,740 | 4,737 |
-| speakers found | 2 | 2 |
-| filler retained | 4.3% | 4.2% |
-| wall clock, 25.7 min of audio | 19.2s (80x real time) | 71.3s (21x) |
-| cost | $0.0429 | $0.0772 |
-| per source hour | $0.100 | $0.180 |
+| **Gemini** | **30 ms** (4,451 words, 94%) | — |
+| **faster-whisper** | 170 ms (4,016, 88%) | 180 ms (4,125, 87%) |
 
-**The two engines agree on where the words are.** 4,450 words in common — 94% of
-the transcript — with a **median start-time difference of 30 ms**. One frame at
-25 fps is 40 ms, so two independently built engines place the same word inside
-the same frame. This ADR's parent puts timestamp boundary precision above word
-error rate and notes that nobody publishes it; corroboration between independent
-engines is not proof that both are right, but disagreement would have been proof
-that one was wrong, and there is none worth acting on.
+One frame at 25 fps is 40 ms. The two managed engines put the same word inside
+the same frame as each other; the self-hosted model is four to five frames away
+from **both** of them.
 
-The consequence is that **for a language both cover, this is now purely a cost
-decision** — which is what the routing already assumes.
+Agreement is not accuracy, and none of this is ground truth. But two
+independently built engines agreeing to 30 ms while a third differs from each of
+them by ~175 ms identifies which one is the outlier, and there is no reading
+where the odd one out is the pair. ADR-0003 says a provider at 3% WER with
+sloppy word boundaries produces worse cuts than one at 5% with tight ones, that
+nobody publishes this, and that it has to be measured. It is measured, and the
+loose boundaries belong to the model being replaced.
 
-**Both honour verbatim.** 4.3% and 4.2% filler on rushes nobody has edited. The
-`filler_words=true` and `mode.type=verbatim` flags do what they say; the smart
-formatting that would have quietly deleted "um" is off. This was the requirement
-most likely to be violated silently, and it is the one this project cannot work
-without.
+For a language both managed engines cover, the choice between them is therefore
+**purely a cost decision** — which is what the routing already assumes.
 
-**Gemini's audio tokenisation is exactly as published**: 25.04 tokens per second
+### The other three columns
+
+**Both managed engines honour verbatim; Whisper does not.** 4.3% and 4.2% filler
+against 3.2%, and 200 fewer words overall — Whisper returns 4.2% less text and
+proportionally less of the filler inside it. `faster_whisper_provider.py` warned
+that Whisper "will still tidy some speech — it is trained on written-style
+targets" and called it a real limitation to measure rather than assume away.
+This is that measurement: it tidies, and tidying is the one thing this system
+cannot have an ASR do, because removing filler is its own job (`asr/base.py`).
+
+**Whisper returns no speakers**, as its provider says it will. The self-hosted
+path therefore also needs the separate ONNX diarizer and its weights (ADR-0009);
+the managed engines include diarization in the price above.
+
+**Self-hosting is not cheaper, it is only unpriced.** 2.4 machine-hours per
+source hour is the number to multiply by whatever a CPU hour costs. There is no
+plausible instance price at which that lands under $0.10, and it buys the looser
+boundaries and the tidied transcript above. GPU moves the constant and not the
+argument.
+
+**Gemini's audio tokenisation is exactly as published**: 25.0 tokens per second
 across both runs, against a documented 25.
 
 **Word error rate is still unmeasured**, for these engines and for Whisper. The
@@ -136,5 +163,10 @@ cost and scalability decision made on requirements that *are* checkable, and it
 is reversible by one flag.
 
 **`faster-whisper` remains in the image and in the test suite.** It is the
-answer for an air-gapped customer, it is the honest baseline to measure the
-managed engines against, and it is one flag away: `--asr faster-whisper`.
+answer for an air-gapped customer and it is one flag away: `--asr
+faster-whisper`. What the measurement above changes is what to tell that
+customer — on-premise costs 2.4 machine-hours per source hour, loses speaker
+attribution unless the diarizer is deployed too, and places cut points four to
+five frames from where the managed engines agree they are. That is a real
+product, and it is a worse one; a broadcaster choosing it should choose it
+knowing that, rather than being sold it as equivalent.

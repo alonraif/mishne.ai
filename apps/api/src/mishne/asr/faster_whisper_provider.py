@@ -13,18 +13,29 @@ environment that fails with a proxy 403 and no useful message. Either allowlist
 the worker image, not downloaded at runtime — a cold start that pulls 1.5 GB is
 not a cold start you want on a job SLA.
 
-**CPU transcription is roughly real time or worse.** Three hours of audio is
-three hours of compute on a modest CPU, which is fine for benchmarking and not
-fine for a product. `int8` quantisation and a larger `cpu_threads` help; beyond
-that this is the argument for either GPU or a managed provider.
+**CPU transcription is roughly real time or worse.** Measured on 31 Aug 2026:
+25.7 minutes of audio took 61.7 minutes on an Apple Silicon laptop at `int8` —
+**2.4x real time**, not the 1x this note used to assume. Three hours of rushes
+is seven hours of compute. `int8` and a larger `cpu_threads` help; beyond that
+this is the argument for either GPU or a managed provider, and ADR-0018 took the
+second.
 
 ## Disfluencies
 
 `condition_on_previous_text=False` and no VAD filtering on the transcribe call.
 Whisper will still tidy some speech — it is trained on written-style targets —
-which is a real limitation to measure rather than assume away. If filler
-detection turns out to be poor, that is an argument for a provider that exposes
-verbatim mode.
+which is a real limitation to measure rather than assume away.
+
+**Measured, and it is worse than the managed engines.** On the same 25.7 minutes
+of rushes: 4,542 words against 4,743 and 4,737, and 3.2% filler against 4.3% and
+4.2%. It returns 4% less text and proportionally less of the filler inside it.
+Removing filler is this system's job and it cannot do it on words that never
+arrived.
+
+Its word boundaries are also loose: 170-180 ms from where two independent
+managed engines agree the same word is, against 30 ms between those two. That is
+four to five frames at 25 fps, and ADR-0003 ranks boundary precision above word
+error rate for exactly this reason. See ADR-0018 for the table.
 """
 
 from __future__ import annotations
