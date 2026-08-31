@@ -33,6 +33,30 @@ pytestmark = requires_schema
 JOB = "job_devrunner"
 
 
+@pytest.fixture(autouse=True)
+def isolated_main(monkeypatch):
+    """Stop `main()` reshaping the process it is called in.
+
+    It is a command-line entry point and does two things that are right for a
+    process it owns and wrong inside a test runner:
+
+    * `load_env_file` reads `apps/api/.env` into `os.environ`, where it stays
+      for every test that runs afterwards. On a developer's machine that file
+      points DATABASE_URL, USE_MOCKS and S3_ENDPOINT_URL at their own setup, so
+      one call here quietly re-pointed the rest of the suite — twelve failures
+      in four unrelated files, and S3 calls hanging against a MinIO that is not
+      running.
+    * `signal.signal` replaces pytest's own SIGINT and SIGTERM handlers, which
+      is how a hung run stops responding to the thing sent to kill it.
+
+    Neither belongs to what these tests are about.
+    """
+    monkeypatch.setattr("mishne.orchestration.devrunner.load_env_file",
+                        lambda *_a, **_k: [])
+    monkeypatch.setattr("mishne.orchestration.devrunner.signal.signal",
+                        lambda *_a, **_k: None)
+
+
 @pytest.fixture
 def queued_job(tenant, owner):
     with owner.begin() as conn:

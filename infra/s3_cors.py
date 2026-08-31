@@ -34,6 +34,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import s3_local  # noqa: E402
+
 #: The raw bucket takes multipart PUTs from the app. The other two are read
 #: through presigned GETs, which a download link follows rather than script.
 UPLOAD_METHODS = ["PUT", "POST", "HEAD", "GET"]
@@ -74,17 +77,32 @@ def current(client, bucket: str) -> list[dict]:
         raise
 
 
-def apply(client, bucket: str, which: str, origins: list[str]) -> bool:
-    """Idempotent, like the lifecycle rules: returns whether anything changed."""
+def apply(client, bucket: str, which: str, origins: list[str],
+          endpoint_url: str = "") -> bool:
+    """Idempotent, like the lifecycle rules: returns whether anything changed.
+
+    `endpoint_url` is passed rather than read so this stays a pure function of
+    its arguments — and it is only used to decide whether a `NotImplemented`
+    from the endpoint is MinIO being MinIO or S3 being misconfigured. See
+    `s3_local.py`.
+    """
     wanted = rules_for(which, origins)
-    if current(client, bucket) == wanted:
-        return False
-    client.put_bucket_cors(Bucket=bucket, CORSConfiguration={"CORSRules": wanted})
+    try:
+        if current(client, bucket) == wanted:
+            return False
+        client.put_bucket_cors(Bucket=bucket, CORSConfiguration={"CORSRules": wanted})
+    except client.exceptions.ClientError as exc:
+        if s3_local.tolerable_locally(exc, endpoint_url):
+            s3_local.note_skipped("bucket CORS", bucket)
+            return False
+        raise
     return True
 
 
-def apply_all(client, buckets: dict[str, str], origins: list[str]) -> dict[str, bool]:
-    return {name: apply(client, name, which, origins) for which, name in buckets.items()}
+def apply_all(client, buckets: dict[str, str], origins: list[str],
+              endpoint_url: str = "") -> dict[str, bool]:
+    return {name: apply(client, name, which, origins, endpoint_url)
+            for which, name in buckets.items()}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -117,7 +135,9 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({w: rules_for(w, origins) for w in buckets}, indent=2))
         return 0
 
-    for bucket, changed in apply_all(get_client(), buckets, origins).items():
+    for bucket, changed in apply_all(
+        get_client(), buckets, origins, settings.s3_endpoint_url
+    ).items():
         print(f"{bucket}: {'updated' if changed else 'already current'}")
     return 0
 

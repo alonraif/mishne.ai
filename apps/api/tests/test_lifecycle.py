@@ -172,3 +172,84 @@ def test_the_preflight_is_cached_long_enough_for_a_thousand_parts(client):
     # A 60 GB upload is ~960 parts. Preflighting each one is 960 extra round
     # trips on a link that is already the bottleneck.
     assert cors.rules_for("raw", ["https://app.example.tv"])[0]["MaxAgeSeconds"] >= 3600
+
+
+# ── MinIO is S3-compatible, not S3 ─────────────────────────────────────────
+#
+# `PutBucketCors` comes back `NotImplemented` from MinIO, which crashed the
+# whole setup script on the first machine that ran it — after the buckets had
+# been created, so the run looked half-finished and the next step never ran.
+#
+# The rule is narrow: an unimplemented operation is tolerated only when the
+# client is pointed at a non-AWS endpoint, which `Settings` refuses outside
+# `environment=local`. Against real S3 the same error still stops everything,
+# because there it means customer media has no expiry rule and the browser is
+# not allowed to upload.
+
+s3_local = _load("s3_local")
+
+
+class _Unsupported(Exception):
+    """What botocore raises for an operation the endpoint does not have."""
+
+    def __init__(self, code: str = "NotImplemented"):
+        super().__init__(code)
+        self.response = {"Error": {"Code": code}}
+
+
+class _MinioLike:
+    """A client that answers every configuration call the way MinIO does."""
+
+    class exceptions:  # noqa: N801 — mirrors botocore's shape
+        ClientError = _Unsupported
+
+    def get_bucket_cors(self, **_kw):
+        raise _Unsupported()
+
+    def put_bucket_cors(self, **_kw):
+        raise _Unsupported()
+
+    def get_bucket_lifecycle_configuration(self, **_kw):
+        raise _Unsupported()
+
+    def put_bucket_lifecycle_configuration(self, **_kw):
+        raise _Unsupported()
+
+
+def test_cors_against_minio_is_skipped_not_fatal(capsys):
+    changed = cors.apply(_MinioLike(), "mishne-dev-raw", "raw",
+                         ["http://localhost:3000"],
+                         endpoint_url="http://localhost:9000")
+
+    assert changed is False
+    assert "not supported" in capsys.readouterr().out
+
+
+def test_lifecycle_against_minio_is_skipped_not_fatal(capsys):
+    changed = lifecycle.apply(_MinioLike(), "mishne-dev-raw", "raw",
+                              endpoint_url="http://localhost:9000")
+
+    assert changed is False
+    assert "not supported" in capsys.readouterr().out
+
+
+def test_the_same_error_from_real_s3_still_stops_everything():
+    """No endpoint override means AWS, where an unconfigured bucket is a
+    retention promise not being kept and a browser that cannot upload."""
+    with pytest.raises(_Unsupported):
+        cors.apply(_MinioLike(), "mishne-prod-raw", "raw",
+                   ["https://app.mishne.ai"], endpoint_url="")
+    with pytest.raises(_Unsupported):
+        lifecycle.apply(_MinioLike(), "mishne-prod-raw", "raw", endpoint_url="")
+
+
+def test_a_real_error_from_a_local_endpoint_still_raises():
+    """Only *unimplemented* is tolerated. An access-denied or a missing bucket
+    against MinIO is a broken local setup and should say so."""
+    class Denied(_MinioLike):
+        def get_bucket_cors(self, **_kw):
+            raise _Unsupported("AccessDenied")
+
+    with pytest.raises(_Unsupported):
+        cors.apply(Denied(), "mishne-dev-raw", "raw", ["http://localhost:3000"],
+                   endpoint_url="http://localhost:9000")

@@ -44,6 +44,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import s3_local  # noqa: E402
+
 #: The deliverable outlives the media it was cut from. A customer who comes back
 #: in six months for the AAF should find it; the rushes are theirs and they have
 #: the originals.
@@ -112,24 +115,35 @@ def current(client, bucket: str) -> list[dict]:
         raise
 
 
-def apply(client, bucket: str, which: str) -> bool:
+def apply(client, bucket: str, which: str, endpoint_url: str = "") -> bool:
     """Put the rules for `which` onto `bucket`. Returns whether anything changed.
 
     Idempotent, and cheap to run on every deploy: the comparison is on the rules
     themselves, so a no-op deploy makes no API call that changes anything.
     """
     wanted = rules_for(which)
-    if current(client, bucket) == wanted:
-        return False
-    client.put_bucket_lifecycle_configuration(
-        Bucket=bucket, LifecycleConfiguration={"Rules": wanted}
-    )
+    try:
+        if current(client, bucket) == wanted:
+            return False
+        client.put_bucket_lifecycle_configuration(
+            Bucket=bucket, LifecycleConfiguration={"Rules": wanted}
+        )
+    except client.exceptions.ClientError as exc:
+        # Tolerated only against a non-AWS endpoint; see `s3_local.py`. Against
+        # real S3 this failure means customer media has no expiry rule on it,
+        # which is a retention promise not being kept.
+        if s3_local.tolerable_locally(exc, endpoint_url):
+            s3_local.note_skipped("lifecycle rules", bucket)
+            return False
+        raise
     return True
 
 
-def apply_all(client, buckets: dict[str, str]) -> dict[str, bool]:
+def apply_all(client, buckets: dict[str, str],
+              endpoint_url: str = "") -> dict[str, bool]:
     """`buckets` maps raw/derived/artifacts to actual bucket names."""
-    return {name: apply(client, name, which) for which, name in buckets.items()}
+    return {name: apply(client, name, which, endpoint_url)
+            for which, name in buckets.items()}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -161,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\nwould apply to: {json.dumps(buckets)}", file=sys.stderr)
         return 0
 
-    changed = apply_all(get_client(), buckets)
+    changed = apply_all(get_client(), buckets, settings.s3_endpoint_url)
     for bucket, did in changed.items():
         print(f"{bucket}: {'updated' if did else 'already current'}")
     return 0
