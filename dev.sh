@@ -115,16 +115,45 @@ setup() {
   echo "   ${D}invitations print to the API's terminal — MAIL_PROVIDER=console${X}"
 }
 
-api()    { cd "$API" && exec "$PY" -m uvicorn mishne.main:app --reload --port 8000; }
-web()    { cd "$WEB" && exec npm run dev; }
+# The app's origin is named in three places that must agree: the API's CORS
+# allowlist, the session cookie's scope, and the buckets' CORS rules. Next
+# quietly starts on 3001 when 3000 is busy, which breaks all three at once and
+# surfaces as "No 'Access-Control-Allow-Origin' header is present" in a browser
+# console — an error about a missing header that says nothing about ports.
+#
+# So the port is pinned and a busy one stops the script with the name of
+# whatever is holding it.
+WEB_PORT=3000
+API_PORT=8000
+
+port_is_free() {
+  ! lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+require_port() {
+  local port="$1" what="$2"
+  if port_is_free "$port"; then return 0; fi
+  echo "${Y}port $port is busy, and $what has to be on it.${X}"
+  echo "${D}   holding it:${X}"
+  lsof -nP -iTCP:"$port" -sTCP:LISTEN | sed 's/^/     /'
+  echo "${D}   stop it, or set APP_ORIGIN and the app's port together — the API's"
+  echo "   CORS allowlist, the session cookie and the bucket rules all name one"
+  echo "   origin and it has to be the one the browser is actually on.${X}"
+  return 1
+}
+
+api()    { cd "$API" && exec "$PY" -m uvicorn mishne.main:app --reload --port "$API_PORT"; }
+web()    { cd "$WEB" && exec npm run dev -- --port "$WEB_PORT"; }
 worker() { cd "$API" && exec "$PY" -m mishne.orchestration.devrunner; }
 
 case "${1:-all}" in
   setup)  setup ;;
-  api)    api ;;
-  web)    web ;;
+  api)    require_port "$API_PORT" "the API" || exit 1; api ;;
+  web)    require_port "$WEB_PORT" "the app" || exit 1; web ;;
   worker) worker ;;
   all)
+    require_port "$WEB_PORT" "the app" || exit 1
+    require_port "$API_PORT" "the API" || exit 1
     setup
     step "starting api, web and the job runner"
     # One terminal, three processes, and a trap so ctrl-c takes all of them
@@ -135,8 +164,8 @@ case "${1:-all}" in
     ( worker ) & pids+=($!)
     trap 'echo; echo "stopping…"; kill "${pids[@]}" 2>/dev/null || true' INT TERM
     echo
-    echo "   api    http://localhost:8000/docs"
-    echo "   web    http://localhost:3000"
+    echo "   api    http://localhost:$API_PORT/docs"
+    echo "   web    http://localhost:$WEB_PORT"
     echo "   minio  http://localhost:9001  ${D}(minioadmin / minioadmin)${X}"
     echo
     wait

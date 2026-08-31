@@ -2,11 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .logging import configure as configure_logging
+from .logging import configure as configure_logging, get_logger
 from .routers import assets, auth, billing, jobs, org, projects
 
 configure_logging()
 settings = get_settings()
+log = get_logger(__name__)
 
 app = FastAPI(
     title="mishne.ai",
@@ -24,6 +25,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def explain_a_refused_origin(request, call_next):
+    """Say, once, when a browser is turned away for its origin.
+
+    Credentialed CORS names the origins that may drive this API, and a request
+    from any other one is refused by the browser with "No
+    'Access-Control-Allow-Origin' header is present" — an error about a missing
+    header, in the browser console, that says nothing about which origin was
+    expected or where that expectation is configured.
+
+    The commonest cause is not an attack: it is the dev server finding port 3000
+    busy and quietly starting on 3001. So the API says what it was expecting,
+    on the server side, where the person running it is already looking.
+    """
+    origin = request.headers.get("origin")
+    if origin and origin != settings.app_origin:
+        log.warning(
+            "cors.refused",
+            origin=origin,
+            expected=settings.app_origin,
+            hint="set APP_ORIGIN to the origin the app is actually served from",
+        )
+    return await call_next(request)
+
 
 app.include_router(auth.router)
 app.include_router(org.router)
