@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -17,7 +18,6 @@ import {
 } from "lucide-react";
 import {
   TIERS,
-  estimateJob,
   formatCredits,
   formatDuration,
   framesToSeconds,
@@ -35,7 +35,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { AssetUpload } from "@/components/asset-upload";
+import { ApiError } from "@/lib/api";
+import { apiSend } from "@/lib/dto";
 import { cn } from "@/lib/utils";
+import type { CreditEstimate } from "@mishne/shared";
 
 const KIND_ICON = { video: FileVideo, audio: FileAudio, aaf: Layers } as const;
 
@@ -87,24 +91,103 @@ export function NewJobFlow({
   balance: number;
   tierId: TierId;
 }) {
+  const router = useRouter();
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<JobMode>("ai");
-  const [assetId, setAssetId] = useState(assets[0]?.id ?? "");
+  // A cut is made from every upload the editor chose, in order — footage over
+  // weeks, one finished piece (ADR-0008). Pricing on the first one is what C1
+  // found: wrong in the customer's favour, and consistently so at both ends,
+  // which is why nobody noticed.
+  const [assetIds, setAssetIds] = useState<string[]>(
+    assets[0] ? [assets[0].id] : []
+  );
   const [targetMinutes, setTargetMinutes] = useState(10);
   const [shape, setShape] = useState<NarrativeShape>("inverted_pyramid");
   const [tones, setTones] = useState<string[]>(["conversational"]);
   const [notes, setNotes] = useState("");
   const [approved, setApproved] = useState(false);
+  const [estimate, setEstimate] = useState<CreditEstimate | null>(null);
+  const [pricing, setPricing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const tier = TIERS[tierId];
-  const asset = assets.find((a) => a.id === assetId);
+  const chosen = assets.filter((a) => assetIds.includes(a.id));
 
-  const estimate = useMemo(
-    () => (asset ? estimateJob({ assets: [asset], tier, balance, mode }) : null),
-    [asset, tier, balance, mode]
-  );
+  /**
+   * The price comes from the API, not from `estimateJob` in the browser.
+   *
+   * They implement the same rules and that is exactly the trap: submission
+   * recomputes server-side and refuses a cap that no longer matches, so a
+   * browser that priced it itself can show a number the API will reject —
+   * and the customer sees an approval screen followed by a 409 they cannot
+   * act on. One source for the number the customer approves.
+   */
+  useEffect(() => {
+    if (assetIds.length === 0) {
+      setEstimate(null);
+      return;
+    }
+    let cancelled = false;
+    setPricing(true);
+    apiSend<CreditEstimate>("/v1/jobs/estimate", {
+      json: {
+        asset_ids: assetIds,
+        target_duration_s: targetMinutes * 60,
+        mode,
+      },
+    })
+      .then((next) => !cancelled && (setEstimate(next), setError(null)))
+      .catch((cause) => {
+        if (cancelled) return;
+        setEstimate(null);
+        setError(cause instanceof ApiError ? cause.detail : String(cause));
+      })
+      .finally(() => !cancelled && setPricing(false));
+    return () => {
+      cancelled = true;
+    };
+    // `assetIds` is a new array identity every render if inlined; joined so the
+    // effect runs when the selection changes rather than when React re-renders.
+  }, [assetIds.join(","), targetMinutes, mode]);
 
-  const canAdvance = step === 0 ? Boolean(asset) : true;
+  // Approving a number and then changing the job is how somebody is charged for
+  // something they did not agree to. Any change to what is being priced clears
+  // the approval.
+  useEffect(() => setApproved(false), [estimate?.cap]);
+
+  const submit = async () => {
+    if (!estimate) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const job = await apiSend<{ id: string }>("/v1/jobs", {
+        json: {
+          asset_ids: assetIds,
+          mode,
+          notes,
+          target_duration_s: targetMinutes * 60,
+          narrative_shape: shape,
+          tone: tones,
+          // What the customer approved, sent so the API can compare it with
+          // what it recomputes. It is a check, not the price.
+          approved_cap: estimate.cap,
+        },
+      });
+      router.push(`/jobs/${job.id}`);
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError
+          ? cause.status === 409
+            ? `${cause.detail} — the estimate has moved; go back and price it again.`
+            : cause.detail
+          : String(cause)
+      );
+      setSubmitting(false);
+    }
+  };
+
+  const canAdvance = step === 0 ? chosen.length > 0 : true;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -149,16 +232,34 @@ export function NewJobFlow({
       {step === 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Choose source material</CardTitle>
+            <CardTitle className="flex items-center justify-between">
+              Choose source material
+              {/* The same uploader as the project page, not a second one: an
+                  upload started here resumes on the project page and the other
+                  way round, because there is one implementation of it. */}
+              <AssetUpload projectId={project.id} />
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
+            {assets.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Nothing ready to cut yet. Upload footage, and it appears here
+                once it has been probed.
+              </p>
+            )}
             {assets.map((a) => {
               const Icon = KIND_ICON[a.kind];
-              const selected = a.id === assetId;
+              const selected = assetIds.includes(a.id);
               return (
                 <button
                   key={a.id}
-                  onClick={() => setAssetId(a.id)}
+                  onClick={() =>
+                    setAssetIds((current) =>
+                      current.includes(a.id)
+                        ? current.filter((id) => id !== a.id)
+                        : [...current, a.id]
+                    )
+                  }
                   className={cn(
                     "flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors",
                     selected
@@ -321,7 +422,13 @@ export function NewJobFlow({
       )}
 
       {/* -------------------------------------------------------- estimate */}
-      {step === 3 && estimate && asset && (
+      {step === 3 && pricing && !estimate && (
+        <Card className="p-8 text-center text-sm text-muted-foreground">
+          Pricing this job…
+        </Card>
+      )}
+
+      {step === 3 && estimate && chosen.length > 0 && (
         <div className="space-y-4">
           <Card>
             <CardHeader>
@@ -329,9 +436,16 @@ export function NewJobFlow({
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-md bg-muted/50 p-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Source</span>
-                  <span className="truncate pl-4">{asset.filename}</span>
+                <div className="flex justify-between gap-4">
+                  <span className="shrink-0 text-muted-foreground">
+                    {chosen.length === 1 ? "Source" : `${chosen.length} sources`}
+                  </span>
+                  {/* Every upload the cut draws on, named. A job priced on
+                      three reels that lists one reads as a mistake in the
+                      customer's favour right up until it isn't. */}
+                  <span className="truncate text-right" dir="ltr">
+                    {chosen.map((a) => a.filename).join(" · ")}
+                  </span>
                 </div>
                 <div className="mt-1 flex justify-between">
                   <span className="text-muted-foreground">Method</span>
@@ -340,8 +454,13 @@ export function NewJobFlow({
                 <div className="mt-1 flex justify-between">
                   <span className="text-muted-foreground">Duration</span>
                   <span className="tc">
-                    {formatDuration(framesToSeconds(asset.durationFrames, asset.rate))} (
-                    {estimate.sourceHours.toFixed(2)} h)
+                    {formatDuration(
+                      chosen.reduce(
+                        (total, a) => total + framesToSeconds(a.durationFrames, a.rate),
+                        0
+                      )
+                    )}{" "}
+                    ({estimate.sourceHours.toFixed(2)} h)
                   </span>
                 </div>
               </div>
@@ -451,12 +570,25 @@ export function NewJobFlow({
             Continue <ArrowRight />
           </Button>
         ) : (
-          <Button disabled={!approved || !estimate?.sufficient}>
+          <Button
+            onClick={submit}
+            disabled={!approved || !estimate?.sufficient || submitting || pricing}
+          >
             <Check />{" "}
-            {mode === "ai" ? "Approve and submit" : "Approve and transcribe"}
+            {submitting
+              ? "Submitting…"
+              : mode === "ai"
+                ? "Approve and submit"
+                : "Approve and transcribe"}
           </Button>
         )}
       </div>
+
+      {error && (
+        <p className="text-right text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

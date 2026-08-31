@@ -1,5 +1,7 @@
+"use client";
+
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { useParams } from "next/navigation";
 import { ArrowLeft, Plus, FileVideo, FileAudio, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AssetUpload } from "@/components/asset-upload";
@@ -8,17 +10,18 @@ import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { AssetStatusBadge } from "@/components/asset-status-badge";
 import { Timecode } from "@/components/timecode";
-import {
-  assetsForProject,
-  jobsForProject,
-  projectById,
-} from "@/lib/mock-data";
+import { MediaRequirements } from "@/components/media-requirements";
+import { CardsSkeleton, PageSkeleton, QueryState } from "@/components/query-state";
+import { useApi, type Query } from "@/lib/use-api";
 import {
   formatBytes,
   formatCredits,
   formatDuration,
   framesToSeconds,
+  type Asset,
   type IngestMode,
+  type Job,
+  type Project,
 } from "@mishne/shared";
 
 const KIND_ICON = { video: FileVideo, audio: FileAudio, aaf: Layers } as const;
@@ -33,18 +36,43 @@ const INGEST_LABEL: Record<IngestMode, string> = {
   aaf_linked: "AAF + linked",
 };
 
-export default async function ProjectPage({
-  params,
+export default function ProjectPage() {
+  const { id } = useParams<{ id: string }>();
+  const project = useApi<Project>(`/v1/projects/${id}`);
+  const assetsQuery = useApi<Asset[]>(`/v1/projects/${id}/assets`);
+  // A job's status changes while the customer is looking at the list it is in.
+  // Polling stops as soon as nothing is moving — see `use-api.ts`.
+  const jobsQuery = useApi<Job[]>(`/v1/projects/${id}/jobs`, {
+    poll: (list) => (list.some(isRunning) ? 5_000 : null),
+  });
+
+  return (
+    <QueryState query={project} missing="No such project." skeleton={<PageSkeleton />}>
+      {(project) => (
+        <ProjectView id={id} project={project} assets={assetsQuery} jobs={jobsQuery} />
+      )}
+    </QueryState>
+  );
+}
+
+/** Statuses that will change on their own if you wait. */
+function isRunning(job: Job): boolean {
+  return !["complete", "failed", "cancelled", "awaiting_approval", "awaiting_edit"].includes(
+    job.status
+  );
+}
+
+function ProjectView({
+  id,
+  project,
+  assets,
+  jobs,
 }: {
-  params: Promise<{ id: string }>;
+  id: string;
+  project: Project;
+  assets: Query<Asset[]>;
+  jobs: Query<Job[]>;
 }) {
-  const { id } = await params;
-  const project = projectById(id);
-  if (!project) notFound();
-
-  const assets = assetsForProject(id);
-  const jobs = jobsForProject(id);
-
   return (
     <div className="space-y-8">
       <div>
@@ -58,7 +86,7 @@ export default async function ProjectPage({
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {assets.length} assets · {jobs.length} jobs ·{" "}
+              {project.assetCount} assets · {project.jobCount} jobs ·{" "}
               <span className="tc">{formatCredits(project.creditsUsed)}</span> credits used
             </p>
           </div>
@@ -75,12 +103,15 @@ export default async function ProjectPage({
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground">Source material</h2>
+        <QueryState query={assets} missing="No source material yet." skeleton={<CardsSkeleton rows={2} />}>
+          {(assets) => (
         <div className="grid gap-3">
           {assets.map((a) => {
             const Icon = KIND_ICON[a.kind];
             const seconds = framesToSeconds(a.durationFrames, a.rate);
             return (
-              <Card key={a.id} className="flex items-center gap-4 p-4">
+              <div key={a.id} className="space-y-2">
+              <Card className="flex items-center gap-4 p-4">
                 <div className="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
                   <Icon className="size-4" />
                 </div>
@@ -105,14 +136,20 @@ export default async function ProjectPage({
                   <AssetStatusBadge status={a.status} />
                 </div>
               </Card>
+              {a.status === "awaiting_media" && <MediaRequirements assetId={a.id} />}
+              </div>
             );
           })}
         </div>
+          )}
+        </QueryState>
       </section>
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground">Rough cuts</h2>
-        {jobs.length === 0 ? (
+        <QueryState query={jobs} missing="No rough cuts yet." skeleton={<CardsSkeleton rows={2} />}>
+          {(jobs) =>
+          jobs.length === 0 ? (
           <Card className="p-10 text-center">
             <p className="text-sm text-muted-foreground">
               No rough cuts yet. Upload source material and describe the piece you want.
@@ -161,7 +198,9 @@ export default async function ProjectPage({
               </Link>
             ))}
           </div>
-        )}
+          )
+        }
+        </QueryState>
       </section>
     </div>
   );

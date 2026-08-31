@@ -1,5 +1,7 @@
+"use client";
+
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { useParams } from "next/navigation";
 import {
   ArrowLeft,
   Download,
@@ -14,41 +16,68 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/status-badge";
 import { JobStages } from "@/components/job-stages";
-import { artifactsForJob, assetById, jobById, projectById } from "@/lib/mock-data";
-import { formatBytes, formatCredits, formatDuration } from "@mishne/shared";
+import { PageSkeleton, QueryState } from "@/components/query-state";
+import { useApi } from "@/lib/use-api";
+import {
+  formatBytes,
+  formatCredits,
+  formatDuration,
+  type Artifact,
+  type Asset,
+  type Job,
+  type Project,
+} from "@mishne/shared";
 
-export default async function JobPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const job = jobById(id);
-  if (!job) notFound();
+/** A job in one of these will not change unless somebody does something. */
+const SETTLED = ["complete", "failed", "cancelled", "awaiting_approval", "awaiting_edit"];
 
-  const project = projectById(job.projectId)!;
+export default function JobPage() {
+  const { id } = useParams<{ id: string }>();
+  // This is the screen somebody leaves open while the job runs, so it is the
+  // one that polls. Three seconds: a stage's `detail` string changes about that
+  // often, and the request is one row plus its steps.
+  const job = useApi<Job>(`/v1/jobs/${id}`, {
+    poll: (j) => (SETTLED.includes(j.status) ? null : 3_000),
+  });
+
+  return (
+    <QueryState query={job} missing="No such job." skeleton={<PageSkeleton />}>
+      {(job) => <JobView job={job} />}
+    </QueryState>
+  );
+}
+
+function JobView({ job }: { job: Job }) {
+  const project = useApi<Project>(`/v1/projects/${job.projectId}`);
+  const assetsQuery = useApi<Asset[]>(`/v1/projects/${job.projectId}/assets`);
+  // Artifacts appear when the job finishes, so this asks once the status says
+  // there is something to ask for rather than 404-ing in a loop before then.
+  const artifactsQuery = useApi<Artifact[]>(
+    job.status === "complete" ? `/v1/jobs/${job.id}/artifacts` : null
+  );
+
   // A job draws on every upload the editor chose, not one. Naming only the
   // first would quietly hide half of what the cut is made from.
-  const assets = job.assetIds.map((a) => assetById(a)!).filter(Boolean);
-  const artifacts = artifactsForJob(job.id);
+  const assets = (assetsQuery.data ?? []).filter((a) => job.assetIds.includes(a.id));
+  const artifacts = artifactsQuery.data ?? [];
   const done = job.steps.filter((s) => s.status === "done").length;
-  const pct = Math.round((done / job.steps.length) * 100);
+  const pct = job.steps.length ? Math.round((done / job.steps.length) * 100) : 0;
 
   return (
     <div className="space-y-6">
       <div>
         <Link
-          href={`/projects/${project.id}`}
+          href={`/projects/${job.projectId}`}
           className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="size-3.5" /> {project.name}
+          <ArrowLeft className="size-3.5" /> {project.data?.name ?? "Project"}
         </Link>
         <div className="flex items-center gap-3">
           <h1 className="tc text-2xl font-semibold tracking-tight">{job.id}</h1>
           <StatusBadge status={job.status} />
         </div>
         <p className="mt-1 truncate text-sm text-muted-foreground" dir="ltr">
-          {assets.map((a) => a.filename).join(" · ")}
+          {assets.map((a) => a.filename).join(" · ") || "\u00a0"}
         </p>
       </div>
 

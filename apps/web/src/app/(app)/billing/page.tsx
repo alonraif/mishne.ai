@@ -1,4 +1,6 @@
-import { Check, Sparkles } from "lucide-react";
+"use client";
+
+import { AlertTriangle, Check, Sparkles } from "lucide-react";
 import {
   CREDIT_PACKS,
   TIERS,
@@ -9,8 +11,26 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { mockLedger, mockOrg, mockProjects } from "@/lib/mock-data";
+import { CardsSkeleton, QueryState } from "@/components/query-state";
+import { useSession } from "@/components/session-provider";
+import { useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
+import type { LedgerEntry, Project } from "@mishne/shared";
+
+/** `GET /v1/billing/projects` — netted across holds, settles and releases. */
+interface ProjectSpend {
+  projectId: string;
+  credits: number;
+  jobs: number;
+  lastActivity: string | null;
+}
+
+/** `GET /v1/billing/balance/warning`. */
+interface BalanceWarning {
+  low: boolean;
+  available: number;
+  message?: string;
+}
 
 const KIND_STYLE: Record<LedgerKind, string> = {
   purchase: "text-stage-done",
@@ -23,17 +43,39 @@ const KIND_STYLE: Record<LedgerKind, string> = {
 };
 
 export default function BillingPage() {
-  const tier = TIERS[mockOrg.tier];
-  const available = mockOrg.creditBalance;
+  const { session } = useSession();
+  const org = session.org;
+  const tier = TIERS[org.tier];
+  const available = org.credit_balance;
+
+  const ledger = useApi<LedgerEntry[]>("/v1/billing/ledger");
+  const spend = useApi<ProjectSpend[]>("/v1/billing/projects");
+  const projects = useApi<Project[]>("/v1/projects");
+  // Built in C1 and rendered nowhere until now. A customer who finds out they
+  // are out of credits when a job is refused has already uploaded the material.
+  const warning = useApi<BalanceWarning>("/v1/billing/balance/warning");
+
+  const nameFor = (id: string) =>
+    projects.data?.find((p) => p.id === id)?.name ?? id;
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Billing</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {mockOrg.name} · {tier.name} plan
+          {org.name} · {tier.name} plan
         </p>
       </div>
+
+      {warning.data?.low && (
+        <Card className="flex items-center gap-3 border-primary/40 bg-primary/5 p-4">
+          <AlertTriangle className="size-4 shrink-0 text-primary" />
+          <p className="text-sm">
+            {warning.data.message ??
+              "This balance will not cover the jobs you have been running."}
+          </p>
+        </Card>
+      )}
 
       {/* Balance */}
       <div className="grid gap-4 sm:grid-cols-3">
@@ -45,7 +87,7 @@ export default function BillingPage() {
         <Card className="p-5">
           <div className="text-xs text-muted-foreground">Held by running jobs</div>
           <div className="tc mt-1 text-3xl font-semibold text-stage-active">
-            {formatCredits(mockOrg.creditsHeld)}
+            {formatCredits(org.credits_held)}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             released when jobs settle
@@ -110,7 +152,7 @@ export default function BillingPage() {
         <h2 className="text-sm font-medium text-muted-foreground">Plan</h2>
         <div className="grid gap-4 lg:grid-cols-3">
           {Object.values(TIERS).map((t) => {
-            const current = t.id === mockOrg.tier;
+            const current = t.id === org.tier;
             return (
               <Card
                 key={t.id}
@@ -161,28 +203,37 @@ export default function BillingPage() {
         <h2 className="text-sm font-medium text-muted-foreground">Usage by project</h2>
         <Card>
           <CardContent className="pt-5">
-            {mockProjects
-              .filter((p) => p.creditsUsed > 0)
-              .sort((a, b) => b.creditsUsed - a.creditsUsed)
-              .map((p) => {
-                const max = Math.max(...mockProjects.map((x) => x.creditsUsed));
-                return (
-                  <div key={p.id} className="py-2.5">
+            <QueryState query={spend} missing="Nothing spent yet." skeleton={<CardsSkeleton rows={2} />}>
+              {(rows) => {
+                const used = rows.filter((r) => r.credits > 0);
+                if (used.length === 0) {
+                  return (
+                    <p className="py-2 text-sm text-muted-foreground">
+                      No project has been billed for yet.
+                    </p>
+                  );
+                }
+                // The largest bar is the largest project, not the balance: this
+                // is a comparison between projects, not a budget.
+                const max = Math.max(...used.map((r) => r.credits));
+                return used.map((r) => (
+                  <div key={r.projectId} className="py-2.5">
                     <div className="flex items-baseline justify-between text-sm">
-                      <span>{p.name}</span>
+                      <span>{nameFor(r.projectId)}</span>
                       <span className="tc text-muted-foreground">
-                        {formatCredits(p.creditsUsed)}
+                        {formatCredits(r.credits)}
                       </span>
                     </div>
                     <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-secondary">
                       <div
                         className="h-full rounded-full bg-primary"
-                        style={{ width: `${(p.creditsUsed / max) * 100}%` }}
+                        style={{ width: `${(r.credits / max) * 100}%` }}
                       />
                     </div>
                   </div>
-                );
-              })}
+                ));
+              }}
+            </QueryState>
           </CardContent>
         </Card>
       </section>
@@ -192,8 +243,15 @@ export default function BillingPage() {
         <h2 className="text-sm font-medium text-muted-foreground">Recent activity</h2>
         <Card>
           <CardContent className="pt-5">
+            <QueryState query={ledger} missing="No activity yet." skeleton={<CardsSkeleton rows={3} />}>
+              {(entries) =>
+                entries.length === 0 ? (
+                  <p className="py-2 text-sm text-muted-foreground">
+                    Nothing has been bought or spent yet.
+                  </p>
+                ) : (
             <div className="divide-y divide-border">
-              {mockLedger.map((e) => (
+              {entries.map((e) => (
                 <div key={e.id} className="flex items-center gap-4 py-3 text-sm">
                   <Badge variant="muted" className="w-20 justify-center capitalize">
                     {e.kind}
@@ -214,6 +272,9 @@ export default function BillingPage() {
                 </div>
               ))}
             </div>
+                )
+              }
+            </QueryState>
           </CardContent>
         </Card>
       </section>
