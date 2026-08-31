@@ -12,21 +12,26 @@ import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from .. import audit
+from .. import audit, storage
 from ..auth.sessions import Principal
 from ..billing import TIERS, estimate_job
 from ..db import jobs as job_writes
+from ..db import speakers as speaker_writes
 from ..db import models as m
 from ..db import repository
 from ..deps import current_principal, require_write, writable_db
 from ..logging import get_logger
 from ..orchestration import AssetSource, JobRequest, plan as plan_steps
+from ..config import Settings, get_settings
 from ..schemas import (
     Artifact,
+    ArtifactDownload,
     CreateJobRequest,
     CreditEstimate,
     EstimateJobRequest,
     Job,
+    MergeSpeakersRequest,
+    RenameSpeakerRequest,
     SubmitCutRequest,
     Transcript,
 )
@@ -233,6 +238,170 @@ async def cancel_job(
 @router.get("/jobs/{job_id}/artifacts", response_model=list[Artifact])
 async def get_artifacts(job_id: str, store: Store = Depends(get_store)) -> list[Artifact]:
     return store.list_artifacts(job_id)
+
+
+@router.get(
+    "/jobs/{job_id}/artifacts/{artifact_id}/download",
+    response_model=ArtifactDownload,
+)
+async def download_artifact(
+    job_id: str,
+    artifact_id: str,
+    request: Request,
+    principal: Principal = Depends(current_principal),
+    s: Session = Depends(writable_db),
+    settings: Settings = Depends(get_settings),
+) -> ArtifactDownload:
+    """A time-limited URL for one artifact, and a row saying who asked.
+
+    A URL rather than a redirect: the caller is a `fetch` with credentials, and
+    a redirect to a presigned S3 URL either drops those credentials or carries
+    them somewhere they do not belong. The browser navigates to what comes back.
+
+    **Audit-logged, and this is the endpoint the security model names.** The
+    artifact is the customer's finished piece and the URL works for anyone
+    holding it until it expires, so who asked for one and when is a question
+    that has to have an answer (docs/architecture/04-security.md).
+
+    The writable session is for the audit row, not for the artifact — which
+    also means this endpoint refuses under `use_mocks`. That is the right way
+    round: a download nobody can log is not one worth serving, and there is no
+    object behind a fixture to serve anyway.
+    """
+    org_id = principal.org_id
+    artifacts = m.Artifact.__table__
+    row = s.execute(
+        sa.select(artifacts).where(
+            artifacts.c.org_id == org_id,
+            artifacts.c.id == artifact_id,
+            artifacts.c.job_id == job_id,
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(404, "artifact not found")
+    if not row.s3_key:
+        # A fixture, or a row written before the object was published. Handing
+        # back a URL for an object that is not there produces a download that
+        # fails in the browser with an S3 error page, which is a worse answer
+        # than this one.
+        raise HTTPException(409, "this artifact has no stored file")
+
+    url = storage.Storage(settings).presigned_get(
+        storage.ObjectRef(
+            bucket=storage.bucket_for("artifacts", settings), key=row.s3_key
+        ),
+        # So the browser saves `interview_roughcut.aaf` rather than the key.
+        filename=row.filename,
+    )
+    audit.record(
+        s, org_id, audit.ARTIFACT_DOWNLOADED, resource_type="artifact",
+        resource_id=artifact_id, actor_user_id=principal.user_id,
+        ip=audit.client_ip(request), user_agent=request.headers.get("user-agent"),
+    )
+    log.info("artifact.download", job_id=job_id, artifact_id=artifact_id,
+             kind=row.kind)
+    return ArtifactDownload(
+        url=url, filename=row.filename,
+        expires_in_s=settings.presign_ttl_seconds,
+    )
+
+
+@router.patch("/jobs/{job_id}/speakers/{speaker_id}", response_model=Transcript)
+async def rename_speaker(
+    job_id: str,
+    speaker_id: str,
+    body: RenameSpeakerRequest,
+    request: Request,
+    principal: Principal = Depends(require_write),
+    s: Session = Depends(writable_db),
+) -> Transcript:
+    """Give a voice a person's name.
+
+    The id is the one the transcript returned, which is job-relative: a merge's
+    canonical id, or a local id qualified by its reel. It is resolved back to
+    every `speakers` row underneath it, because a merged voice is several rows
+    and one person — renaming the first alone leaves half of them with the old
+    name and nothing on screen to explain it.
+    """
+    org_id = principal.org_id
+    job = repository.get_job(s, org_id, job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+
+    members = repository.speaker_members(s, org_id, job, speaker_id)
+    if not members:
+        raise HTTPException(404, f"no such speaker in this job: {speaker_id}")
+
+    speaker_writes.rename(s, org_id, members, body.label.strip())
+    audit.record(
+        s, org_id, audit.SPEAKER_RENAMED, resource_type="speaker",
+        resource_id=speaker_id, actor_user_id=principal.user_id,
+        ip=audit.client_ip(request), user_agent=request.headers.get("user-agent"),
+    )
+    return _transcript_or_404(s, org_id, job_id)
+
+
+@router.post("/jobs/{job_id}/speakers/merge", response_model=Transcript)
+async def merge_speakers(
+    job_id: str,
+    body: MergeSpeakersRequest,
+    request: Request,
+    principal: Principal = Depends(require_write),
+    s: Session = Depends(writable_db),
+) -> Transcript:
+    """Say that these voices are one person.
+
+    Attribution knows which microphone a voice came down and nothing about
+    whether Tuesday's track 1 and Friday's track 1 are the same person. Guessing
+    reads as intelligence until it puts words in the wrong mouth in a delivered
+    cut, where nobody can tell it happened — so this is a person's claim, and it
+    is recorded as one (ADR-0009).
+
+    The first id given is the one the merged voice keeps: an editor who has
+    already named a voice on reel one expects the merge to keep that name.
+    """
+    org_id = principal.org_id
+    if len(body.speaker_ids) < 2:
+        raise HTTPException(422, "a merge needs at least two voices")
+
+    job = repository.get_job(s, org_id, job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+
+    canonical, *rest = body.speaker_ids
+    members: list[tuple[str, str]] = []
+    for sid in body.speaker_ids:
+        found = repository.speaker_members(s, org_id, job, sid)
+        if not found:
+            raise HTTPException(404, f"no such speaker in this job: {sid}")
+        members.extend(found)
+
+    speaker_writes.merge(
+        s, org_id, job.project_id, canonical, members,
+        confirmed_by=principal.user_id,
+    )
+    audit.record(
+        s, org_id, audit.SPEAKERS_MERGED, resource_type="speaker",
+        resource_id=canonical, actor_user_id=principal.user_id,
+        ip=audit.client_ip(request), user_agent=request.headers.get("user-agent"),
+    )
+    log.info("speakers.merged", job_id=job_id, into=canonical,
+             voices=len(body.speaker_ids), rows=len(members))
+    return _transcript_or_404(s, org_id, job_id)
+
+
+def _transcript_or_404(s: Session, org_id: str, job_id: str) -> Transcript:
+    """The transcript as it now stands.
+
+    Returned from the write endpoints rather than a bare 204 so the legend
+    re-renders from what the database says instead of from what the browser
+    hoped: a merge changes every beat's speaker id, and a client reconstructing
+    that itself is a second implementation of `_canonical`.
+    """
+    transcript = repository.get_transcript(s, org_id, job_id)
+    if transcript is None:
+        raise HTTPException(404, "transcript not found")
+    return transcript
 
 
 @router.get("/jobs/{job_id}/transcript", response_model=Transcript)

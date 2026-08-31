@@ -1,16 +1,65 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Plus, Film, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { CardsSkeleton, QueryState } from "@/components/query-state";
+import { ApiError } from "@/lib/api";
+import { apiSend } from "@/lib/dto";
 import { useApi } from "@/lib/use-api";
 import { formatCredits, type Project } from "@mishne/shared";
 
 export default function ProjectsPage() {
   const projects = useApi<Project[]>("/v1/projects");
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  /**
+   * A project is a name and nothing else, so the form is a name and nothing
+   * else. Straight into it afterwards: nobody creates a project to look at an
+   * empty one — they create it because they have footage to put in it.
+   */
+  const create = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const project = await apiSend<Project>("/v1/projects", {
+        json: { name: trimmed },
+      });
+      router.push(`/projects/${project.id}`);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.detail : String(cause));
+      setCreating(false);
+    }
+  };
+
+  const nameField = (
+    <div className="flex items-center gap-2">
+      <Input
+        autoFocus
+        value={name}
+        placeholder="Project name"
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void create();
+          if (e.key === "Escape") setNaming(false);
+        }}
+      />
+      <Button onClick={create} disabled={creating || !name.trim()}>
+        {creating ? "Creating…" : "Create"}
+      </Button>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -29,10 +78,20 @@ export default function ProjectsPage() {
             )}
           </p>
         </div>
-        <Button>
-          <Plus /> New project
-        </Button>
+        {naming ? (
+          nameField
+        ) : (
+          <Button onClick={() => setNaming(true)}>
+            <Plus /> New project
+          </Button>
+        )}
       </div>
+
+      {error && (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      )}
 
       <QueryState
         query={projects}
@@ -66,7 +125,10 @@ export default function ProjectsPage() {
               </Link>
             ))}
 
-            <button className="flex min-h-[168px] items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
+            <button
+              onClick={() => setNaming(true)}
+              className="flex min-h-[168px] items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+            >
               <Plus className="mr-2 size-4" /> New project
             </button>
           </div>

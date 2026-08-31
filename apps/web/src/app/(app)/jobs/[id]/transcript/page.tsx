@@ -33,7 +33,7 @@ export default function TranscriptPage() {
         missing="This job has no transcript yet."
         skeleton={<PageSkeleton />}
       >
-        {(transcript) => <TranscriptViewer transcript={transcript} />}
+        {(transcript) => <TranscriptViewer transcript={transcript} jobId={id} />}
       </QueryState>
     </div>
   );

@@ -59,11 +59,18 @@ multi-asset (`Job.assetIds`, `Beat.assetId`, `Transcript.assets[]`,
    a resumed run. What is still missing is the Step Functions half: the
    generated machine has no Choice on mode and no second execution, so the
    pause exists in the runner only (see `orchestration/statemachine.py`).
-6. **Persist speaker renames and merges.** `speakers.label` and `confirmed`
-   exist in the schema; nothing writes them.
-7. **Artifact download.** `storage.presigned_get` sets the filename via
-   Content-Disposition, and the security doc says these downloads are
-   audit-logged — `audit.ARTIFACT_DOWNLOADED` is defined and unused.
+6. ~~**Persist speaker renames and merges.**~~ **Done.** `PATCH
+   /jobs/{id}/speakers/{speaker_id}` and `POST /jobs/{id}/speakers/merge`. The
+   id is job-relative — a merge's canonical id, or a local id qualified by its
+   reel — so both resolve it back to every `speakers` row underneath before
+   writing, and both return the transcript as it now stands rather than a 204:
+   a merge changes every beat's speaker id, and a client recomputing that would
+   be a second implementation of `repository._canonical`.
+7. ~~**Artifact download.**~~ **Done.** `GET
+   /jobs/{id}/artifacts/{artifact_id}/download` returns a short-lived URL and
+   writes the audit row. A URL rather than a redirect, because the caller is a
+   credentialed `fetch` and a redirect to S3 either drops those credentials or
+   carries them somewhere they do not belong.
 
 ## Decisions already made
 

@@ -273,6 +273,42 @@ def _canonical(local: str, asset_id: str, first_asset: str, link: str | None) ->
     return local if asset_id == first_asset else f"{local}@{asset_id}"
 
 
+def speaker_members(
+    s: Session, org_id: str, job: Job, canonical_id: str
+) -> list[tuple[str, str]]:
+    """The (asset_id, speaker_id) rows a canonical voice is made of.
+
+    The id the UI holds is job-relative: it is a merge's canonical id, or a
+    local id qualified by its reel when there is no merge (`_canonical`). Two
+    reels' "T1" are two rows and one name once somebody has merged them, so
+    renaming has to resolve the id back to every row underneath it — renaming
+    only the first would leave half a person with their old name and no way to
+    see why.
+    """
+    sp, sl = m.Speaker.__table__, m.SpeakerLink.__table__
+    first_asset = job.asset_ids[0]
+    rows = s.execute(
+        sa.select(sp.c.asset_id, sp.c.speaker_id, sl.c.canonical_speaker_id)
+        .select_from(
+            sp.outerjoin(
+                sl,
+                sa.and_(
+                    sl.c.asset_id == sp.c.asset_id,
+                    sl.c.speaker_id == sp.c.speaker_id,
+                    sl.c.project_id == job.project_id,
+                ),
+            )
+        )
+        .where(sp.c.org_id == org_id, sp.c.asset_id.in_(job.asset_ids))
+    ).all()
+    return [
+        (r.asset_id, r.speaker_id)
+        for r in rows
+        if _canonical(r.speaker_id, r.asset_id, first_asset,
+                      r.canonical_speaker_id) == canonical_id
+    ]
+
+
 def get_transcript(s: Session, org_id: str, job_id: str) -> Transcript | None:
     """The job's transcript, assembled across every asset it draws on.
 

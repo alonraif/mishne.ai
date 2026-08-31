@@ -23,6 +23,7 @@ import {
   directionFor,
 } from "@mishne/shared";
 import { SpeakerLegend, speakerColor } from "@/components/speaker-legend";
+import { useTranscript } from "@/lib/use-transcript";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
@@ -52,7 +53,7 @@ const FLAG_STYLE: Record<string, string> = {
  * is a diff against it, so "reset to the AI's cut" is always one click away.
  */
 export function CutEditor({
-  transcript,
+  transcript: initial,
   mode,
   targetDurationS,
   jobId,
@@ -64,6 +65,14 @@ export function CutEditor({
    *  submitted, which is better than a button that silently does nothing. */
   jobId?: string;
 }) {
+  const { transcript, rename, merge, error: speakerError } = useTranscript(
+    initial, jobId
+  );
+  const roster = transcript.speakers;
+
+  // The suggestion a hybrid job arrived with. Read from the beats rather than
+  // held separately: `used` and `orderIdx` are the job's own record of the cut
+  // it made, and this screen is where a person changes it.
   const aiOrder = useMemo(
     () =>
       transcript.beats
@@ -76,7 +85,6 @@ export function CutEditor({
   const [order, setOrder] = useState<string[]>(mode === "manual" ? [] : aiOrder);
   const [speaker, setSpeaker] = useState("all");
   const [hideFlagged, setHideFlagged] = useState(true);
-  const [roster, setRoster] = useState<Speaker[]>(transcript.speakers);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -103,13 +111,6 @@ export function CutEditor({
       setSubmitting(false);
     }
   };
-
-  const rename = (id: string, label: string) =>
-    setRoster((prev) =>
-      prev.map((s) =>
-        s.id === id ? { ...s, label, confirmed: label.length > 0 } : s
-      )
-    );
 
   const speakerById = useMemo(
     () => new Map(roster.map((s, i) => [s.id, { speaker: s, index: i }])),
@@ -170,6 +171,7 @@ export function CutEditor({
         speakers={roster}
         attribution={transcript.attribution}
         onRename={rename}
+        onMerge={jobId ? merge : undefined}
       />
 
       <div className="grid gap-5 lg:grid-cols-[1fr_400px]">
@@ -412,9 +414,9 @@ export function CutEditor({
           <Check />{" "}
           {submitting ? "Submitting…" : "Assemble and generate artifacts"}
         </Button>
-        {error && (
+        {(error || speakerError) && (
           <p className="text-center text-sm text-destructive" role="alert">
-            {error}
+            {error ?? speakerError}
           </p>
         )}
         <p className="text-center text-xs text-muted-foreground">

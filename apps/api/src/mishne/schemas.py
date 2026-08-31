@@ -447,6 +447,29 @@ class CreateJobRequest(BaseModel):
     approved_cap: float
 
 
+class RenameSpeakerRequest(BaseModel):
+    """What a person calls this voice. Empty clears the name."""
+
+    label: str = ""
+
+
+class MergeSpeakersRequest(BaseModel):
+    """Two or more voices that are one person.
+
+    Canonical ids as the transcript returned them. The first is the one the
+    merged voice keeps — an editor who has already named "Margret Olsen" on
+    reel one expects the merge to keep that name, not to pick one.
+    """
+
+    speaker_ids: list[str]
+
+
+class ArtifactDownload(BaseModel):
+    url: str
+    filename: str
+    expires_in_s: int
+
+
 class SubmitCutRequest(BaseModel):
     """A user-authored cut, from manual or hybrid mode.
 

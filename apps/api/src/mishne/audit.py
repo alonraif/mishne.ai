@@ -49,6 +49,9 @@ JOB_CREATED = "job.created"
 # person's editorial judgement rather than the system's, and "who chose this"
 # is the question a disputed deliverable asks first.
 JOB_CUT_SUBMITTED = "job.cut_submitted"
+# Who a voice belongs to is a claim about a person, made by a person.
+SPEAKER_RENAMED = "speaker.renamed"
+SPEAKERS_MERGED = "speaker.merged"
 RETENTION_CHANGED = "org.retention_changed"
 # Billing. 04-security names permission and billing changes explicitly, and
 # "who bought credits, and when" is the first question a disputed charge asks.

@@ -14,6 +14,7 @@ import {
   directionFor,
 } from "@mishne/shared";
 import { SpeakerLegend, speakerColor } from "@/components/speaker-legend";
+import { useTranscript } from "@/lib/use-transcript";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -38,18 +39,20 @@ const FLAG_LABEL: Record<string, string> = {
 
 type Mode = "all" | "used" | "unused";
 
-export function TranscriptViewer({ transcript }: { transcript: Transcript }) {
+export function TranscriptViewer({
+  transcript: initial,
+  jobId,
+}: {
+  transcript: Transcript;
+  /** Omitted in a preview: without it the legend is display-only, which is
+   *  better than a rename that looks saved and is not. */
+  jobId?: string;
+}) {
   const [mode, setMode] = useState<Mode>("all");
   const [speaker, setSpeaker] = useState<string>("all");
   const [openId, setOpenId] = useState<string | null>(null);
-  const [roster, setRoster] = useState<Speaker[]>(transcript.speakers);
-
-  const rename = (id: string, label: string) =>
-    setRoster((prev) =>
-      prev.map((s) =>
-        s.id === id ? { ...s, label, confirmed: label.length > 0 } : s
-      )
-    );
+  const { transcript, rename, merge, error } = useTranscript(initial, jobId);
+  const roster = transcript.speakers;
 
   const byId = useMemo(
     () => new Map(roster.map((s, i) => [s.id, { speaker: s, index: i }])),
@@ -86,7 +89,13 @@ export function TranscriptViewer({ transcript }: { transcript: Transcript }) {
         speakers={roster}
         attribution={transcript.attribution}
         onRename={rename}
+        onMerge={jobId ? merge : undefined}
       />
+      {error && (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      )}
 
       {/* Summary */}
       <div className="grid gap-3 sm:grid-cols-4">

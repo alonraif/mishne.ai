@@ -16,7 +16,10 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/status-badge";
 import { JobStages } from "@/components/job-stages";
+import { useState } from "react";
 import { PageSkeleton, QueryState } from "@/components/query-state";
+import { ApiError } from "@/lib/api";
+import { apiGet } from "@/lib/dto";
 import { useApi } from "@/lib/use-api";
 import {
   formatBytes,
@@ -191,9 +194,7 @@ function JobView({ job }: { job: Job }) {
                         <ShieldCheck className="size-3.5" /> validated
                       </span>
                     )}
-                    <Button size="sm" variant="outline">
-                      <Download /> Download
-                    </Button>
+                    <DownloadButton jobId={job.id} artifactId={a.id} />
                   </div>
                 ))}
                 <Button asChild variant="secondary" className="mt-2 w-full">
@@ -260,6 +261,49 @@ function JobView({ job }: { job: Job }) {
     </div>
   );
 }
+
+function DownloadButton({ jobId, artifactId }: { jobId: string; artifactId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Ask for a URL, then go to it.
+   *
+   * Not a plain link to the API: the download is audit-logged and the endpoint
+   * hands back a short-lived S3 URL, so the request has to carry the session
+   * and the navigation has to go somewhere else. `location.assign` on a URL
+   * whose Content-Disposition is `attachment` downloads without leaving the
+   * page.
+   */
+  const download = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { url } = await apiGet<{ url: string }>(
+        `/v1/jobs/${jobId}/artifacts/${artifactId}/download`
+      );
+      window.location.assign(url);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.detail : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Button size="sm" variant="outline" onClick={download} disabled={busy}>
+        <Download /> {busy ? "Preparing…" : "Download"}
+      </Button>
+      {error && (
+        <span className="text-xs text-destructive" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
