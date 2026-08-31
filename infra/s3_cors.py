@@ -98,8 +98,14 @@ def main(argv: list[str] | None = None) -> int:
     origins = args.origin or ["http://localhost:3000"]
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps" / "api" / "src"))
-    from mishne.config import get_settings
+    from mishne.config import get_settings, load_env_file
     from mishne.storage import get_client
+
+    # boto3 reads credentials from the environment, and `Settings` reading .env
+    # does not put them there — so without this, a script pointed at MinIO by
+    # S3_ENDPOINT_URL still tries to authenticate as whatever AWS profile the
+    # machine happens to have. See `config.load_env_file`.
+    load_env_file(Path(__file__).resolve().parent.parent / "apps" / "api" / ".env")
 
     settings = get_settings()
     buckets = {

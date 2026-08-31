@@ -27,6 +27,21 @@ inspectable, and it should not be relaxed without a very good reason.
 
 ---
 
+## Running the whole thing on one machine
+
+    ./dev.sh
+
+Postgres and MinIO, the schema, the application login role, the three buckets
+with their CORS and lifecycle rules, and then the API, the web app and a job
+runner. `./dev.sh setup` stops before the processes; `./dev.sh api|web|worker`
+runs one of them in its own terminal.
+
+The job runner is the piece that is easy to miss: `worker.py` takes one job id,
+because in production Step Functions decides what runs. Locally nothing decided,
+so a job submitted in the browser sat at `queued` under a progress panel that
+never moved. `orchestration/devrunner.py` is the missing half of that loop and
+is local-only by construction.
+
 ## Where it stands
 
 A **working concierge pipeline**. One command turns real footage into an

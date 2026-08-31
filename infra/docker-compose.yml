@@ -17,5 +17,34 @@ services:
       timeout: 3s
       retries: 10
 
+  # Object storage. The browser uploads presigned multipart straight to it and
+  # the worker reads media back out, so without this the first thing anyone
+  # clicks has nowhere to put a file. Production is S3; this is the same API.
+  #
+  # `s3_endpoint_url` in the API's settings is what points at it, and the
+  # validator refuses that override outside `environment=local` — an endpoint
+  # override anywhere else means customer media is going somewhere nobody
+  # audited (ADR-0012).
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      # 9000 is the S3 API the app and the browser talk to; 9001 is a web
+      # console for looking at what actually landed, which is the fastest way
+      # to tell a broken upload from a broken database row.
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   pgdata:
+  miniodata:
