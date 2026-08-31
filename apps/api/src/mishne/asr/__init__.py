@@ -1,3 +1,3 @@
-from .base import ASRProvider, ASRResult, Word, get_provider
+from .base import ASRError, ASRProvider, ASRResult, Word, get_provider
 
-__all__ = ["ASRProvider", "ASRResult", "Word", "get_provider"]
+__all__ = ["ASRError", "ASRProvider", "ASRResult", "Word", "get_provider"]

@@ -35,8 +35,8 @@ from .models import ALL_TABLES
 #: through the Table does not.
 TABLES = {t.name: t for t in Base.metadata.tables.values()}
 
-PROVIDER = "faster-whisper"
-PROVIDER_MODEL = "large-v3"
+PROVIDER = "xai"
+PROVIDER_MODEL = "grok-stt"
 
 
 def reset() -> None:
@@ -214,7 +214,7 @@ def _model_versions(status: str) -> dict:
     """The reproducibility contract (ADR-0011): every model per task, in failover order."""
     if status in ("complete", "failed"):
         return {
-            "asr": ["local/faster-whisper-large-v3"],
+            "transcribe": ["xai/grok-stt"],
             "brief": ["anthropic/claude-sonnet-4-5"],
             "score": ["anthropic/claude-sonnet-4-5", "openai/gpt-4.1"],
         }

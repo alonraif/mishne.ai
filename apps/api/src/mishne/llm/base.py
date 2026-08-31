@@ -197,6 +197,22 @@ class CallRecord:
     parsed: bool = True
     #: Why generation stopped, when the vendor said.
     stop_reason: str = ""
+    #: Seconds of audio this call transcribed. Zero for a language-model call.
+    #:
+    #: Here rather than derived from the asset, because transcription is billed
+    #: by duration and this is the quantity the invoice is checked against —
+    #: and because a job whose audio was split across several requests has a
+    #: duration per call and not per asset.
+    audio_seconds: float = 0.0
+    #: True when `cost_usd` came from published rates applied to ASSUMED
+    #: quantities rather than to what the vendor reported.
+    #:
+    #: A third state, and it needs to be: `priced=False` already means "no
+    #: price exists", which is not the same as "a price exists and this is our
+    #: arithmetic against it". Collapsing them either loses the estimate or
+    #: lets it reconcile against a real invoice. C1 has already been bitten by
+    #: an estimate that read as a measurement.
+    cost_estimated: bool = False
 
     def to_dict(self) -> dict:
         """The non-empty fields, for the job manifest.

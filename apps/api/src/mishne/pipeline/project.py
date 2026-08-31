@@ -41,6 +41,7 @@ from ..asr import ASRResult
 from ..asr.base import Word
 from ..timecode import Rate
 from .steps import aaf_ingest, audio as audio_step, prepare, speakers as spk
+from ..asr.base import DEFAULT_PROVIDER
 from .steps import structure, transcribe, vad
 from .steps.structure import Beat
 from .steps.vad import SpeechMap
@@ -213,11 +214,24 @@ def stage_vad(tracks) -> object:
     return vad.build(tracks[0].path)
 
 
-def stage_transcribe(tracks, adir: Path, *, provider: str = "faster-whisper",
+def stage_transcribe(tracks, adir: Path, *, provider: str = DEFAULT_PROVIDER,
                      language: str | None = None, replay: Path | None = None,
-                     model: str = "base", model_path: str | None = None) -> ASRResult:
-    """Stage 2. The expensive one, and the one the cache exists for."""
-    kwargs = ({"path": replay} if replay else {"model": model, "model_path": model_path})
+                     model: str = "base", model_path: str | None = None,
+                     ledger: object = None, keyterms: str = "") -> ASRResult:
+    """Stage 2. The expensive one, and the one the cache exists for.
+
+    The provider decides what the rest of the arguments mean, which is why they
+    are split here rather than forwarded as one bag: `model`/`model_path` are
+    Whisper's, and the managed engines take a ledger to record what the call
+    cost and a work directory to split long audio into.
+    """
+    if replay:
+        kwargs = {"path": replay}
+    elif provider == "faster-whisper":
+        kwargs = {"model": model, "model_path": model_path}
+    else:
+        kwargs = {"ledger": ledger, "keyterms": keyterms,
+                  "work_dir": adir / "chunks"}
     return transcribe.run(
         tracks[0].path, adir,
         provider="replay" if replay else provider,
@@ -294,10 +308,11 @@ def finish_ingest(adir: Path, result: AssetIngest, ws=None) -> AssetIngest:
 
 
 def ingest(path: Path, work_dir, language: str | None = None,
-           provider: str = "faster-whisper", replay: Path | None = None,
+           provider: str = DEFAULT_PROVIDER, replay: Path | None = None,
            model: str = "base", model_path: str | None = None,
            assume_rate: Rate | None = None, diarize_models: Path | None = None,
-           on_progress=None, content_hash: str | None = None) -> AssetIngest:
+           on_progress=None, content_hash: str | None = None,
+           ledger: object = None, keyterms: str = "") -> AssetIngest:
     """Stages 0-4 plus speaker attribution for one asset. Cached.
 
     `path` is a real file on a real disk, always — ffmpeg takes argv and pyaaf2
@@ -330,7 +345,8 @@ def ingest(path: Path, work_dir, language: str | None = None,
     speech = stage_vad(tracks)
     say(f"{len(speech.speech)} speech segments")
     asr = stage_transcribe(tracks, adir, provider=provider, language=language,
-                           replay=replay, model=model, model_path=model_path)
+                           replay=replay, model=model, model_path=model_path,
+                           ledger=ledger, keyterms=keyterms)
     say(f"{len(asr.words)} words · {asr.language}")
     attribution = stage_speakers(asr, tracks, prepared,
                                  diarize_models=diarize_models, on_progress=say)

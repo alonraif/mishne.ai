@@ -261,6 +261,8 @@ def record_llm_calls(
             # `CallRecord.error` holds the exception TYPE, not a provider's
             # message, and this column is named for what it actually contains.
             "error_type": call.error,
+            "audio_seconds": getattr(call, "audio_seconds", 0.0),
+            "cost_estimated": getattr(call, "cost_estimated", False),
         }
         call_id = f"llm_{job_id}_{step_idx:02d}_{position:03d}"
         updated = s.execute(

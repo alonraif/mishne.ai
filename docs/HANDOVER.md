@@ -35,9 +35,14 @@ editable rough cut with four interchange artifacts and a transcript page:
 ```bash
 cd apps/api
 ./setup.sh                                    # venv, checks interpreter + ffmpeg
-.venv/bin/python run.py ../../samples/SyncDaniel.aaf \
-  --language he --model-path ../../models/faster-whisper-large-v3 --target 40s
+.venv/bin/python run.py ../../samples/SyncDaniel.aaf --language he --target 40s
 ```
+
+Transcription is a managed API (ADR-0018): xAI for the languages it publishes,
+Gemini for Hebrew and everything else, routed by language, ~$0.10-0.30 per
+source hour. Self-hosted Whisper is still supported and is one flag —
+`--asr faster-whisper --model-path ../../models/faster-whisper-large-v3` — which
+is what an air-gapped customer runs and what the CPU baseline was measured on.
 
 Verified on two pieces of real material:
 
@@ -110,7 +115,8 @@ apps/api/                 the pipeline and the (mock-backed) API
   src/mishne/
     pipeline/steps/       the twelve stages, one file each
     pipeline/project.py   multi-asset orchestration and the ingest cache
-    asr/                  transcription behind a provider Protocol
+    asr/                  transcription: two managed engines, routed by
+                          language, plus self-hosted Whisper and replay
     diarize/              single-track voice separation, ONNX
     llm/                  four vendors behind one interface + routing
     interchange/          MobIDs, FCPXML patch, round-trip validation
@@ -167,8 +173,7 @@ One machine, no cloud, no database. This is what the pipeline is measured
 against and what `test_reference_run.py` compares the orchestrator to:
 
 ```bash
-.venv/bin/python run.py ../../samples/SyncDaniel.aaf \
-  --language he --model-path ../../models/faster-whisper-large-v3 --target 40s
+.venv/bin/python run.py ../../samples/SyncDaniel.aaf --language he --target 40s
 ```
 
 ### The platform path

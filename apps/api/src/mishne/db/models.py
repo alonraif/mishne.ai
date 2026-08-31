@@ -422,7 +422,9 @@ class JobLlmCall(Base):
     )
     step_idx = sa.Column(sa.Integer, nullable=False)
     step_name = sa.Column(sa.Text, nullable=False)
-    #: brief | propose | score — the stage's own name for the work.
+    #: brief | spans | score | transcribe — the stage's own name for the work.
+    #: Transcription is here too: a managed engine call is a vendor call that
+    #: costs money, and it is the largest one in a job.
     task = sa.Column(sa.Text, nullable=False)
     provider = sa.Column(sa.Text, nullable=False)
     model = sa.Column(sa.Text, nullable=False)
@@ -442,6 +444,15 @@ class JobLlmCall(Base):
     proposals = sa.Column(sa.Integer, nullable=False, server_default=sa.text("0"))
     #: The exception TYPE, never a provider's message.
     error_type = sa.Column(sa.Text, nullable=False, server_default=sa.text("''"))
+    #: Seconds of audio, for a transcription call. Cost per source hour — the
+    #: number the GPU-or-CPU decision was blocked on — is this column over
+    #: cost_micros, with no join.
+    audio_seconds = sa.Column(sa.Float, nullable=False, server_default=sa.text("0"))
+    #: The cost came from published rates on assumed quantities, not from what
+    #: the vendor reported. Priced but not measured; do not reconcile it.
+    cost_estimated = sa.Column(
+        sa.Boolean, nullable=False, server_default=sa.text("false")
+    )
     created_at = sa.Column(TS, nullable=False, server_default=sa.text("now()"))
 
 

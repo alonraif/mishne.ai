@@ -140,7 +140,17 @@ class Settings(BaseSettings):
     app_origin: str = "http://localhost:3000"
 
     # Vendors. Never commit real keys — see .env.example.
-    asr_provider: str = "mock"
+    #
+    # `auto` routes transcription by language across the managed engines in
+    # `asr/engines.json`: xAI for the languages it publishes, Gemini for
+    # Hebrew and everything else (ADR-0018). `faster-whisper` self-hosts, which
+    # is what a broadcaster who will not let audio leave the building runs and
+    # what the CPU baseline was measured on; `mock` and `replay` are for tests.
+    #
+    # Engine keys are read from the environment by the providers themselves —
+    # XAI_API_KEY and GEMINI_API_KEY, the same variables the LLM providers use,
+    # because a vendor has one key and not one per subsystem.
+    asr_provider: str = "auto"
     asr_api_key: str = ""
     llm_provider: str = "anthropic"
     anthropic_api_key: str = ""

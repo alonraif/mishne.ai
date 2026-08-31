@@ -6,9 +6,17 @@
 #   ffmpeg and ffprobe. Stages 0-1 shell out to them; they are not a Python
 #   dependency and pip will not bring them.
 #
-#   The models, BAKED IN. A cold start pulling 3 GB from Hugging Face is not a
-#   cold start you want against a job SLA, and in a locked-down account the
-#   network will not allow it at all. Build with:
+#   ffmpeg is also what splits audio that is longer than an engine will take in
+#   one request (asr/chunking.py).
+#
+#   NO ASR WEIGHTS, by default. Transcription is a managed API now (ADR-0018),
+#   so the 3 GB of Whisper weights this image used to carry are dead payload on
+#   every pull, every cold start and every worker. `faster-whisper` itself is
+#   still installed and is NOT optional — stage 3 uses the Silero VAD model
+#   bundled inside it, which is a few megabytes and unrelated to transcription.
+#
+#   For an air-gapped customer, or to re-measure the self-hosted baseline, bake
+#   the weights back in and run with `--asr faster-whisper`:
 #       docker build --build-arg MODEL_DIR=models/faster-whisper-large-v3 .
 #
 # Python is pinned to 3.12 on purpose: OpenTimelineIO has no 3.14 wheel and
@@ -39,8 +47,10 @@ RUN pip install --no-cache-dir . \
 
 COPY run.py ./run.py
 
-# The models. `MODEL_DIR` is a path in the build context; the image is built in
-# CI where the weights are cached, never on a developer's laptop.
+# ASR weights, only if asked for. `MODEL_DIR` is a path in the build context;
+# the default is an empty directory, so the normal image carries none. A build
+# that points it at real weights gets the offline path, and nothing else
+# changes — the provider is a flag (ADR-0003, ADR-0018).
 ARG MODEL_DIR=models
 COPY ${MODEL_DIR} /opt/models
 ENV MISHNE_MODEL_PATH=/opt/models
@@ -56,9 +66,15 @@ ENV WORK_ROOT=/scratch
 RUN mkdir -p /scratch && chown worker /scratch
 VOLUME ["/scratch"]
 
-# large-v3 peaks around 4.6 GB. A 4 GB container is an OOM kill, exit 137, and
-# no useful message anywhere — size the task at 8 GB.
-LABEL org.mishne.min-memory-gb="8"
+# 2 GB with managed ASR: the peak is then ffmpeg and the solver, not a model.
+#
+# large-v3 peaks around 4.6 GB, so a worker built with weights and run with
+# `--asr faster-whisper` needs 8 GB — a 4 GB container is an OOM kill, exit 137,
+# and no useful message anywhere. Two labels rather than one number, because
+# sizing every worker for a model most of them will never load was a large part
+# of what made self-hosted transcription expensive.
+LABEL org.mishne.min-memory-gb="2"
+LABEL org.mishne.min-memory-gb-self-hosted-asr="8"
 
 USER worker
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1

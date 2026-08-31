@@ -1,0 +1,89 @@
+{
+  "_comment": [
+    "Transcription engine catalog. DATA, not code — replace this file without",
+    "a release, exactly as llm/models.json is replaced. Same reasoning: every",
+    "identifier and every price in this file changed within a month of being",
+    "written, and a catalog compiled into the code is wrong on the day it ships.",
+    "",
+    "'languages' is the list the vendor publishes as supported. It is the whole",
+    "routing decision, so it is data too — a vendor adding Hebrew should be a",
+    "one-line edit and a re-run, not a code change.",
+    "",
+    "'*' means the vendor claims general coverage and the router will use the",
+    "engine for any language, including an unspecified one.",
+    "",
+    "Billing differs in kind between vendors and both shapes are here:",
+    "  usd_per_hour        flat, by audio duration (xAI)",
+    "  audio_in / text_out USD per million tokens (Google), with",
+    "  usd_per_hour_est    the vendor's own blended estimate, used ONLY when a",
+    "                      response carries no usage counts. A cost derived",
+    "                      from it is marked estimated and never reads as",
+    "                      measured — see c1-first-cost-numbers.md for what",
+    "                      happens when those two are allowed to blur.",
+    "",
+    "'max_seconds' is the duration limit WITH word timestamps and diarization",
+    "on, which is the only configuration this system uses. Google's own limit",
+    "is an hour without them and half that with them; the smaller number is the",
+    "real one here. Longer material is split — see asr/chunking.py."
+  ],
+  "_sources": {
+    "xai": "https://docs.x.ai/developers/model-capabilities/audio/speech-to-text",
+    "xai_pricing": "https://docs.x.ai/docs/models",
+    "google": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-transcribe",
+    "google_request": "https://ai.google.dev/gemini-api/docs/transcribe",
+    "google_pricing": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  "_verified": "2026-08-31",
+  "engines": [
+    {
+      "id": "grok-stt",
+      "provider": "xai",
+      "usd_per_hour": 0.10,
+      "word_timestamps": true,
+      "diarization": true,
+      "verbatim": true,
+      "max_bytes": 524288000,
+      "languages": [
+        "ar", "cs", "da", "de", "en", "es", "fa", "fil", "fr", "hi", "id",
+        "it", "ja", "ko", "mk", "ms", "nl", "pl", "pt", "ro", "ru", "sv",
+        "th", "tr", "vi"
+      ],
+      "_note": [
+        "$0.10/hour batch, $0.20/hour streaming. Batch only here: a rough cut",
+        "is not a live product and streaming costs double for latency nobody",
+        "in this pipeline is waiting on.",
+        "",
+        "The docs say 24 languages and then list 25 names; the list above is",
+        "the names, as codes. Hebrew is in neither count.",
+        "",
+        "xAI's docs claim the model transcribes any language and that the",
+        "`language` field only gates text formatting. That would make Hebrew",
+        "3x cheaper here. It is unvalidated, so this list — not that claim —",
+        "is what routes. MISHNE_ASR_XAI_ANY_LANGUAGE=1 lifts the restriction",
+        "for a deliberate measurement run against Gemini output."
+      ]
+    },
+    {
+      "id": "gemini-3.5-transcribe",
+      "provider": "google",
+      "audio_in": 2.00,
+      "text_out": 12.00,
+      "usd_per_hour_est": 0.30,
+      "audio_tokens_per_second": 25,
+      "text_tokens_per_minute": 175,
+      "word_timestamps": true,
+      "diarization": true,
+      "max_speakers": 8,
+      "verbatim": true,
+      "max_seconds": 1800,
+      "languages": ["*"],
+      "_note": [
+        "85+ languages including he-IL, which is why Hebrew lands here.",
+        "Word timestamps and diarization are file-mode only and cap a request",
+        "at 30 minutes; Google's own docs warn timestamps cost some accuracy.",
+        "Both are non-negotiable for this pipeline (asr/base.py), so the cap",
+        "applies to every request we make."
+      ]
+    }
+  ]
+}

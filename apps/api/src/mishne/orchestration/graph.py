@@ -26,6 +26,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..asr.base import DEFAULT_PROVIDER
 from ..pipeline import project
 from ..pipeline.steps import (
     assemble,
@@ -110,7 +111,10 @@ class JobRequest:
     #: id — and it is the one place a filename legitimately appears in output.
     title: str = ""
     # Transcription inputs, exactly as run.py takes them.
-    asr_provider: str = "faster-whisper"
+    #: "auto" routes by language across the managed engines (asr/routing.py);
+    #: "faster-whisper" self-hosts, which is what an air-gapped broadcaster
+    #: runs and what the CPU baseline was measured on.
+    asr_provider: str = DEFAULT_PROVIDER
     model: str = "base"
     model_path: str | None = None
     replay: Path | None = None
@@ -206,9 +210,13 @@ def step_transcribe(ctx: StepContext, state: RunState) -> str:
         # not changed must never pay for this twice (ADR-0008).
         return "cached"
     req = state.request
+    # The router's ledger, so the engine call lands in `job_llm_calls` beside
+    # the model calls — same step, same asset, same query. Transcription is the
+    # larger half of a job's cost and was the half nothing recorded.
     run.asr = project.stage_transcribe(
         run.tracks, run.adir, provider=req.asr_provider, language=req.language,
         replay=req.replay, model=req.model, model_path=req.model_path,
+        ledger=getattr(req.router, "ledger", None),
     )
     return f"{len(run.asr.words)} words · {run.asr.language}"
 

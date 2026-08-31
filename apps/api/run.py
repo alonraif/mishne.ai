@@ -3,7 +3,8 @@
 
     python run.py rushes.mov --notes "Ten minutes, tight. Lead on the closure."
     python run.py day1.mov day2.mov day3.mov --target 10m
-    python run.py interview.mov --target 6m --language he --model large-v3
+    python run.py interview.mov --target 6m --language he
+    python run.py interview.mov --asr faster-whisper --model large-v3  # offline
     python run.py rushes.mov --replay work/rushes_a1.asr.json   # no model needed
 
 Several media arguments are one job drawing on several uploads, which is how
@@ -32,6 +33,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from mishne.asr import catalog as asr_catalog, routing as asr_routing  # noqa: E402
+from mishne.asr.base import DEFAULT_PROVIDER  # noqa: E402
 from mishne.language import is_rtl_language, warn_model_for_language  # noqa: E402
 from mishne.llm import Router  # noqa: E402
 from mishne.llm import catalog as llm_catalog, providers as llm_providers  # noqa: E402
@@ -59,6 +62,28 @@ def assume_rate(value: float | None) -> Rate | None:
     return Rate(num, den)
 
 
+def _asr_line(provider: str, language: str | None) -> str:
+    """What is about to transcribe, before an hour of audio is spent on it.
+
+    The same courtesy the LLM line already pays: which vendor, at what price,
+    and — because this is the decision most likely to be silently wrong — which
+    language it was chosen for.
+    """
+    if provider == "faster-whisper":
+        return "faster-whisper · self-hosted · roughly real time on CPU"
+    engines = asr_routing.plan(language)
+    if not engines:
+        return f"{R}none available for {language or 'unidentified audio'}{X}"
+    engine = engines[0]
+    rate = engine.cost_for(3600.0)
+    price = ("price unknown" if rate.usd is None
+             else f"${rate.usd:.2f}/source hour"
+                  + (" (estimated)" if rate.estimated else ""))
+    when = asr_catalog.verified_on()
+    return (f"{engine.key} · {language or 'language unset'} · {price}"
+            + (f" · rates verified {when}" if when else ""))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -69,7 +94,12 @@ def main() -> int:
     ap.add_argument("--notes", default="", help="production notes, free text")
     ap.add_argument("--target", help="target length, e.g. 10m, 90s, 1:30")
     ap.add_argument("--language", default=None, help="ISO code, e.g. en, he")
-    ap.add_argument("--model", default="base", help="whisper size")
+    ap.add_argument("--asr", default=DEFAULT_PROVIDER,
+                    choices=["auto", "xai", "gemini", "faster-whisper"],
+                    help="'auto' routes by language across the managed "
+                         "engines; 'faster-whisper' self-hosts (default: auto)")
+    ap.add_argument("--model", default="base",
+                    help="whisper size, with --asr faster-whisper")
     ap.add_argument("--model-path", help="local model directory (offline)")
     ap.add_argument("--replay", type=Path, help="stored .asr.json to reuse")
     ap.add_argument("--scorer", default="auto",
@@ -108,8 +138,9 @@ def main() -> int:
     # default while --model-path points at large-v3 is worse than saying
     # nothing: it tells you to fix something you already fixed.
     effective_model = args.model_path or args.model
-    if (msg := warn_model_for_language(effective_model, args.language)):
-        print(f" {Y}{msg}{X}\n")
+    if args.asr == "faster-whisper" and not args.replay:
+        if (msg := warn_model_for_language(effective_model, args.language)):
+            print(f" {Y}{msg}{X}\n")
 
     if args.replay and len(args.media) > 1:
         print(f" {R}--replay holds one stored transcript and cannot serve "
@@ -117,6 +148,8 @@ def main() -> int:
         return 1
 
     router = Router(policy=args.policy)
+    if not args.replay:
+        print(f" {D}asr  {_asr_line(args.asr, args.language)}{X}")
     keys = llm_providers.available()
     if keys:
         picks = []
@@ -144,14 +177,16 @@ def main() -> int:
         print(f"\n {B}{tag} {media.name}{X}")
         try:
             ing = project.ingest(
-                media, work, language=args.language,
+                media, work, language=args.language, provider=args.asr,
+                ledger=router.ledger,
                 replay=args.replay, model=args.model,
                 model_path=args.model_path, assume_rate=assume_rate(args.rate),
                 diarize_models=args.diarize,
                 on_progress=lambda m: print(f"      {D}{m}{X}"))
         except Exception as exc:  # noqa: BLE001
             print(f"      {R}{type(exc).__name__}: {exc}{X}")
-            if "model" in str(exc).lower() or "connect" in str(exc).lower():
+            if args.asr == "faster-whisper" and (
+                    "model" in str(exc).lower() or "connect" in str(exc).lower()):
                 print(f"\n  {Y}If this is a network error the Whisper model "
                       f"could not be downloaded.\n  Allowlist huggingface.co, "
                       f"or fetch it once and pass --model-path.{X}")

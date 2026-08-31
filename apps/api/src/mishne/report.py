@@ -214,16 +214,72 @@ def transcription_baseline(s, org_id: str) -> list[str]:
         machine_seconds += float(r.seconds)
 
     ratio = machine_seconds / 3600 / source_hours if source_hours else 0
-    return [
+    out = [
         f"transcription, {len(rows)} executed runs",
         f"  source material   {source_hours:>10.2f} hours",
         f"  machine time      {machine_seconds / 3600:>10.2f} hours",
         f"  ratio             {ratio:>10.2f} machine-hours per source hour",
-        "",
-        "Multiply the ratio by the hourly cost of the instance the worker runs",
-        "on to get cost per source hour. That is the number the GPU-or-CPU",
-        "decision turns on, and the only input it still needs is a price.",
     ]
+    out += _engine_spend(s, org_id)
+    out += [
+        "",
+        "Machine time is the worker's own wall clock — it is what a self-hosted",
+        "model costs. A managed engine's cost is what it billed, above; the",
+        "machine time beside it is then only staging and I/O, and the ratio",
+        "stops being the number that decides anything (ADR-0018).",
+    ]
+    return out
+
+
+def _engine_spend(s, org_id: str) -> list[str]:
+    """What the managed engines actually charged, per source hour, per engine.
+
+    Reads `job_llm_calls` rather than `job_steps`, because that is where the
+    money is and because an engine's own reported duration is what it bills —
+    the asset's duration is what it *should* have billed, and a discrepancy
+    between them is worth being able to see.
+
+    Estimated rows are separated rather than averaged in. A blended figure of
+    one measured price and one guess is a guess, and it does not look like one.
+    """
+    calls = m.JobLlmCall.__table__
+    rows = s.execute(
+        sa.select(
+            calls.c.provider, calls.c.model, calls.c.cost_estimated,
+            sa.func.count().label("n"),
+            sa.func.sum(calls.c.audio_seconds).label("seconds"),
+            sa.func.sum(calls.c.cost_micros).label("micros"),
+        )
+        .where(
+            calls.c.org_id == org_id,
+            calls.c.task == "transcribe",
+            calls.c.ok.is_(True),
+            calls.c.audio_seconds > 0,
+        )
+        .group_by(calls.c.provider, calls.c.model, calls.c.cost_estimated)
+        .order_by(calls.c.provider, calls.c.model)
+    ).all()
+
+    if not rows:
+        return [
+            "",
+            "  no managed engine calls recorded. Either every run was",
+            "  self-hosted or served from the ingest cache, in which case the",
+            "  machine-time ratio above is the whole story.",
+        ]
+
+    out = ["", "  engine spend"]
+    for r in rows:
+        hours = (r.seconds or 0) / 3600
+        usd = (r.micros or 0) * USD_PER_MICRO
+        per_hour = usd / hours if hours else 0.0
+        flag = " (estimated)" if r.cost_estimated else ""
+        out.append(
+            f"    {r.provider}/{r.model:<24} {r.n:>4} calls · "
+            f"{hours:>7.2f} h · ${usd:>8.4f} · "
+            f"${per_hour:.3f}/source hour{flag}"
+        )
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:

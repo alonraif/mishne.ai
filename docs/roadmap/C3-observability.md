@@ -37,9 +37,14 @@ customer tells you.
 3. **Alerting on what actually hurts**: a job that fails after its retries, a
    step whose duration leaves its distribution, a spend-per-job that moves, and
    a queue that is growing.
-4. **A per-asset transcription cost baseline**, which decides the open GPU/CPU
-   question. Everything so far is CPU faster-whisper and nobody has measured
-   cost per source hour at any scale.
+4. ~~**A per-asset transcription cost baseline**, which decides the open GPU/CPU
+   question.~~ **Superseded by ADR-0018.** The question was which fleet to buy,
+   and the answer was neither: transcription is a managed API billed by the
+   second. Every engine call is a `job_llm_calls` row carrying the audio
+   duration it billed for (migration 0006), so cost per source hour is
+   `python -m mishne.report --org ... --baseline` rather than a project. What is
+   still unmeasured is the same figure on real jobs — the query exists, the
+   rows do not, until material runs through with keys set.
 5. **Log retention and access**, because the same rule applies to logs as to the
    audit table: they outlive the job and are read by more people than wrote them.
 

@@ -1,6 +1,7 @@
 # ADR-0003 — Managed ASR behind a provider interface
 
-**Status:** Accepted · **Date:** 2026-08-28
+**Status:** Accepted · **Date:** 2026-08-28 ·
+**Vendors chosen in [ADR-0018](0018-two-asr-engines-routed-by-language.md)**
 
 ## Context
 
@@ -61,3 +62,8 @@ hard prerequisite; see [04 — Security](../architecture/04-security.md).
 **Escape hatch** — some broadcasters will refuse third-party ASR. The interface makes
 self-hosted Whisper on GPU a configuration change and a deployment, not a rewrite.
 That scenario is the reason the interface exists.
+
+**What happened next.** The proof of concept ran on the escape hatch — CPU
+`faster-whisper` — because it needed no keys and no vendor decision. ADR-0018
+makes the choice this ADR deferred: two engines, routed by language, with
+self-hosting kept exactly where this ADR put it.
