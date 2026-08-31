@@ -295,6 +295,27 @@ def test_gemini_parses_protobuf_durations_and_reports_a_measured_cost(
     assert result.cost_usd == pytest.approx(0.306)
 
 
+@pytest.mark.parametrize("shape", [
+    {"usageMetadata": {"audioTokenCount": 90_000, "candidatesTokenCount": 10_500}},
+    {"usage_metadata": {"promptTokenCount": 90_000, "outputTokenCount": 10_500}},
+    {"usage": {"audio_input_tokens": 90_000, "output_tokens": 10_500}},
+])
+def test_usage_is_read_whatever_the_vendor_calls_it(monkeypatch, tmp_path, shape):
+    """The endpoint's documentation does not describe its usage fields, and
+    Google answers in camelCase over REST while its SDK reports snake_case.
+    Picking one spelling means a real cost arrives under another name and
+    quietly reads as an estimate — which is the exact confusion migration 0006
+    exists to keep out of the billing data."""
+    response = {k: v for k, v in GEMINI_RESPONSE.items() if k != "usage"}
+    response.update(shape)
+    provider = _gemini(monkeypatch, response)
+
+    result = provider.transcribe(wav(tmp_path / "he.wav"), language="he")
+
+    assert not result.cost_estimated
+    assert result.cost_usd == pytest.approx(0.306)
+
+
 def test_gemini_falls_back_to_its_published_rates_and_says_it_estimated(
         monkeypatch, tmp_path):
     response = {**GEMINI_RESPONSE}

@@ -48,6 +48,30 @@ BASE_URL = os.environ.get(
 API_KEY_ENV = "GEMINI_API_KEY"
 
 
+def _dump_raw(audio: Path, data: dict) -> None:
+    """`MISHNE_ASR_DEBUG_RAW=1` writes the response beside the audio.
+
+    A vendor's actual response shape is a fact, and reading it once beats
+    reading the documentation three times — this endpoint's docs do not
+    describe its usage fields at all, which is why a real cost may be arriving
+    under a name nothing here looks for and quietly reading as an estimate.
+
+    Off by default and deliberately not on in production: a raw response
+    contains the transcript, which is customer content, and nothing that holds
+    customer content belongs on a worker's disk by default.
+    """
+    if os.environ.get("MISHNE_ASR_DEBUG_RAW", "") in ("", "0"):
+        return
+    import json
+
+    out = audio.with_suffix(".gemini-raw.json")
+    try:
+        out.write_text(json.dumps(data, ensure_ascii=False, indent=1),
+                       encoding="utf-8")
+    except Exception:  # noqa: BLE001 — a debugging aid never fails a job
+        pass
+
+
 class GeminiProvider:
     name = "google"
 
@@ -118,6 +142,7 @@ class GeminiProvider:
             data, ms = post_json(f"{BASE_URL}/v1beta/interactions",
                                  self._headers, body,
                                  timeout=timeout_for(seconds))
+            _dump_raw(audio, data)
         finally:
             if file_name:
                 delete(f"{BASE_URL}/v1beta/{file_name}", self._headers)
@@ -190,12 +215,14 @@ class GeminiProvider:
                 "no word_info annotations in the response; word timestamps "
                 "were requested and are required", retryable=False)
 
-        usage = data.get("usage") or data.get("usage_metadata") or {}
-        audio_tokens = int(usage.get("audio_input_tokens")
-                           or usage.get("input_tokens") or 0)
-        text_tokens = int(usage.get("output_tokens")
-                          or usage.get("text_output_tokens") or 0)
-        seconds = float(usage.get("audio_seconds") or 0.0) or fallback_seconds
+        usage = _usage(data)
+        audio_tokens = _count(usage, "audioTokenCount", "audio_input_tokens",
+                              "promptTokenCount", "inputTokenCount",
+                              "input_tokens")
+        text_tokens = _count(usage, "candidatesTokenCount", "outputTokenCount",
+                             "output_tokens", "text_output_tokens")
+        seconds = float(usage.get("audioSeconds") or usage.get("audio_seconds")
+                        or 0.0) or fallback_seconds
         cost = self.engine.cost_for(seconds, audio_tokens=audio_tokens,
                                     text_tokens=text_tokens)
 
@@ -210,6 +237,40 @@ class GeminiProvider:
             cost_estimated=cost.estimated,
             latency_ms=latency_ms,
         )
+
+
+#: Where a usage object might be, and what its numbers might be called.
+#:
+#: The documentation for this endpoint does not say. Google's REST APIs answer
+#: in camelCase (`usageMetadata`, `promptTokenCount`) while its Python SDK
+#: surfaces snake_case, and this model is days old — so the honest thing is to
+#: accept every spelling rather than pick one and silently fall back to an
+#: estimate when it is the wrong one. `MISHNE_ASR_DEBUG_RAW` settles it for
+#: real: it writes the response beside the audio, and then this list can be
+#: cut down to what the vendor actually sends.
+_USAGE_KEYS = ("usageMetadata", "usage_metadata", "usage")
+
+
+def _usage(data: dict) -> dict:
+    for key in _USAGE_KEYS:
+        found = data.get(key)
+        if isinstance(found, dict) and found:
+            return found
+    # Some shapes hang it off the step rather than the interaction.
+    for step in data.get("steps") or []:
+        for key in _USAGE_KEYS:
+            found = step.get(key)
+            if isinstance(found, dict) and found:
+                return found
+    return {}
+
+
+def _count(usage: dict, *names: str) -> int:
+    for name in names:
+        value = usage.get(name)
+        if isinstance(value, (int, float)) and value:
+            return int(value)
+    return 0
 
 
 def _offset_ms(value) -> int:

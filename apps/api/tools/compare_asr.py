@@ -55,7 +55,11 @@ from mishne.pipeline import project  # noqa: E402
 #: retention check rather than a filler detector — the pipeline has its own.
 FILLER = {
     "en": {"um", "uh", "erm", "ah", "hmm", "like", "you know", "i mean"},
-    "he": {"אמ", "אה", "אהh", "כאילו", "יעני", "אז", "בעצם"},
+    # Hebrew fillers. "אז" is left OUT deliberately: it is "so", and it opens
+    # a sentence as often as it fills a pause — counting it would make every
+    # transcript look full of filler and tell you nothing about whether the
+    # engine kept any.
+    "he": {"אמ", "אה", "אהה", "כאילו", "יעני", "בעצם", "אהם"},
 }
 
 
