@@ -253,3 +253,51 @@ def test_a_real_error_from_a_local_endpoint_still_raises():
     with pytest.raises(_Unsupported):
         cors.apply(Denied(), "mishne-dev-raw", "raw", ["http://localhost:3000"],
                    endpoint_url="http://localhost:9000")
+
+
+def test_a_refused_rule_is_named(capsys):
+    """MinIO's whole answer is "the XML you provided was not well-formed or did
+    not validate against our published schema", which does not say which rule.
+    Guessing at four rules by deleting them one at a time is the afternoon this
+    avoids."""
+    class RefusesNoncurrent(_MinioLike):
+        def get_bucket_lifecycle_configuration(self, **_kw):
+            return {"Rules": []}
+
+        def put_bucket_lifecycle_configuration(self, *, LifecycleConfiguration, **_kw):
+            rules = LifecycleConfiguration["Rules"]
+            if any("NoncurrentVersionExpiration" in r for r in rules):
+                raise _Unsupported("InvalidArgument")
+
+    changed = lifecycle.apply(RefusesNoncurrent(), "mishne-dev-raw", "raw",
+                              endpoint_url="http://localhost:9000")
+
+    out = capsys.readouterr().out
+    assert changed is False
+    assert "expire-raw-media" in out
+    # And not the rule the endpoint was happy with.
+    assert "abort-incomplete-multipart-uploads" not in out
+
+
+def test_a_refused_configuration_still_raises_against_real_s3():
+    class Refuses(_MinioLike):
+        def get_bucket_lifecycle_configuration(self, **_kw):
+            return {"Rules": []}
+
+        def put_bucket_lifecycle_configuration(self, **_kw):
+            raise _Unsupported("InvalidArgument")
+
+    with pytest.raises(_Unsupported):
+        lifecycle.apply(Refuses(), "mishne-prod-raw", "raw", endpoint_url="")
+
+
+def test_local_buckets_are_versioned_like_the_deployed_ones():
+    """The lifecycle rules expire noncurrent versions, which is not a
+    meaningful thing to ask of an unversioned bucket — and a delete against a
+    versioned bucket writes a marker rather than removing the object, which is
+    different behaviour for the retention path to meet."""
+    buckets = _load("s3_buckets")
+    source = (_INFRA / "s3_buckets.py").read_text()
+    assert "put_bucket_versioning" in source
+    assert '"Status": "Enabled"' in source
+    assert buckets is not None

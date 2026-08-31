@@ -50,6 +50,22 @@ def main(argv: list[str] | None = None) -> int:
         # constraint naming one it was not started with.
         client.create_bucket(Bucket=bucket)
         print(f"{bucket}: created")
+
+    # Versioning, on every bucket, because the deployed ones have it and two
+    # things here depend on it: the lifecycle rules expire noncurrent versions
+    # (`s3_lifecycle._expiry_rule`), which is not a meaningful thing to ask of
+    # an unversioned bucket and which some endpoints refuse outright; and a
+    # delete against a versioned bucket writes a marker rather than removing
+    # the object, which is different behaviour for the retention path to be
+    # tested against.
+    #
+    # Idempotent: enabling it on a bucket that already has it is a no-op.
+    for bucket in (settings.s3_bucket_raw, settings.s3_bucket_derived,
+                   settings.s3_bucket_artifacts):
+        client.put_bucket_versioning(
+            Bucket=bucket, VersioningConfiguration={"Status": "Enabled"}
+        )
+    print("versioning: enabled on all three")
     return 0
 
 

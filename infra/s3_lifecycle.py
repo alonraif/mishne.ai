@@ -135,8 +135,39 @@ def apply(client, bucket: str, which: str, endpoint_url: str = "") -> bool:
         if s3_local.tolerable_locally(exc, endpoint_url):
             s3_local.note_skipped("lifecycle rules", bucket)
             return False
+        if endpoint_url:
+            # A local endpoint that refuses the configuration for some other
+            # reason — "the XML you provided was not well-formed or did not
+            # validate against our published schema" is the whole of what MinIO
+            # says, and it does not name the rule. Find out which one, because
+            # otherwise the next step is guessing at four rules by deleting
+            # them one at a time.
+            refused = _refused_rules(client, bucket, wanted)
+            print(f"{bucket}: this endpoint refused "
+                  f"{', '.join(refused) if refused else 'the whole configuration'}"
+                  f" — skipped.\n"
+                  f"    The same rules go to S3 unchanged; see infra/s3_local.py.")
+            return False
         raise
     return True
+
+
+def _refused_rules(client, bucket: str, wanted: list[dict]) -> list[str]:
+    """Which individual rules this endpoint will not take.
+
+    One PUT per rule. Only ever called after a failure and only against a local
+    endpoint, so the cost is irrelevant and the answer is the difference
+    between a fixable message and an afternoon.
+    """
+    refused = []
+    for rule in wanted:
+        try:
+            client.put_bucket_lifecycle_configuration(
+                Bucket=bucket, LifecycleConfiguration={"Rules": [rule]}
+            )
+        except Exception:  # noqa: BLE001 — this is the diagnosis, not the work
+            refused.append(str(rule.get("ID", "?")))
+    return refused
 
 
 def apply_all(client, buckets: dict[str, str],
