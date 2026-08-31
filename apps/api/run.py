@@ -34,6 +34,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from mishne.asr import catalog as asr_catalog, routing as asr_routing  # noqa: E402
+from mishne.config import load_env_file  # noqa: E402
 from mishne.asr.base import DEFAULT_PROVIDER  # noqa: E402
 from mishne.language import is_rtl_language, warn_model_for_language  # noqa: E402
 from mishne.llm import Router  # noqa: E402
@@ -85,6 +86,11 @@ def _asr_line(provider: str, language: str | None) -> str:
 
 
 def main() -> int:
+    # Keys from apps/api/.env, unless the shell already has them. Without this
+    # a key in that file reaches `Settings` and no vendor adapter — see
+    # `config.load_env_file`.
+    load_env_file(Path(__file__).parent / ".env")
+
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)

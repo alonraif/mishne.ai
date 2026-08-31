@@ -39,6 +39,50 @@ def wav(path: Path, seconds: float = 1.0) -> Path:
     return path
 
 
+# ── keys reach the vendors ────────────────────────────────────────────────
+
+
+def test_a_key_in_dotenv_reaches_the_process_environment(tmp_path, monkeypatch):
+    """`Settings` reads .env and does not export it, and every vendor adapter
+    reads os.environ. A key in the file used to reach neither the router nor
+    an error message — the run just quietly did what it does without one."""
+    from mishne.config import load_env_file
+
+    env = tmp_path / ".env"
+    env.write_text('XAI_API_KEY=from-file\nGEMINI_API_KEY="quoted"\n# note\nBLANK=\n')
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("BLANK", raising=False)
+
+    loaded = load_env_file(env)
+
+    import os
+
+    assert set(loaded) == {"XAI_API_KEY", "GEMINI_API_KEY"}
+    assert os.environ["XAI_API_KEY"] == "from-file"
+    assert os.environ["GEMINI_API_KEY"] == "quoted"
+    # An empty assignment is not a key, and setting it to "" would make
+    # `ProviderConfig.available` and the router disagree about nothing.
+    assert "BLANK" not in os.environ
+    assert routing.available_providers() == ["xai", "google"]
+
+
+def test_the_shell_wins_over_the_file(tmp_path, monkeypatch):
+    """Exporting a key is a deliberate override — and in staging there is no
+    file at all."""
+    from mishne.config import load_env_file
+
+    env = tmp_path / ".env"
+    env.write_text("XAI_API_KEY=from-file\n")
+    monkeypatch.setenv("XAI_API_KEY", "from-shell")
+
+    assert load_env_file(env) == []
+
+    import os
+
+    assert os.environ["XAI_API_KEY"] == "from-shell"
+
+
 # ── the catalog ────────────────────────────────────────────────────────────
 
 def test_engines_json_is_loadable_and_dated():

@@ -39,7 +39,7 @@ from pathlib import Path
 import sqlalchemy as sa
 
 from .. import alerts, telemetry
-from ..config import Settings, get_settings
+from ..config import Settings, get_settings, load_env_file
 from ..db import jobs as job_writes
 from ..db import models as m
 from ..db import transcripts as transcript_writes
@@ -373,6 +373,11 @@ def _credits_used(result, tier_id: str) -> float:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # A worker started by hand on a developer's machine reads the same .env the
+    # API does. In a deployed container there is no file and the environment is
+    # the environment (`config.load_env_file`).
+    load_env_file(Path.cwd() / ".env")
+
     parser = argparse.ArgumentParser(prog="python -m mishne.orchestration.worker")
     parser.add_argument("job_id")
     parser.add_argument("--org", required=True)

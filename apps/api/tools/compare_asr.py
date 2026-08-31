@@ -46,9 +46,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from mishne.asr import catalog, get_provider  # noqa: E402
+from mishne.config import load_env_file  # noqa: E402
 from mishne.asr.base import ASRResult  # noqa: E402
 from mishne.language import is_rtl_language  # noqa: E402
-from mishne.pipeline.steps import audio as audio_step, prepare  # noqa: E402
+from mishne.pipeline import project  # noqa: E402
 
 #: Rough, and deliberately so. Filler is language specific and this is a
 #: retention check rather than a filler detector — the pipeline has its own.
@@ -117,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
                          "the managed engines against what they replaced")
     ap.add_argument("--work", type=Path, default=Path("work-asr"))
     args = ap.parse_args(argv)
+    load_env_file(Path(__file__).resolve().parents[1] / ".env")
 
     from mishne.asr import routing
 
@@ -129,9 +131,15 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     args.work.mkdir(parents=True, exist_ok=True)
-    info = prepare.probe(args.media)
-    tracks = audio_step.extract(info, args.work / "audio")
+    # Stages 0 and 1 as the pipeline runs them, not a reimplementation:
+    # `prepare.probe` cannot read an AAF at all — ffprobe does not know the
+    # format — and the branch that flattens a sequence into audio first lives
+    # in `stage_prepare`. Calling probe directly here worked on an mp4 and
+    # failed on exactly the Hebrew sample this tool exists to measure.
+    prepared = project.stage_prepare(args.media, args.work / "prep")
+    tracks = project.stage_audio(prepared, args.work / "audio")
     wav = tracks[0].path
+    info = prepared.info
     source_hours = info.duration_frames / (info.rate.fps or 25) / 3600
 
     if is_rtl_language(args.language):

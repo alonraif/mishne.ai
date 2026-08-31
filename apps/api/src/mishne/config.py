@@ -1,8 +1,52 @@
+import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def load_env_file(path: str | Path = ".env") -> list[str]:
+    """Put `.env` into the process environment. Returns the names it set.
+
+    ## Why this has to exist
+
+    `Settings` reads `.env` through pydantic-settings, and pydantic-settings
+    does **not** export what it reads: it populates the settings object and
+    leaves `os.environ` alone. Every vendor adapter in this system reads
+    `os.environ` directly — `llm/providers.py` and `asr/routing.py` both, on
+    purpose, because a key is a deployment fact and not a setting with a
+    default.
+
+    Those two facts together produced a silent trap. `.env.example` lists
+    `ANTHROPIC_API_KEY=` and `XAI_API_KEY=`, which says plainly "put your keys
+    here"; a key put there reached `Settings` and nothing else. The router then
+    found no key, and the run did what it does without one — the heuristic
+    scorer, or a refusal to transcribe — while the operator was looking at a
+    file with their key in it.
+
+    Real environment variables always win: an exported key is a deliberate
+    override of the file, and in staging or production there is no file at all.
+
+    Called from the entry points rather than at import: a library that mutates
+    the environment when it is imported is a library that surprises a test.
+    """
+    env = Path(path)
+    if not env.exists():
+        return []
+    loaded: list[str] = []
+    for line in env.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, _, value = line.partition("=")
+        name, value = name.strip(), value.strip().strip("'\"")
+        if not name or not value or name in os.environ:
+            continue
+        os.environ[name] = value
+        loaded.append(name)
+    return loaded
 
 
 class Settings(BaseSettings):

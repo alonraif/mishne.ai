@@ -141,6 +141,14 @@ def run_one(media: str, model: str, out_root: Path, extra: list[str]) -> dict:
     }
 
 
+def _load_keys() -> None:
+    """Same trap as everywhere else: a key in .env reaches Settings and no
+    vendor adapter. See `config.load_env_file`."""
+    from mishne.config import load_env_file
+
+    load_env_file(Path(__file__).resolve().parents[1] / ".env")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="compare_models")
     parser.add_argument("media")
