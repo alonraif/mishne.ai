@@ -125,10 +125,18 @@ class JobResult:
     state: RunState
     steps: list[StepRun]
     seconds: float
+    #: The step this run deliberately stopped after, empty when it ran to the
+    #: end. A paused job is not finished and is not failed: it is waiting for a
+    #: person, its hold stands, and nothing is settled.
+    paused_after: str = ""
 
     @property
     def artifacts(self) -> list:
         return self.state.artifacts
+
+    @property
+    def paused(self) -> bool:
+        return bool(self.paused_after)
 
 
 #: How long to wait before a retry. Short, and not configurable per job: a
@@ -166,27 +174,71 @@ def run_job(
     )
 
     with job_span as job_trace:
-        _run_phases(request, state, sink, sleep, steps)
+        paused_after = _run_phases(request, state, sink, sleep, steps)
         cached = sum(1 for r in state.runs.values() if r.from_cache)
         job_trace.set(
             steps=len(steps),
             cached_assets=cached,
+            paused_after=paused_after,
             seconds=round(time.time() - started, 3),
         )
 
     log.info(
-        "job.complete",
+        "job.paused" if paused_after else "job.complete",
         job_id=request.job_id,
         assets=len(request.assets),
         steps=len(steps),
+        paused_after=paused_after,
         cached_assets=sum(1 for r in state.runs.values() if r.from_cache),
         seconds=round(time.time() - started, 1),
     )
-    return JobResult(state=state, steps=steps, seconds=time.time() - started)
+    return JobResult(state=state, steps=steps, seconds=time.time() - started,
+                     paused_after=paused_after)
 
 
-def _run_phases(request, state, sink, sleep, steps: list) -> None:
-    """The per-asset phase then the per-job phase, in the registry's order."""
+#: What each mode runs, and where it stops.
+#:
+#: `manual` and `hybrid` have existed in the schema, the API and the UI since
+#: B1, and the orchestrator ignored `mode` entirely — every job ran straight
+#: through to an artifact, so no job ever reached `awaiting_edit` and the cut
+#: editor had nothing to open. This is that gap.
+#:
+#:   ai      everything, once.
+#:   manual  transcribe, compile the brief, stop. The person marks the cut on
+#:           the text; proposing and scoring candidates for a solver that will
+#:           never run is money spent on nothing.
+#:   hybrid  everything through `refine`, then stop with a suggestion loaded.
+#:           Refined rather than raw: the suggestion an editor judges should be
+#:           the cut they would get, silence-snapped and frame-accurate, not the
+#:           solver's intention before stage 9 touched it.
+#:
+#: A run carrying a user's cut skips proposing and scoring in every mode —
+#: those exist to feed the solver, and the solver has been replaced by a person
+#: (`graph.step_select`).
+def phases_for(mode: str, user_cut: list[str] | None = None
+               ) -> tuple[frozenset[str], str]:
+    """(steps to skip, step to stop after) for one run of a job."""
+    if user_cut:
+        return frozenset({"propose", "score"}), ""
+    if mode == "manual":
+        return frozenset({"propose", "score", "select"}), "brief"
+    if mode == "hybrid":
+        return frozenset(), "refine"
+    return frozenset(), ""
+
+
+def _run_phases(request, state, sink, sleep, steps: list) -> str:
+    """The per-asset phase then the per-job phase, in the registry's order.
+
+    Returns the step it stopped after, or "" if it ran to the end.
+
+    `idx` counts every step in the registry whether or not this run executes it,
+    because it is the key `job_steps` rows were planned under
+    (`runner.plan`). Renumbering around a skipped step writes each result to
+    the row of the step before it, and the progress panel then shows a job
+    whose stages are all one place out.
+    """
+    skip, pause_after = phases_for(request.mode, request.user_cut)
     idx = 0
     # ── the per-asset phase, once per upload ───────────────────────────────
     for source in request.assets:
@@ -207,7 +259,12 @@ def _run_phases(request, state, sink, sleep, steps: list) -> None:
     # ── the per-job phase ──────────────────────────────────────────────────
     for spec in JOB_STEPS:
         idx += 1
+        if spec.name in skip:
+            continue
         steps.append(_execute(spec, idx, state, sink, sleep))
+        if spec.name == pause_after:
+            return spec.name
+    return ""
 
 
 def _asset_dir(request: JobRequest, asset_id: str) -> Path:
@@ -368,6 +425,7 @@ def plan(request: JobRequest) -> list[tuple[int, str, str]]:
 
 __all__ = [
     "STEPS",
+    "phases_for",
     "Cancelled",
     "JobResult",
     "ProgressSink",

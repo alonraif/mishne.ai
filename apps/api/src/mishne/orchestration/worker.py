@@ -111,6 +111,14 @@ def prepare_request(
         approved_cap = float(job.approved_cap or 0)
         brief = dict(job.brief or {})
         notes = job.notes_raw
+        # A manual or hybrid job that is queued and already has selections is
+        # being resumed: a person marked the cut and `POST /jobs/{id}/cut` put
+        # it back in the queue. An AI job's selections are the record of a cut
+        # it has already made, which is why the mode is part of the condition.
+        user_cut = (
+            _submitted_cut(s, org_id, job_id) if job.mode in ("manual", "hybrid")
+            else []
+        )
         orgs = m.Org.__table__
         tier = s.execute(
             sa.select(orgs.c.tier).where(orgs.c.id == org_id)
@@ -157,9 +165,22 @@ def prepare_request(
         language=brief.get("language"),
         stem=f"{rows[0].filename.rsplit('.', 1)[0]}_roughcut",
         router=Router(),
+        user_cut=user_cut,
     )
     return request, {"approved_cap": approved_cap, "workspace": workspace,
                      "tier": tier}
+
+
+def _submitted_cut(s, org_id: str, job_id: str) -> list[str]:
+    """The beat ids of this job's stored cut, in cut order."""
+    sel = m.Selection.__table__
+    return list(
+        s.execute(
+            sa.select(sel.c.beat_id)
+            .where(sel.c.org_id == org_id, sel.c.job_id == job_id)
+            .order_by(sel.c.order_idx)
+        ).scalars()
+    )
 
 
 def execute(org_id: str, job_id: str, settings: Settings | None = None) -> str:
@@ -207,6 +228,9 @@ def execute(org_id: str, job_id: str, settings: Settings | None = None) -> str:
         workspace.cleanup()
         return "failed"
 
+    if result.paused:
+        return _pause(result, workspace, org_id, job_id, request)
+
     published = _publish(result, workspace, org_id, job_id, request)
     _record_transcript(result, org_id, job_id)
     actual = _credits_used(result, meta["tier"])
@@ -224,6 +248,31 @@ def execute(org_id: str, job_id: str, settings: Settings | None = None) -> str:
         moved.emit()
     workspace.cleanup()
     return "complete"
+
+
+def _pause(result, workspace, org_id: str, job_id: str,
+           request: JobRequest) -> str:
+    """A job that has stopped for a person, rather than finished or failed.
+
+    The hold stands and nothing is settled: the customer approved a cap for a
+    deliverable they have not been given yet, and charging at this point would
+    bill them for a transcript while they are still deciding what to keep. The
+    money moves when the cut they submit comes back through assembly.
+
+    What IS written is the transcript, the scores and — for a hybrid job — the
+    suggested cut, because that is the thing the person is about to edit.
+    """
+    _record_transcript(result, org_id, job_id)
+    with session_for_org(org_id) as s:
+        _record_cost(s, org_id, job_id, request)
+        job_writes.set_status(s, org_id, job_id, "awaiting_edit")
+    log.info("job.awaiting_edit", job_id=job_id,
+             after=result.paused_after, mode=request.mode)
+    # The staged media goes. Stages 0-4 are published to the ingest cache and
+    # keyed on content, so the resumed run re-materialises the sources and
+    # performs no transcription (ADR-0008, ADR-0016).
+    workspace.cleanup()
+    return "awaiting_edit"
 
 
 def _record_transcript(result, org_id: str, job_id: str) -> None:

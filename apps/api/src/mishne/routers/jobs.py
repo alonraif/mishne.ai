@@ -8,6 +8,7 @@ never trust a client-supplied price.
 
 from pathlib import Path
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,7 @@ from .. import audit
 from ..auth.sessions import Principal
 from ..billing import TIERS, estimate_job
 from ..db import jobs as job_writes
+from ..db import models as m
 from ..db import repository
 from ..deps import current_principal, require_write, writable_db
 from ..logging import get_logger
@@ -243,12 +245,88 @@ async def get_transcript(job_id: str, store: Store = Depends(get_store)) -> Tran
 
 @router.post("/jobs/{job_id}/cut", response_model=Job)
 async def submit_cut(
-    job_id: str, body: SubmitCutRequest, _: Principal = Depends(require_write)
+    job_id: str,
+    body: SubmitCutRequest,
+    request: Request,
+    principal: Principal = Depends(require_write),
+    s: Session = Depends(writable_db),
 ) -> Job:
     """Submit a user-authored cut for manual or hybrid jobs.
 
-    The ordered beat ids stand in for the solver's output. Stages 9-12 —
-    refine cut points, assemble, emit, validate — run exactly as they would for
-    an AI job, which is why text-based editing costs almost nothing to support.
+    The ordered beat ids stand in for the solver's output. Stages 9-12 — refine
+    cut points, assemble, emit, validate — run exactly as they would for an AI
+    job, which is why text-based editing costs almost nothing to support
+    (ADR-0007).
+
+    The rows written here are the person's *intention*, at the beats' own
+    boundaries. The worker rewrites them once stage 9 has snapped those
+    boundaries to real silence and added handles, so what ends up stored is
+    where the cut actually is rather than where it was asked for. Both are the
+    same list in the same order; only the frames move.
+
+    No money moves here. The hold placed at submission still stands, and the
+    job settles when the cut it produces is delivered.
     """
-    raise HTTPException(501, "not implemented")
+    org_id = principal.org_id
+    job = repository.get_job(s, org_id, job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    if job.mode == "ai":
+        raise HTTPException(
+            409,
+            "this job chose its own cut. Start a hybrid job to edit a "
+            "suggestion, or a manual one to mark the transcript yourself.",
+        )
+    if job.status != "awaiting_edit":
+        # Accepting a cut for a running job would race the worker for the same
+        # rows; accepting one for a finished job would silently not re-render.
+        raise HTTPException(
+            409, f"this job is {job.status}, not waiting for an edit"
+        )
+    if not body.beat_ids:
+        raise HTTPException(422, "a cut needs at least one beat")
+    if len(set(body.beat_ids)) != len(body.beat_ids):
+        # Ordered, so a repeat is a distinct position, and `selections` would
+        # take it. Refused because it is far more likely to be a double-click in
+        # the editor than a deliberate reuse of one line twice in a piece.
+        raise HTTPException(422, "the same beat appears twice in this cut")
+
+    beats = m.Beat.__table__
+    rows = s.execute(
+        sa.select(beats.c.id, beats.c.asset_id, beats.c.start_frames,
+                  beats.c.end_frames)
+        .where(beats.c.org_id == org_id, beats.c.id.in_(body.beat_ids))
+    ).all()
+    found = {r.id: r for r in rows}
+    unknown = [b for b in body.beat_ids if b not in found]
+    if unknown:
+        raise HTTPException(422, f"no such beat in this job: {unknown[0]}")
+    wrong_job = [r.id for r in rows if r.asset_id not in job.asset_ids]
+    if wrong_job:
+        # A beat of another job's material, which is a different cut entirely
+        # and would assemble against media this job never staged.
+        raise HTTPException(
+            422, f"beat {wrong_job[0]} is not from this job's uploads"
+        )
+
+    job_writes.replace_cut(
+        s, org_id, job_id,
+        [(found[b].asset_id, b, found[b].start_frames, found[b].end_frames)
+         for b in body.beat_ids],
+    )
+    # Back in the queue. A worker picks it up, finds the stored cut, and runs
+    # from stage 9 — the per-asset stages come from the ingest cache and cost
+    # nothing (ADR-0008, ADR-0016).
+    job_writes.set_status(s, org_id, job_id, "queued")
+    audit.record(
+        s, org_id, audit.JOB_CUT_SUBMITTED, resource_type="job",
+        resource_id=job_id, actor_user_id=principal.user_id,
+        ip=audit.client_ip(request), user_agent=request.headers.get("user-agent"),
+    )
+    log.info("job.cut_submitted", job_id=job_id, beats=len(body.beat_ids),
+             mode=job.mode)
+
+    updated = repository.get_job(s, org_id, job_id)
+    if updated is None:  # pragma: no cover
+        raise HTTPException(404, "job not found")
+    return updated

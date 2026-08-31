@@ -118,6 +118,42 @@ def plan_steps(s: Session, org_id: str, job_id: str, rows: list[tuple[int, str, 
         )
 
 
+def replace_cut(
+    s: Session,
+    org_id: str,
+    job_id: str,
+    spans: list[tuple[str, str, int, int]],
+) -> None:
+    """This job's cut, as (asset_id, beat_id, in_frames, out_frames) in order.
+
+    Replaces rather than merges: a person who removes a line and saves again
+    means the line is gone, and an upsert would leave it there. The whole thing
+    is one transaction, so a failed write leaves the previous cut intact rather
+    than half of the new one.
+
+    Beat ids are the caller's to validate — this function will happily store a
+    cut of somebody else's beats, and `routers/jobs.submit_cut` is where that
+    is checked, because it is the layer that knows whose job this is.
+    """
+    table = m.Selection.__table__
+    s.execute(
+        sa.delete(table).where(table.c.org_id == org_id, table.c.job_id == job_id)
+    )
+    for order_idx, (asset_id, beat_id, start, end) in enumerate(spans):
+        s.execute(
+            sa.insert(table).values(
+                id=f"sel_{job_id}_{order_idx:03d}",
+                org_id=org_id,
+                job_id=job_id,
+                beat_id=beat_id,
+                asset_id=asset_id,
+                order_idx=order_idx,
+                src_tc_in_frames=start,
+                src_tc_out_frames=end,
+            )
+        )
+
+
 def set_status(s: Session, org_id: str, job_id: str, status: str, **values) -> None:
     jobs = m.Job.__table__
     s.execute(

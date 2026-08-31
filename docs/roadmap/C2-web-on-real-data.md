@@ -51,9 +51,14 @@ multi-asset (`Job.assetIds`, `Beat.assetId`, `Transcript.assets[]`,
    references, and `GET /v1/assets/{id}/requirements` returns the list, ordered
    by how many clips each file unblocks. Nothing renders it, and a sequence that
    silently waits is a customer who thinks the product is broken.
-5. **Persist the cut editor.** Text-based editing is a product feature, not a
-   mockup: the user marks what is in and in what order and gets an AAF back.
-   `POST /v1/jobs/{id}/cut` is the endpoint and it is still a 501.
+5. ~~**Persist the cut editor.**~~ **Done.** It needed more than an endpoint:
+   the orchestrator ignored `mode` entirely, so no job ever reached
+   `awaiting_edit` and there was nothing to edit — and the tables the editor
+   reads had no writer at all. Manual now stops after the brief, hybrid stops
+   with a refined suggestion loaded, and a submitted cut replaces the solver on
+   a resumed run. What is still missing is the Step Functions half: the
+   generated machine has no Choice on mode and no second execution, so the
+   pause exists in the runner only (see `orchestration/statemachine.py`).
 6. **Persist speaker renames and merges.** `speakers.label` and `confirmed`
    exist in the schema; nothing writes them.
 7. **Artifact download.** `storage.presigned_get` sets the filename via

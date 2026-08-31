@@ -22,6 +22,19 @@ uploads it draws on, and the machine's shape cannot depend on that number.
 `MaxConcurrency` is bounded because each branch is a worker holding the whole
 asset on local disk (ADR-0013), so unbounded fan-out is unbounded disk.
 
+## What this shape does NOT yet express
+
+A manual or hybrid job stops for a person (`runner.phases_for`) and resumes when
+they submit a cut. In the in-process runner that is a return value; in Step
+Functions it is a Choice on the job's mode and a second execution started by
+`POST /jobs/{id}/cut`, and neither exists here. The generated machine is
+therefore the AI path only.
+
+That is a gap and not a bug today — nothing is deployed, and the runner is what
+executes — but a deploy that took this file as the whole story would run a
+manual job straight through to an artifact nobody chose. Whichever session wires
+Step Functions up owns this.
+
 ## What each state does
 
 Every state is a `Task` that hands the worker `{job_id, asset_id, step}` and

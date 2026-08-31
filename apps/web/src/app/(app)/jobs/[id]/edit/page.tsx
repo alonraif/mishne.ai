@@ -51,6 +51,7 @@ export default function EditPage() {
                 transcript={transcript}
                 mode={job.mode}
                 targetDurationS={job.brief.targetDurationS}
+                jobId={job.id}
               />
             )}
           </QueryState>

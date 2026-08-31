@@ -23,7 +23,10 @@ import {
   directionFor,
 } from "@mishne/shared";
 import { SpeakerLegend, speakerColor } from "@/components/speaker-legend";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { ApiError } from "@/lib/api";
+import { apiSend } from "@/lib/dto";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -52,10 +55,14 @@ export function CutEditor({
   transcript,
   mode,
   targetDurationS,
+  jobId,
 }: {
   transcript: Transcript;
   mode: JobMode;
   targetDurationS: number;
+  /** Omitted in a preview: without it the editor is a sketch that cannot be
+   *  submitted, which is better than a button that silently does nothing. */
+  jobId?: string;
 }) {
   const aiOrder = useMemo(
     () =>
@@ -70,6 +77,32 @@ export function CutEditor({
   const [speaker, setSpeaker] = useState("all");
   const [hideFlagged, setHideFlagged] = useState(true);
   const [roster, setRoster] = useState<Speaker[]>(transcript.speakers);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  /**
+   * The cut, to the API, in the order on screen.
+   *
+   * Only the ids and their order are sent. Where each clip actually starts and
+   * ends is stage 9's answer, not the browser's: cut points snap to real
+   * silence and handles are added, and a UI that sent frames would be
+   * proposing an edit the pipeline is about to overrule.
+   */
+  const submit = async () => {
+    if (!jobId) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await apiSend(`/v1/jobs/${jobId}/cut`, { json: { beat_ids: order } });
+      // Back to the job, which is where the stages it still has to run are
+      // shown. The editor has nothing left to say once the cut is in.
+      router.push(`/jobs/${jobId}`);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.detail : String(cause));
+      setSubmitting(false);
+    }
+  };
 
   const rename = (id: string, label: string) =>
     setRoster((prev) =>
@@ -371,9 +404,19 @@ export function CutEditor({
           )}
         </Card>
 
-        <Button className="w-full" disabled={order.length === 0}>
-          <Check /> Assemble and generate artifacts
+        <Button
+          className="w-full"
+          onClick={submit}
+          disabled={order.length === 0 || submitting || !jobId}
+        >
+          <Check />{" "}
+          {submitting ? "Submitting…" : "Assemble and generate artifacts"}
         </Button>
+        {error && (
+          <p className="text-center text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
         <p className="text-center text-xs text-muted-foreground">
           Cut points snap to silence and handles are added automatically.
         </p>

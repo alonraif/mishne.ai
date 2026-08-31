@@ -120,6 +120,11 @@ class JobRequest:
     replay: Path | None = None
     diarize_models: Path | None = None
     router: object = None
+    #: An ordered list of beat ids the user chose, standing in for the solver's
+    #: output. Empty on an AI job and on the first run of a manual or hybrid
+    #: one; non-empty when a person has submitted a cut and the job is being
+    #: resumed through assembly. See `runner.phases_for`.
+    user_cut: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -379,7 +384,20 @@ def step_score(ctx: StepContext, state: RunState) -> str:
 
 def step_select(ctx: StepContext, state: RunState) -> str:
     """Stage 8. A solver, not a model: the LLM scores and CP-SAT chooses
-    (ADR-0004). Deterministic — same inputs, identical picks."""
+    (ADR-0004). Deterministic — same inputs, identical picks.
+
+    A user's cut replaces the solver rather than constraining it. When somebody
+    has marked the transcript, the question this stage answers has already been
+    answered by a person, and every stage after it — silence snapping, handles,
+    frame quantization, assembly — is unchanged. That is what makes text-based
+    editing nearly free to support (ADR-0007), and it is why the user's choice
+    enters here and not in `assemble`.
+    """
+    if state.request.user_cut:
+        state.picks = _picks_from_ids(state, state.request.user_cut)
+        picked_s = sum(p.beat.duration_ms for p in state.picks) / 1000
+        return f"{len(state.picks)} spans · {picked_s:.0f}s · user cut"
+
     state.picks = select.solve(state.candidates, state.scores, state.brief, state.order)
     if not state.picks:
         raise ValueError(
@@ -387,6 +405,30 @@ def step_select(ctx: StepContext, state: RunState) -> str:
         )
     picked_s = sum(p.beat.duration_ms for p in state.picks) / 1000
     return f"{len(state.picks)} spans · {picked_s:.0f}s"
+
+
+def _picks_from_ids(state: RunState, beat_ids: list[str]):
+    """The user's beats, in the user's order.
+
+    Candidates first, then beats: a hybrid job's editor may keep a carved span
+    the proposer offered, and that span is not a beat. An id that matches
+    neither is a wiring error and says so — silently dropping it would deliver a
+    cut missing a line the person explicitly asked for, which is the one kind of
+    mistake nobody would think to look for.
+    """
+    by_id = {b.id: b for b in state.beats}
+    by_id.update({c.id: c for c in state.candidates})
+    picks = []
+    for order_idx, beat_id in enumerate(beat_ids):
+        beat = by_id.get(beat_id)
+        if beat is None:
+            raise KeyError(
+                f"the submitted cut names {beat_id!r}, which is not a beat of "
+                f"any asset in this job"
+            )
+        picks.append(select.Selection(beat=beat, order_idx=order_idx,
+                                      score=state.scores.get(beat_id, 0.0)))
+    return picks
 
 
 def step_refine(ctx: StepContext, state: RunState) -> str:

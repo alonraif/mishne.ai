@@ -45,6 +45,10 @@ UPLOAD_CANCELLED = "asset.upload_cancelled"
 ASSET_PROBED = "asset.probed"
 ARTIFACT_DOWNLOADED = "artifact.downloaded"
 JOB_CREATED = "job.created"
+# Who decided what the piece contains. On a manual or hybrid job the cut is a
+# person's editorial judgement rather than the system's, and "who chose this"
+# is the question a disputed deliverable asks first.
+JOB_CUT_SUBMITTED = "job.cut_submitted"
 RETENTION_CHANGED = "org.retention_changed"
 # Billing. 04-security names permission and billing changes explicitly, and
 # "who bought credits, and when" is the first question a disputed charge asks.
