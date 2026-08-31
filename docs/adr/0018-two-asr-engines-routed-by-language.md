@@ -95,6 +95,40 @@ context of the sentence running into it, and speaker ids do not survive it —
 they are namespaced per chunk rather than merged, because the diarizer never
 heard the two chunks together.
 
+## Measured, 31 August 2026
+
+Both engines on the same 25.7 minutes of unedited English rushes, and Gemini on
+3.7 minutes of Hebrew.
+
+| | xAI grok-stt | Gemini 3.5 Transcribe |
+|---|---|---|
+| words | 4,740 | 4,737 |
+| speakers found | 2 | 2 |
+| filler retained | 4.3% | 4.2% |
+| wall clock, 25.7 min of audio | 19.2s (80x real time) | 71.3s (21x) |
+| cost | $0.0429 | $0.0772 |
+| per source hour | $0.100 | $0.180 |
+
+**The two engines agree on where the words are.** 4,450 words in common — 94% of
+the transcript — with a **median start-time difference of 30 ms**. One frame at
+25 fps is 40 ms, so two independently built engines place the same word inside
+the same frame. This ADR's parent puts timestamp boundary precision above word
+error rate and notes that nobody publishes it; corroboration between independent
+engines is not proof that both are right, but disagreement would have been proof
+that one was wrong, and there is none worth acting on.
+
+The consequence is that **for a language both cover, this is now purely a cost
+decision** — which is what the routing already assumes.
+
+**Both honour verbatim.** 4.3% and 4.2% filler on rushes nobody has edited. The
+`filler_words=true` and `mode.type=verbatim` flags do what they say; the smart
+formatting that would have quietly deleted "um" is off. This was the requirement
+most likely to be violated silently, and it is the one this project cannot work
+without.
+
+**Gemini's audio tokenisation is exactly as published**: 25.04 tokens per second
+across both runs, against a documented 25.
+
 **Word error rate is still unmeasured**, for these engines and for Whisper. The
 selection criteria in ADR-0003 put timestamp boundary precision above WER and
 nobody publishes either. The A1 corpus is what settles it; until then this is a

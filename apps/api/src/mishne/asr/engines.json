@@ -49,6 +49,11 @@
         "th", "tr", "vi"
       ],
       "_note": [
+        "MEASURED on 25.7 minutes of English rushes, 31 Aug 2026: 4,740 words,",
+        "2 speakers, 4.3% filler retained, 19.2 seconds of wall clock — 80x",
+        "real time — and $0.0429, which is $0.10/hour exactly, because a flat",
+        "rate on a measured duration is arithmetic rather than an estimate.",
+        "",
         "$0.10/hour batch, $0.20/hour streaming. Batch only here: a rough cut",
         "is not a live product and streaming costs double for latency nobody",
         "in this pipeline is waiting on.",

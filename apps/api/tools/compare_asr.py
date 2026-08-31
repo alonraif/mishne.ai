@@ -63,14 +63,24 @@ FILLER = {
 }
 
 
+#: How a local model directory is named on the engine list. A prefix rather
+#: than a split on "/": a model path has slashes in it, and
+#: `"local/../../models/faster-whisper-large-v3".rpartition("/")` yields the
+#: provider `local/../../models`, which is not a provider. That is exactly what
+#: happened on the first run that used --baseline.
+LOCAL = "local/"
+
+
 def transcribe(engine: str, audio: Path, language: str | None,
                work: Path) -> tuple[ASRResult, float]:
-    provider_name, _, model = engine.rpartition("/")
     t0 = time.time()
-    if provider_name == "local" or engine == "faster-whisper":
-        result = get_provider("faster-whisper", model_path=model).transcribe(
+    if engine.startswith(LOCAL) or engine == "faster-whisper":
+        model_path = engine[len(LOCAL):] if engine.startswith(LOCAL) else None
+        result = get_provider("faster-whisper", model_path=model_path,
+                              model="large-v3").transcribe(
             audio, language=language)
     else:
+        provider_name, _, model = engine.rpartition("/")
         result = get_provider(provider_name, model=model,
                               work_dir=work / model).transcribe(
             audio, language=language)
@@ -128,11 +138,27 @@ def main(argv: list[str] | None = None) -> int:
 
     engines = args.engines or [e.key for e in routing.plan(args.language)]
     if args.baseline:
-        engines.append(f"local/{args.baseline}")
+        engines.append(f"{LOCAL}{args.baseline}")
+        print("note: the self-hosted baseline runs at roughly real time on CPU. "
+              "For this material that is the wait the managed engines exist to "
+              "remove — leave it running.\n")
     if not engines:
         print("no engine available — set XAI_API_KEY or GEMINI_API_KEY, "
               "or pass --baseline with a local model directory")
         return 1
+
+    # The providers log structured lines as they go, and a JSON line landing in
+    # the middle of a table makes the table unreadable. They go to stderr so
+    # both survive: `2>/dev/null` for the table alone, `2>&1 | ...` for both.
+    import logging as stdlib_logging
+
+    stdlib_logging.basicConfig(stream=sys.stderr, level=stdlib_logging.INFO,
+                               format="%(message)s", force=True)
+    import structlog
+
+    structlog.configure(
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr)
+    )
 
     args.work.mkdir(parents=True, exist_ok=True)
     # Stages 0 and 1 as the pipeline runs them, not a reimplementation:
