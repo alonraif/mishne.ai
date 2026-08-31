@@ -24,7 +24,9 @@ registry listed a stage that did not exist and omitted four that did.
 
 ## Still absent, deliberately
 
-Terraform for the AWS estate. What it will need, per
+Terraform for the AWS estate. The phased plan for building it is
+[../docs/AWS-MIGRATION.md](../docs/AWS-MIGRATION.md); the summary below is what
+it needs, per
 [03 — Platform & Data](../docs/architecture/03-platform-and-data.md):
 
 - Three S3 buckets (raw, derived, artifacts) with distinct KMS keys and access

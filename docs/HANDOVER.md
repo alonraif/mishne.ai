@@ -1,6 +1,13 @@
 # mishne.ai — state of the project
 
-*Last updated 2026-08-30 (B1–B4; C3 cost and telemetry, C1 billing).*
+*Last updated 2026-08-31 (B1–B4; C1 billing, C2 screens on real data, C3 cost
+and telemetry; a one-command local stack, invitations, and a platform
+back-office). Nothing is deployed.*
+
+**Moving machines or opening this in VS Code / Claude Code?** Read
+[HANDOFF-CLAUDE-CODE.md](HANDOFF-CLAUDE-CODE.md) first — it says what to run,
+in what order, and what to check before trusting a green suite. The plan for
+leaving the laptop behind is [AWS-MIGRATION.md](AWS-MIGRATION.md).
 
 **Read this first if you are picking the project up cold**, in a new session, on
 a new machine, or in a new account. It says what exists, what it does, what it
@@ -118,11 +125,32 @@ Verified on two pieces of real material:
   `python -m mishne.report --org ORG JOB_ID` reads it back.
   **The number still does not exist**: no job has run with a vendor key and a
   model scorer, so `job_llm_calls` is empty and `--baseline` says so.
-- **The web app is mockups.** Ten screens against fixtures in `src/lib/`, no API.
-- **No deployment of any kind.** No infra, no CI, no environments.
+- ~~The web app is mockups.~~ **The screens read the API, as of C2.** Upload,
+  job submission and progress, a cut edited in the browser and resumed through
+  `awaiting_edit`, speaker renames and merges, presigned artifact download with
+  an audit row. `use_mocks` still serves fixtures and is still refused outside
+  `environment=local`. `npm run build` needs a Mac — the SWC binary in
+  `node_modules` is a macOS build.
+- ~~Nothing brings the stack up.~~ **`./dev.sh` does**, as of `514f6db`:
+  Postgres and MinIO, schema, app role, three buckets with CORS and lifecycle,
+  then API, web and a local job runner (`orchestration/devrunner.py`, which is
+  the reader `worker.py` deliberately is not). Access is by invitation;
+  `/signup` is closed unless `PUBLIC_SIGNUP=true`.
+- ~~No way to grant a credit by hand.~~ **A back-office**, outside the tenant
+  model: `mishne.admin` on :8001 bound to loopback, a BYPASSRLS login role, a
+  `platform_admins` credential that cannot sign into the product, an
+  append-only `platform_actions` log with a mandatory reason, and `apps/admin`
+  on :3001. Credits go through the ledger, never `org_balances`. Suspension is
+  a lock enforced in `auth/sessions.resolve`, not a label.
+- **No deployment of any kind.** No infra, no CI, no environments. This is the
+  next infrastructure step: [AWS-MIGRATION.md](AWS-MIGRATION.md).
 
-**Tests: 367 pass**, including the reference run, which needs the sample AAF and
-its stored ASR response (see below).
+**Tests: 506 pass** against a real Postgres 16, plus the back-office and
+project-creation suites added on 31 Aug, which have **not** been run on a Mac
+yet — they were verified against a live Postgres from a Linux VM that could not
+execute the repo's macOS venv. `pytest` is the first item in
+[HANDOFF-CLAUDE-CODE.md](HANDOFF-CLAUDE-CODE.md). The reference run needs the
+sample AAF and its stored ASR response (see below).
 
 ---
 
@@ -144,6 +172,7 @@ apps/api/                 the pipeline and the (mock-backed) API
     routers/, mock.py     FastAPI surface; fixtures behind use_mocks
     auth/                 providers, sessions, password hashing
     orchestration/        the runner, the step graph, the state machine, the worker
+    admin/                the back-office: its own app, role, credential and log
     audit.py              who did what, append-only
     storage.py            three buckets, the key scheme, presigned multipart
     workspace.py          objects in, real files on disk, derived files back out
@@ -153,7 +182,8 @@ apps/api/                 the pipeline and the (mock-backed) API
                           is the expand/contract contract
   Dockerfile              the worker image: ffmpeg, the models, non-root
   tests/                  300 tests
-apps/web/                 Next.js 15 mockups, Tailwind 4, shadcn/ui
+apps/web/                 Next.js 15 on the real API, Tailwind 4, shadcn/ui
+apps/admin/               the back-office, its own Next app on :3001
 packages/shared/          types, timecode, billing, RTL direction — TS
 spikes/aaf-roundtrip/     Spike A: interchange, automated, passing
 spikes/selection-quality/ Spike B: harness built, no corpus yet

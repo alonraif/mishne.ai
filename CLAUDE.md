@@ -22,32 +22,54 @@ The decisions there are considered and several are load-bearing. In particular:
 ## Layout
 
 ```
-apps/web        Next.js 15 · Tailwind 4 · shadcn/ui   — the UI
-apps/api        FastAPI · Python 3.11+ · uv           — API + pipeline steps
+apps/web        Next.js 15 · Tailwind 4 · shadcn/ui   — the customer UI (:3000)
+apps/admin      Next.js 15, deliberately its own look   — the back-office (:3001)
+apps/api        FastAPI · Python 3.11+ · uv           — API (:8000), admin API
+                                                       (:8001, loopback), pipeline
 packages/shared TypeScript types shared with the web app
 docs/           Architecture and ADRs
-infra/          docker-compose for local Postgres; Terraform later
+infra/          docker-compose for local Postgres + MinIO; Terraform later
 ```
 
 ## Current state
 
-**Stages 0–4 are real** — see [apps/api/PIPELINE.md](apps/api/PIPELINE.md).
-`ingest.py` takes a media file to structured beats and emits the format the
-selection-quality spike reads. Stages 5–12 are still stubs.
+*Accurate as of 31 Aug 2026. If this section and the code disagree, the code
+wins — and fix this section.*
 
-**The platform is being built underneath it.** B1 put in Postgres — twenty
-tables, `org_id` everywhere, RLS enabled and forced. B2 added object storage:
-presigned multipart upload straight to S3, a resumable browser client, probe on
-arrival, and lifecycle rules. B4 added identity: signup, login, SSO behind a
-provider interface, roles, and an audit log. B3 added orchestration: a durable
-runner with retries, progress and cancellation, a generated Step Functions
-definition, and a worker image — none of it deployed yet. See
-[docs/HANDOVER.md](docs/HANDOVER.md) and [docs/roadmap/](docs/roadmap/).
+**The whole thing runs on one machine with one command: `./dev.sh`.** Postgres
+and MinIO, the schema, the app login role, the three buckets with their CORS
+and lifecycle rules, then the API, the web app and a local job runner. Access is
+by invitation: `/signup` is closed unless `PUBLIC_SIGNUP=true`, which is how the
+first owner of a deployment is made.
 
-**The ten screens are still mockups**, apart from upload, login and signup.
-They render from `apps/web/src/lib/mock-data.ts`, and the API serves the same
-shapes from `apps/api/src/mishne/mock.py` behind `use_mocks` — which is refused
-outside `environment=local`. Wiring them to the real API is C2.
+**The pipeline is real, end to end.** `run.py` takes a media file or an AAF to
+four interchange artifacts and a transcript page. Transcription is a managed API
+routed by language (ADR-0018) — xAI for what it covers, Gemini for Hebrew;
+self-hosted Whisper is still one flag, for an air-gapped customer.
+
+**The platform underneath it is built.** B1 Postgres with `org_id` everywhere and
+RLS forced; B2 presigned multipart upload straight to S3/MinIO; B3 a durable
+runner, generated Step Functions definition and worker image; B4 identity,
+roles, sessions and an audit log; C1 Stripe behind a payment-provider interface;
+C3 per-job cost as a projection of recorded model calls.
+
+**C2 is done: the screens read the API, not fixtures.** Upload, submission,
+progress, a cut edited in the browser, speaker renames and merges, artifact
+download. `use_mocks` still exists and is refused outside `environment=local`.
+
+**A platform back-office exists**, outside the tenant model: its own process on
+:8001 bound to loopback, its own BYPASSRLS role, its own credential table, its
+own append-only action log with a mandatory reason. It is how credits are
+granted by hand until the Buy buttons are wired.
+
+**Nothing is deployed.** No Terraform, no AWS account, no CI, no environments.
+Moving to AWS + S3 is the next infrastructure step — see
+[docs/AWS-MIGRATION.md](docs/AWS-MIGRATION.md), which runs after the QA pass in
+[docs/HANDOFF-CLAUDE-CODE.md](docs/HANDOFF-CLAUDE-CODE.md).
+
+**Still open:** the browser-to-AAF path has never been clicked through end to
+end against MinIO; the Buy buttons are inert; A1 (selection corpus) and A2 (Avid
+acceptance) are the two risks that can still end the product.
 
 ## Rules that matter
 
@@ -97,10 +119,20 @@ Component primitives in `apps/web/src/components/ui/` follow shadcn/ui conventio
 ## Commands
 
 ```bash
-npm install            # once, from the repo root
-npm run dev            # web app on :3000
-npm run api            # FastAPI on :8000
-npm run db             # local Postgres
+npm install            # once, from the repo root (apps/admin is a workspace)
+./dev.sh               # everything: Postgres, MinIO, schema, buckets, API, web, worker
+./dev.sh setup         # stop before the processes
+./dev.sh api|web|worker|admin      # one of them, in its own terminal
 npm run typecheck
 npm run build
+```
+
+The Python side lives in `apps/api/.venv` and is not on your PATH. Prefix with
+`.venv/bin/` or activate it — this is the single most common five minutes lost
+by someone picking the project up.
+
+```bash
+cd apps/api && ./setup.sh
+.venv/bin/alembic upgrade head
+.venv/bin/python -m pytest -q
 ```

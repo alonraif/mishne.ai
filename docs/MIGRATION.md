@@ -1,5 +1,12 @@
 # Migrating mishne.ai to another account or machine
 
+> **Note (31 Aug 2026).** This document describes moving the *repository* to
+> another machine or account, and its opening claim is now out of date: there
+> is a remote (`github.com/alonraif/mishne.ai`) and the tree is committed. For
+> moving the *system* to AWS, see [AWS-MIGRATION.md](AWS-MIGRATION.md). For
+> picking the project up in VS Code with Claude Code, see
+> [HANDOFF-CLAUDE-CODE.md](HANDOFF-CLAUDE-CODE.md).
+
 Everything the project is currently lives in **one local git repository with no
 remote**, plus two large directories that are deliberately not committed. There
 is no cloud infrastructure, no database, and no deployment — which makes this

@@ -55,10 +55,10 @@ exist now, and each brief says so rather than asking for them again.
 
 | | Workstream | Prompt | Depends on | Start here because |
 |---|---|---|---|---|
-| [C1](C1-billing-live.md) | Stripe and the price of a credit | [prompt](C1-SESSION-PROMPT.md) | B1, B3, B4 | nothing takes money yet |
-| [C2](C2-web-on-real-data.md) | The screens on real data | [prompt](C2-SESSION-PROMPT.md) | B1-B4 | eight screens still render fixtures |
-| [C3](C3-observability.md) | Cost per job, traces, alerting | [prompt](C3-SESSION-PROMPT.md) | B3 | C1 cannot price without its numbers |
-| [C4](C4-security-and-retention.md) | Retention, deletion, the vendor register | [prompt](C4-SESSION-PROMPT.md) | B1, B2 | a broadcaster's review asks for it |
+| [C1](C1-billing-live.md) | Stripe and the price of a credit | [prompt](C1-SESSION-PROMPT.md) | B1, B3, B4 | **done**, bar a real Stripe account |
+| [C2](C2-web-on-real-data.md) | The screens on real data | [prompt](C2-SESSION-PROMPT.md) | B1-B4 | **done** |
+| [C3](C3-observability.md) | Cost per job, traces, alerting | [prompt](C3-SESSION-PROMPT.md) | B3 | **mostly done**; log retention open |
+| [C4](C4-security-and-retention.md) | Retention, deletion, the vendor register | [prompt](C4-SESSION-PROMPT.md) | B1, B2 | **next**, and a broadcaster's review asks for it |
 
 **C3 before C1, if you want the order that unblocks things.** What a credit is
 worth depends on what a job costs, and that number does not exist: model spend
@@ -96,4 +96,8 @@ A1 and A2 are the ones that matter.
 | Storage and upload | **Works.** Resumable direct-to-S3, probe on arrival, lifecycle rules. |
 | Auth and tenancy | **Works.** Sessions, roles, audit log, WorkOS behind an interface. |
 | Orchestration | **Works, undeployed.** Durable runner, generated state machine, worker image. |
-| Billing, the ten screens, observability | **Not built.** C1, C2, C3. |
+| Billing (Stripe behind an interface) | **Built, no account.** `payment_provider=fake` until keys exist. C1. |
+| The ten screens on real data | **Done.** Upload, progress, browser cut, speaker edits, artifact download. C2. |
+| Cost per job, traces, alerting | **Schema and spans done**, C3's log retention still open. |
+| Platform back-office | **Built.** Separate process, BYPASSRLS role, append-only action log. |
+| Deployment | **None.** No Terraform, no AWS account, no CI. See [../AWS-MIGRATION.md](../AWS-MIGRATION.md). |
