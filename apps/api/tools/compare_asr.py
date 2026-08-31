@@ -210,20 +210,27 @@ def main(argv: list[str] | None = None) -> int:
     keys = list(results)
     if len(keys) > 1:
         print("\nboundary agreement, median |Δ start| on words both returned")
-        base = keys[0]
-        for other in keys[1:]:
-            agreement = boundary_agreement(results[base], results[other])
-            if agreement is None:
-                print(f"  {base} vs {other}: no words in common — that is the "
-                      f"finding, not a bug in the comparison")
-                continue
-            matched, median = agreement
-            share = matched / max(len(results[base].words), 1)
-            print(f"  {base} vs {other}: {median:.0f} ms over {matched} words "
-                  f"({share * 100:.0f}% of the first transcript)")
+        # Every pair, not each against the first. With three engines the
+        # interesting fact is not how far each is from one of them but which
+        # one is the outlier: two agreeing closely while a third differs from
+        # both by the same amount says something no single column shows, and
+        # comparing only against engines[0] hides it behind whichever engine
+        # happened to be listed first.
+        for i, a in enumerate(keys):
+            for b in keys[i + 1:]:
+                agreement = boundary_agreement(results[a], results[b])
+                if agreement is None:
+                    print(f"  {a} vs {b}: no words in common — that is the "
+                          f"finding, not a bug in the comparison")
+                    continue
+                matched, median = agreement
+                share = matched / max(len(results[a].words), 1)
+                print(f"  {a} vs {b}: {median:.0f} ms over {matched} words "
+                      f"({share * 100:.0f}%)")
         print("\nA large median with high overlap means the engines agree on "
               "the words and disagree on where they are, which is the failure "
-              "that costs cuts rather than accuracy (ADR-0003).")
+              "that costs cuts rather than accuracy (ADR-0003). One frame at "
+              "25 fps is 40 ms.")
 
     for engine, result in results.items():
         out = args.work / f"{wav.stem}.{engine.replace('/', '_')}.asr.json"
