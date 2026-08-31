@@ -45,6 +45,9 @@ MEMBER_INVITED = "member.invited"
 MEMBER_INVITE_REVOKED = "member.invite_revoked"
 MEMBER_JOINED = "member.joined"
 MEMBER_REMOVED = "member.removed"
+# A project is the container everything else hangs off, and "who added
+# this, and when" is the first question asked of a name nobody recognises.
+PROJECT_CREATED = "project.created"
 UPLOAD_STARTED = "asset.upload_started"
 UPLOAD_COMPLETED = "asset.upload_completed"
 UPLOAD_CANCELLED = "asset.upload_cancelled"
