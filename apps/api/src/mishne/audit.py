@@ -54,6 +54,10 @@ UPLOAD_CANCELLED = "asset.upload_cancelled"
 ASSET_PROBED = "asset.probed"
 ARTIFACT_DOWNLOADED = "artifact.downloaded"
 JOB_CREATED = "job.created"
+# A job's name is what everyone in the building calls the cut. Renaming one is
+# harmless to the work and confusing to everyone else, so the row exists to
+# answer "this was called something else last week — who changed it".
+JOB_RENAMED = "job.renamed"
 # Who decided what the piece contains. On a manual or hybrid job the cut is a
 # person's editorial judgement rather than the system's, and "who chose this"
 # is the question a disputed deliverable asks first.

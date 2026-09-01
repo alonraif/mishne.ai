@@ -169,6 +169,22 @@ def set_status(s: Session, org_id: str, job_id: str, status: str, **values) -> N
     )
 
 
+def rename(s: Session, org_id: str, job_id: str, name: str) -> bool:
+    """The customer's own name for a job. False when there is no such job.
+
+    Scoped on `org_id` as well as the id, like every other write here: RLS is
+    the backstop, and a query that relies on it alone is one `SET ROLE` away
+    from being wrong.
+    """
+    jobs = m.Job.__table__
+    result = s.execute(
+        sa.update(jobs)
+        .where(jobs.c.org_id == org_id, jobs.c.id == job_id)
+        .values(name=name)
+    )
+    return bool(result.rowcount)
+
+
 def get_status(s: Session, org_id: str, job_id: str) -> str | None:
     jobs = m.Job.__table__
     row = s.execute(

@@ -32,6 +32,7 @@ from ..schemas import (
     JOB_NAME_MAX,
     Job,
     MergeSpeakersRequest,
+    RenameJobRequest,
     RenameSpeakerRequest,
     SubmitCutRequest,
     Transcript,
@@ -222,6 +223,41 @@ async def get_job(job_id: str, store: Store = Depends(get_store)) -> Job:
     if job is None:
         raise HTTPException(404, "job not found")
     return job
+
+
+@router.patch("/jobs/{job_id}", response_model=Job)
+async def rename_job(
+    job_id: str,
+    body: RenameJobRequest,
+    request: Request,
+    principal: Principal = Depends(require_write),
+    s: Session = Depends(writable_db),
+) -> Job:
+    """Change what a job is called.
+
+    A name is a label and never an identifier: `id` is what every link, every
+    audit row and every support conversation is keyed on, and the artifacts are
+    named after the source file rather than the job. So this changes nothing
+    downstream and is allowed at any status — including on a finished job,
+    which is when somebody notices that "Untitled" was a poor choice.
+
+    Audited, because the name is what everybody else in the building calls the
+    cut. Not logged: a job name is the customer's own text and belongs in the
+    database, not in a log line (docs/architecture/04).
+    """
+    org_id = principal.org_id
+    if not job_writes.rename(s, org_id, job_id, body.name):
+        raise HTTPException(404, "job not found")
+    audit.record(
+        s, org_id, audit.JOB_RENAMED, resource_type="job", resource_id=job_id,
+        actor_user_id=principal.user_id, ip=audit.client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    log.info("job.renamed", job_id=job_id)
+    renamed = repository.get_job(s, org_id, job_id)
+    if renamed is None:  # pragma: no cover - the update just matched a row
+        raise HTTPException(404, "job not found")
+    return renamed
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=Job)

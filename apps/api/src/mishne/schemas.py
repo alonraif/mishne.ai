@@ -445,6 +445,19 @@ class EstimateJobRequest(BaseModel):
 JOB_NAME_MAX = 120
 
 
+def _a_job_name(v: str) -> str:
+    """Trimmed, single-line, and bounded. It is rendered in a list row.
+
+    One rule for both the name a job is created with and the name it is later
+    renamed to — a job that could be renamed to something submission would
+    have refused is a list row that breaks after the fact.
+    """
+    v = " ".join(v.split())
+    if len(v) > JOB_NAME_MAX:
+        raise ValueError(f"a job name may be at most {JOB_NAME_MAX} characters")
+    return v
+
+
 class CreateJobRequest(BaseModel):
     #: One or more uploads, in the order they should be treated as sequential.
     asset_ids: list[str]
@@ -477,11 +490,7 @@ class CreateJobRequest(BaseModel):
     @field_validator("name")
     @classmethod
     def _a_short_label(cls, v: str) -> str:
-        """Trimmed, single-line, and bounded. It is rendered in a list row."""
-        v = " ".join(v.split())
-        if len(v) > JOB_NAME_MAX:
-            raise ValueError(f"a job name may be at most {JOB_NAME_MAX} characters")
-        return v
+        return _a_job_name(v)
 
     @field_validator("language")
     @classmethod
@@ -494,6 +503,26 @@ class CreateJobRequest(BaseModel):
             )
         base, _, region = v.partition("-")
         return f"{base.lower()}-{region.upper()}" if region else base.lower()
+
+
+class RenameJobRequest(BaseModel):
+    """What the customer now calls this job.
+
+    Empty is refused, where submission accepts it: submission has a source
+    filename to fall back on and this has nothing. `jobs.name` is NOT NULL and
+    exists so that no screen has to print the primary key, so a rename that
+    clears it would put `job_8a98a1ca` back on the list row it replaced.
+    """
+
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def _a_short_label(cls, v: str) -> str:
+        v = _a_job_name(v)
+        if not v:
+            raise ValueError("a job needs a name")
+        return v
 
 
 class InviteRequest(BaseModel):

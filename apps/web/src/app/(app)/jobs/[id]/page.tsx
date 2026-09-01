@@ -9,10 +9,12 @@ import {
   ShieldCheck,
   AlertTriangle,
   Scissors,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/status-badge";
 import { JobStages } from "@/components/job-stages";
@@ -20,10 +22,11 @@ import { AssetFacts, KIND_ICON } from "@/components/asset-meta";
 import { useState } from "react";
 import { PageSkeleton, QueryState } from "@/components/query-state";
 import { ApiError } from "@/lib/api";
-import { apiGet } from "@/lib/dto";
+import { apiGet, apiSend } from "@/lib/dto";
 import { useApi } from "@/lib/use-api";
 import {
   JOB_MODE_LABEL,
+  JOB_NAME_MAX,
   formatBytes,
   formatCredits,
   formatDuration,
@@ -42,18 +45,18 @@ export default function JobPage() {
   // This is the screen somebody leaves open while the job runs, so it is the
   // one that polls. Three seconds: a stage's `detail` string changes about that
   // often, and the request is one row plus its steps.
-  const job = useApi<Job>(`/v1/jobs/${id}`, {
+  const query = useApi<Job>(`/v1/jobs/${id}`, {
     poll: (j) => (SETTLED.includes(j.status) ? null : 3_000),
   });
 
   return (
-    <QueryState query={job} missing="No such job." skeleton={<PageSkeleton />}>
-      {(job) => <JobView job={job} />}
+    <QueryState query={query} missing="No such job." skeleton={<PageSkeleton />}>
+      {(job) => <JobView job={job} onRenamed={query.refetch} />}
     </QueryState>
   );
 }
 
-function JobView({ job }: { job: Job }) {
+function JobView({ job, onRenamed }: { job: Job; onRenamed: () => void }) {
   const project = useApi<Project>(`/v1/projects/${job.projectId}`);
   const assetsQuery = useApi<Asset[]>(`/v1/projects/${job.projectId}/assets`);
   // Artifacts appear when the job finishes, so this asks once the status says
@@ -97,7 +100,7 @@ function JobView({ job }: { job: Job }) {
           <ArrowLeft className="size-3.5" /> {project.data?.name ?? "Project"}
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">{job.name}</h1>
+          <JobTitle job={job} onRenamed={onRenamed} />
           <Badge variant="outline">{JOB_MODE_LABEL[job.mode]}</Badge>
           <StatusBadge status={job.status} />
         </div>
@@ -338,6 +341,111 @@ function JobView({ job }: { job: Job }) {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The job's name, and a way to change it.
+ *
+ * A name is chosen before the work has been seen and judged after it, so this
+ * is on the job's own page rather than only in the form that created it. The
+ * name is a label and never an identifier — the id under it is what links,
+ * artifacts and support conversations are keyed on — which is why renaming is
+ * allowed at any status, finished jobs included.
+ *
+ * Not optimistic. A rename is one field and the request is short, and a name
+ * that appears to have saved and has not is the one outcome worth avoiding:
+ * this is the string everyone else in the building will use for the cut.
+ */
+function JobTitle({ job, onRenamed }: { job: Job; onRenamed: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(job.name);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const open = () => {
+    setName(job.name);
+    setError(null);
+    setEditing(true);
+  };
+
+  const save = async () => {
+    const next = name.trim();
+    // Nothing to say, or nothing to change: close rather than spend a request
+    // and an audit row on a no-op.
+    if (!next || next === job.name) {
+      setEditing(false);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await apiSend<Job>(`/v1/jobs/${job.id}`, {
+        method: "PATCH",
+        json: { name: next },
+      });
+      // Re-read rather than patch the copy in hand: the endpoint returns the
+      // job as it now stands, and one answer to "what is on screen" is the
+      // whole point of `useApi`.
+      onRenamed();
+      setEditing(false);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.detail : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <div className="flex min-w-0 items-center gap-1.5">
+        <h1 className="truncate text-2xl font-semibold tracking-tight">{job.name}</h1>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 text-muted-foreground"
+          onClick={open}
+          title="Rename this job"
+          aria-label="Rename this job"
+        >
+          <Pencil className="size-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        <Input
+          autoFocus
+          value={name}
+          maxLength={JOB_NAME_MAX}
+          disabled={busy}
+          aria-label="Job name"
+          className="h-9 w-80 max-w-full text-base"
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter and Escape, because this is a one-field form and reaching
+            // for the mouse to leave it is the thing that makes inline editing
+            // worse than a dialog.
+            if (e.key === "Enter") void save();
+            if (e.key === "Escape") setEditing(false);
+          }}
+        />
+        <Button size="sm" onClick={() => void save()} disabled={busy || !name.trim()}>
+          {busy ? "Saving…" : "Save"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={busy}>
+          Cancel
+        </Button>
+      </div>
+      {error && (
+        <span className="text-xs text-destructive" role="alert">
+          {error}
+        </span>
+      )}
     </div>
   );
 }

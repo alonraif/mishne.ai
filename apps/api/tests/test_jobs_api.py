@@ -390,3 +390,84 @@ def test_a_name_is_trimmed_to_one_line_and_a_long_one_is_refused(api, ready_asse
 
     refused = _submit(http, _estimate(http), name="x" * 121)
     assert refused.status_code == 422, refused.text
+
+
+# ──────────────────────────────────────────────────────────── renaming it
+
+
+def test_a_job_can_be_renamed_after_it_was_created(api, owner, ready_asset):
+    """A name is chosen before the work is seen, and judged after it.
+
+    Allowed at any status: the name is a label, not an identifier — nothing
+    downstream is keyed on it, and a finished job is exactly when somebody
+    notices that "Untitled" was a poor choice.
+    """
+    http, _ = api
+    job_id = _submit(http, _estimate(http), name="Ep. 3").json()["id"]
+
+    renamed = http.patch(f"/v1/jobs/{job_id}", json={"name": "Ep. 3 — web cut"})
+
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "Ep. 3 — web cut"
+    assert http.get(f"/v1/jobs/{job_id}").json()["name"] == "Ep. 3 — web cut"
+    with owner.begin() as conn:
+        actions = [
+            r.action
+            for r in conn.execute(
+                sa.text("SELECT action FROM audit_log WHERE resource_id = :j"),
+                {"j": job_id},
+            )
+        ]
+    assert "job.renamed" in actions
+
+
+def test_a_rename_obeys_the_rule_submission_obeys(api, ready_asset):
+    """One rule for both, or a job can be renamed to something that would
+    never have been accepted in the first place."""
+    http, _ = api
+    job_id = _submit(http, _estimate(http)).json()["id"]
+
+    trimmed = http.patch(f"/v1/jobs/{job_id}", json={"name": "  Ep. 3\n  web  cut  "})
+    assert trimmed.status_code == 200, trimmed.text
+    assert trimmed.json()["name"] == "Ep. 3 web cut"
+
+    assert http.patch(f"/v1/jobs/{job_id}", json={"name": "x" * 121}).status_code == 422
+
+
+def test_a_job_cannot_be_renamed_to_nothing(api, ready_asset):
+    """`jobs.name` is NOT NULL and exists so no screen prints the id. Clearing
+    it would put `job_8a98a1ca` back on the row it replaced — and submission
+    has a source filename to fall back on where this has nothing."""
+    http, _ = api
+    job_id = _submit(http, _estimate(http), name="Ep. 3").json()["id"]
+
+    assert http.patch(f"/v1/jobs/{job_id}", json={"name": "   "}).status_code == 422
+    assert http.get(f"/v1/jobs/{job_id}").json()["name"] == "Ep. 3"
+
+
+def test_a_viewer_cannot_rename_a_job(api, owner, ready_asset):
+    http, _ = api
+    job_id = _submit(http, _estimate(http), name="Ep. 3").json()["id"]
+
+    refused = http.patch(
+        f"/v1/jobs/{job_id}",
+        json={"name": "Mine now"},
+        headers={"Authorization": f"Bearer {mint_session(owner, ORG, VIEWER_USER)}"},
+    )
+
+    assert refused.status_code == 403
+    assert http.get(f"/v1/jobs/{job_id}").json()["name"] == "Ep. 3"
+
+
+def test_renaming_a_job_that_is_not_yours_is_a_404(api, ready_asset, other_tenant):
+    http, _ = api
+    job_id = _submit(http, _estimate(http), name="Ep. 3").json()["id"]
+
+    theirs = http.patch(
+        f"/v1/jobs/{job_id}",
+        json={"name": "Mine now"},
+        headers={"Authorization": f"Bearer {other_tenant}"},
+    )
+
+    assert theirs.status_code == 404
+    assert http.get(f"/v1/jobs/{job_id}").json()["name"] == "Ep. 3"

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import {
   JOB_MODE_LABEL,
+  JOB_NAME_MAX,
   TIERS,
   formatCredits,
   formatDuration,
@@ -117,8 +118,6 @@ const MODES: Array<{ id: JobMode; hint: string; icon: typeof Sparkles }> = [
   },
 ];
 
-// Matches `JOB_NAME_MAX` in the API, which refuses anything longer.
-const NAME_MAX = 120;
 
 /**
  * A name for a job the customer has not named yet.
@@ -131,7 +130,7 @@ const NAME_MAX = 120;
 function suggestedName(filename: string | undefined): string {
   if (!filename) return "";
   const stem = filename.replace(/\.[^./\\]+$/, "").trim();
-  return stem.slice(0, NAME_MAX);
+  return stem.slice(0, JOB_NAME_MAX);
 }
 
 const STEPS = ["Source", "Method", "Brief", "Estimate"] as const;
@@ -415,7 +414,7 @@ export function NewJobFlow({
               <Input
                 id="job-name"
                 value={name}
-                maxLength={NAME_MAX}
+                maxLength={JOB_NAME_MAX}
                 placeholder="Ep. 3 — web cut"
                 aria-invalid={!name.trim()}
                 onChange={(e) => {

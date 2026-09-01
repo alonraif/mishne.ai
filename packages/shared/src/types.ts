@@ -145,6 +145,17 @@ export interface JobStep {
   detail?: string;
 }
 
+/**
+ * The longest a job name may be, matching `JOB_NAME_MAX` in the API, which
+ * refuses anything longer.
+ *
+ * Here rather than in each field that enforces it: the submission form and the
+ * rename control are two chances to disagree with the API about the same
+ * number, and disagreeing means letting somebody type a paragraph and then
+ * showing them a 422 for it.
+ */
+export const JOB_NAME_MAX = 120;
+
 export interface Job {
   id: string;
   projectId: string;
