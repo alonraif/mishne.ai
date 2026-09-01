@@ -238,3 +238,107 @@ def test_the_job_caches_land_under_a_workspace_as_well_as_a_path(tmp_path):
         job_dir = graph.RunState(request=request).job_dir
         assert job_dir == root / "jobs" / "job_1"
         assert job_dir.is_dir()
+
+
+# ── what a failure leaves behind ──────────────────────────────────────────
+#
+# job_ef028410 failed three times with `{"code": "ASRError"}` and nothing else:
+# no status, no step, no attempt count. The message may not be persisted — it
+# can quote a filename — but everything below can be, and without it a
+# transient rate limit and a permanently malformed request are the same row.
+
+
+def test_a_failed_step_records_the_vendors_status_alongside_the_type(
+        monkeypatch, tmp_path):
+    impls = {name: (lambda ctx, state: "ok") for name in STEP_NAMES}
+
+    class Refused(RuntimeError):
+        status = 429
+
+    def refused(ctx, state):
+        raise Refused("HTTP 429: quota exceeded for project 12345")
+
+    impls["transcribe"] = refused
+    monkeypatch.setattr(graph, "IMPLEMENTATIONS", impls)
+
+    sink = RecordingSink()
+    with pytest.raises(Refused):
+        run_job(_request(tmp_path), sink, sleep=lambda _s: None)
+
+    run = [s for s in sink.steps if s.name == "transcribe"][-1]
+    assert run.error_code == "Refused"
+    assert run.error_status == 429
+    # The message stays in memory for the process that raised it and goes no
+    # further — `sink._error_facts` is what reaches the database.
+    from mishne.orchestration.sink import _error_facts
+    assert _error_facts(run) == {"code": "Refused", "status": 429}
+
+
+def test_a_failure_that_is_not_a_vendor_response_has_no_status():
+    from mishne.orchestration.runner import StepRun
+    from mishne.orchestration.sink import _error_facts
+
+    run = StepRun(idx=3, name="transcribe", label="Transcribe",
+                  error_code="ValueError")
+
+    assert _error_facts(run) == {"code": "ValueError"}
+
+
+def test_the_exception_says_which_stage_and_which_attempt_ran_out(
+        monkeypatch, tmp_path):
+    """Both were read by the worker's alert with `getattr` and never set."""
+    impls = {name: (lambda ctx, state: "ok") for name in STEP_NAMES}
+
+    def broken(ctx, state):
+        raise RuntimeError("nope")
+
+    impls["transcribe"] = broken
+    monkeypatch.setattr(graph, "IMPLEMENTATIONS", impls)
+
+    with pytest.raises(RuntimeError) as caught:
+        run_job(_request(tmp_path), sleep=lambda _s: None)
+
+    assert caught.value.step == "transcribe"
+    assert caught.value.attempt == 3
+
+
+def test_what_reaches_job_steps_is_facts_on_failure_and_nothing_on_success(
+        monkeypatch, tmp_path):
+    """A step that failed twice and then succeeded is a step that succeeded.
+
+    `error={}` is how the sink says "clear it": `upsert_step` stores an empty
+    dict as NULL, and `None` would leave the previous attempt's failure sitting
+    on a row whose status now reads `done`.
+    """
+    import contextlib
+
+    from mishne.orchestration import sink as sink_mod
+    from mishne.orchestration.runner import StepRun
+
+    wrote: list[dict] = []
+
+    class Writes:
+        @staticmethod
+        def record_llm_calls(*a, **kw):
+            return 0
+
+        @staticmethod
+        def upsert_step(*a, **kw):
+            wrote.append(kw)
+
+    monkeypatch.setattr(sink_mod, "job_writes", Writes)
+    monkeypatch.setattr(sink_mod, "session_for_org",
+                        lambda org_id: contextlib.nullcontext(None))
+    sink = sink_mod.DatabaseSink("org_1", "job_1")
+    sink._check_duration = lambda run: None
+
+    run = StepRun(idx=3, name="transcribe", label="Transcribe")
+    run.error_code, run.error_status = "ASRError", 429
+    sink.step_failed(run, will_retry=True)
+    sink.step_failed(run, will_retry=False)
+    sink.step_finished(run)
+
+    assert wrote[0]["error"] == {"code": "ASRError", "status": 429}
+    assert wrote[1]["error"] == {"code": "ASRError", "status": 429}
+    # Empty, not None: None means "leave the column alone".
+    assert wrote[2]["error"] == {}

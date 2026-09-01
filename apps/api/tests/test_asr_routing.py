@@ -551,3 +551,184 @@ def test_a_cached_transcript_is_not_billed_again():
 
     assert back.cost_usd == 0.0
     assert back.audio_seconds == 1800.0, "duration survives; the charge does not"
+
+
+# ── a vendor that says "not now" ──────────────────────────────────────────
+#
+# job_ef028410 (1 Sep 2026) failed three times in stage 3 with nothing recorded
+# but `ASRError`. Hebrew has one engine, so the router had nobody to fail over
+# to; the runner's answer was to re-run the whole stage, re-paying for the half
+# that had already succeeded. These pin the two halves of the fix and the rule
+# that keeps it from paying twice.
+
+
+def _http_error(code: int, headers: dict | None = None):
+    import io
+    import urllib.error
+
+    return urllib.error.HTTPError("https://vendor", code, "no", headers or {},
+                                  io.BytesIO(b"{}"))
+
+
+def test_a_rate_limit_carries_its_status_and_the_wait_the_vendor_asked_for():
+    from mishne.asr import transport
+
+    err = transport._error(_http_error(429, {"retry-after": "7"}))
+
+    assert err.status == 429
+    assert err.retry_after == 7.0
+    assert err.retryable
+
+
+def test_a_retry_after_of_a_day_is_a_quota_not_a_wait():
+    """Holding a worker for an hour on a vendor's say-so is not a retry."""
+    from mishne.asr import transport
+
+    err = transport._error(_http_error(429, {"retry-after": "86400"}))
+
+    assert err.retry_after == transport.RETRY_AFTER_MAX_S
+
+
+def test_a_rate_limit_is_asked_again_in_place_after_the_wait_it_named():
+    from mishne.asr import transport
+
+    slept: list[float] = []
+    tries: list[int] = []
+
+    def attempt():
+        tries.append(1)
+        if len(tries) < 3:
+            raise ASRError("HTTP 429", status=429, retry_after=3.0)
+        return "transcript"
+
+    assert transport._send(attempt, sleep=slept.append) == "transcript"
+    assert len(tries) == 3
+    # The vendor's number, not ours.
+    assert slept == [3.0, 3.0]
+
+
+def test_a_bad_request_is_not_asked_again():
+    """A 400 is our request being wrong. Three more get the same answer."""
+    from mishne.asr import transport
+
+    tries: list[int] = []
+
+    def attempt():
+        tries.append(1)
+        raise ASRError("HTTP 400", retryable=False, status=400)
+
+    with pytest.raises(ASRError):
+        transport._send(attempt, sleep=lambda _s: None)
+    assert len(tries) == 1
+
+
+def test_a_timeout_is_not_asked_again_because_the_hour_may_be_transcribed():
+    """The paying-twice rule in the transport docstring, as a test.
+
+    A timeout carries no status: the vendor may have done the work and lost the
+    response, so asking again is a second hour of audio at full price. That one
+    stays the router's decision, and the router knows there is a cost to it.
+    """
+    from mishne.asr import transport
+
+    tries: list[int] = []
+
+    def attempt():
+        tries.append(1)
+        raise ASRError("TimeoutError: timed out", retryable=True)
+
+    with pytest.raises(ASRError):
+        transport._send(attempt, sleep=lambda _s: None)
+    assert len(tries) == 1
+
+
+def test_a_rate_limit_that_never_lifts_still_fails_the_step():
+    from mishne.asr import transport
+
+    tries: list[int] = []
+
+    def attempt():
+        tries.append(1)
+        raise ASRError("HTTP 503", status=503)
+
+    with pytest.raises(ASRError):
+        transport._send(attempt, sleep=lambda _s: None)
+    assert len(tries) == len(transport.RETRY_S) + 1
+
+
+# ── a chunk that succeeded is not paid for twice ──────────────────────────
+
+
+def _splitting(provider):
+    """The same provider with an engine that splits a two-second file."""
+    import dataclasses
+
+    provider.engine = dataclasses.replace(provider.engine, max_seconds=1)
+    return provider
+
+
+def test_a_chunk_that_succeeded_is_not_transcribed_again_by_the_next_attempt(
+        monkeypatch, tmp_path):
+    """The retry under test is the runner's: it re-enters the provider fresh."""
+    asked: list[int] = []
+
+    def fake_post(url, headers, body, timeout=0):
+        asked.append(len(asked))
+        if len(asked) == 2:  # the second chunk, first time round
+            raise ASRError("HTTP 429", status=429)
+        return GEMINI_RESPONSE, 9999
+
+    provider = _splitting(_gemini(monkeypatch, GEMINI_RESPONSE))
+    monkeypatch.setattr("mishne.asr.gemini_provider.post_json", fake_post)
+    audio = wav(tmp_path / "he.wav", seconds=2.0)
+
+    with pytest.raises(ASRError):
+        provider.transcribe(audio, language="he")
+    assert len(asked) == 2
+
+    # A new provider, as the runner builds one per attempt.
+    again = _splitting(_gemini(monkeypatch, GEMINI_RESPONSE))
+    monkeypatch.setattr("mishne.asr.gemini_provider.post_json", fake_post)
+    result = again.transcribe(audio, language="he")
+
+    # Three requests in total, not five: chunk 0 was banked, and only the
+    # chunk that never came back was asked for again.
+    assert len(asked) == 3
+    assert result.chunks == 2
+
+
+def test_unsplit_audio_is_not_banked_beside_the_stage_input(monkeypatch,
+                                                            tmp_path):
+    """The whole-file cache owns that case, with the normalised transcript."""
+    provider = _gemini(monkeypatch, GEMINI_RESPONSE)
+
+    provider.transcribe(wav(tmp_path / "he.wav"), language="he")
+
+    assert not list(tmp_path.glob("*.chunk.json"))
+
+
+def test_a_banked_chunk_keeps_the_money_it_actually_spent(tmp_path):
+    """A bank that zeroed the cost would hide the spend of a retried job.
+
+    The whole-file cache still refuses to carry money, for the reason in
+    `ASRResult.from_dict`: that one is a different run's spend.
+    """
+    chunk = chunking.Chunk(0, 0.0, 1.0, tmp_path / "a.c00.wav")
+    spent = ASRResult(words=[Word("שלום", 0, 500)], language="he",
+                      provider="google", model="gemini-3.5-transcribe",
+                      audio_seconds=1798.7, cost_usd=0.089938)
+
+    chunking.memo_write(chunk, spent)
+    banked = chunking.memo_read(chunk)
+
+    assert banked is not None
+    assert banked.cost_usd == pytest.approx(0.089938)
+    assert ASRResult.from_dict(spent.to_dict()).cost_usd == 0.0
+
+
+def test_a_half_written_bank_is_transcribed_again_rather_than_read_short(
+        tmp_path):
+    chunk = chunking.Chunk(0, 0.0, 1.0, tmp_path / "a.c00.wav")
+    chunking.memo_path(chunk).write_text('{"words": [{"t": "sha')
+
+    assert chunking.memo_read(chunk) is None

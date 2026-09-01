@@ -23,7 +23,8 @@ same material, not to assume away.
 
 **Both of those flags cap a request at 30 minutes**, against an hour without
 them. Longer material is split by `asr/chunking.py`; see there for what a seam
-costs.
+costs, and for why each chunk is banked as it comes in rather than only when
+they are all in.
 
 **Audio goes through the Files API**, because inline bytes are for clips of a
 few seconds. That puts customer media on Google's servers, where it would
@@ -106,10 +107,35 @@ class GeminiProvider:
         chunks = (chunking.split(audio, limit,
                                  self.work_dir or audio.parent / "chunks")
                   if limit else [chunking.Chunk(0, 0.0, 0.0, audio)])
-        results = [self._transcribe_one(c.path, language=language,
-                                        diarize=diarize)
+        # Banked per chunk, but only when the audio really was split: unsplit
+        # audio has `chunk.path` == this stage's input, and the whole-file cache
+        # in `pipeline/steps/transcribe` already covers that case.
+        results = [self._chunk(c, language=language, diarize=diarize,
+                               bank=len(chunks) > 1)
                    for c in chunks]
         return chunking.merge(results, chunks)
+
+    def _chunk(self, chunk: chunking.Chunk, *, language: str | None,
+               diarize: bool, bank: bool) -> ASRResult:
+        """One chunk, transcribed once however often stage 3 is retried.
+
+        The retry that matters is the runner's, which re-enters this provider
+        from scratch. Without the bank, an hour of audio that fails on its
+        second half pays for its first half once per attempt — and spends so
+        long doing it that the request which is actually failing gets one try
+        instead of three.
+        """
+        if bank:
+            banked = chunking.memo_read(chunk)
+            if banked is not None:
+                log.info("asr.chunk_banked", chunk=chunk.index,
+                         words=len(banked.words))
+                return banked
+        result = self._transcribe_one(chunk.path, language=language,
+                                      diarize=diarize)
+        if bank:
+            chunking.memo_write(chunk, result)
+        return result
 
     # ── one request ────────────────────────────────────────────────────────
 

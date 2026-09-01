@@ -77,7 +77,8 @@ class Alert:
 # ── a job that failed for good ────────────────────────────────────────────
 
 
-def job_failed(job_id: str, *, step: str, reason: str, attempts: int) -> Alert:
+def job_failed(job_id: str, *, step: str, reason: str, attempts: int,
+               status: int = 0) -> Alert:
     """A job that ran out of retries. Somebody is waiting for a deliverable.
 
     Called only from the worker's terminal failure path. A step that failed and
@@ -88,8 +89,12 @@ def job_failed(job_id: str, *, step: str, reason: str, attempts: int) -> Alert:
         "job.failed",
         PAGE,
         # `reason` is the exception TYPE. The message is not carried, here or
-        # anywhere else (docs/architecture/04-security.md).
-        {"job_id": job_id, "step": step, "reason": reason, "attempts": attempts},
+        # anywhere else (docs/architecture/04-security.md) — but `status`, a
+        # vendor's HTTP code, is a fact about our request rather than about the
+        # customer's material, and it is what says whether the answer is to
+        # wait or to fix something.
+        {"job_id": job_id, "step": step, "reason": reason, "attempts": attempts,
+         **({"status": status} if status else {})},
     )
 
 

@@ -62,6 +62,14 @@ class StepRun:
     status: str = "pending"
     detail: str = ""
     error: str = ""
+    #: The same failure as facts rather than prose, because prose is the part
+    #: that may not be persisted — it can quote a filename. `error` stays in
+    #: memory for the process that raised it; these two are what reaches
+    #: `job_steps.error`, and their absence is what made job_ef028410
+    #: undiagnosable after the fact.
+    error_code: str = ""
+    #: A vendor's HTTP status, when the failure was one. 0 otherwise.
+    error_status: int = 0
     #: The attempt that ended the step.
     seconds: float = 0.0
     #: Every attempt, failed ones included. Equal to `seconds` on a step that
@@ -345,6 +353,16 @@ def _execute(
                 if ledger:
                     run.llm_calls = ledger.calls[calls_before:]
                 run.error = f"{type(exc).__name__}: {exc}"
+                run.error_code = type(exc).__name__
+                # `status` is set by the ASR and LLM transports. Read through
+                # `getattr` because most exceptions are not vendor responses
+                # and should not have to know this field exists.
+                run.error_status = int(getattr(exc, "status", 0) or 0)
+                # Which stage and which attempt, on the exception itself, so
+                # the worker's terminal handler and its alert can say. Both
+                # were read with `getattr` there and neither was ever set.
+                exc.step = spec.name
+                exc.attempt = attempt
                 will_retry = attempt <= spec.retries
                 # Marked here rather than left to the context manager: an
                 # attempt that will be retried does not propagate, so the
@@ -362,8 +380,10 @@ def _execute(
                     attempt=attempt,
                     will_retry=will_retry,
                     # The type, never the message: a step's exception can quote
-                    # a filename, and a filename is customer content.
+                    # a filename, and a filename is customer content. A status
+                    # code is neither.
                     reason=type(exc).__name__,
+                    status=run.error_status or None,
                 )
                 if not will_retry:
                     raise

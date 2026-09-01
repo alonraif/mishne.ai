@@ -31,11 +31,23 @@ class ASRError(RuntimeError):
     know whether trying the other vendor could possibly help. A 400 because the
     audio is malformed fails identically everywhere, and walking two keys to
     discover that wastes the operator's money and buries the real error.
+
+    `status` is the other half of that, and the half job_ef028410 was missing.
+    The message may not be recorded anywhere — it can quote a filename — so
+    without a status code a rate limit and a permanently malformed request are
+    the same row in `job_steps`, and the difference is the whole diagnosis. A
+    status code is a fact about our request, not customer content.
     """
 
-    def __init__(self, message: str, *, retryable: bool = True):
+    def __init__(self, message: str, *, retryable: bool = True,
+                 status: int = 0, retry_after: float = 0.0):
         super().__init__(message)
         self.retryable = retryable
+        #: The vendor's HTTP status; 0 when the failure was not a response at
+        #: all (a timeout, a reset, a key that is not set).
+        self.status = status
+        #: `Retry-After`, in seconds, when the vendor said how long to wait.
+        self.retry_after = retry_after
 
 
 @dataclass
@@ -118,7 +130,7 @@ class ASRResult:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ASRResult":
+    def from_dict(cls, d: dict, *, keep_cost: bool = False) -> "ASRResult":
         return cls(
             words=[Word(w["t"], w["s"], w["e"], w.get("c", 1.0),
                         w.get("spk", ""), w.get("n", False))
@@ -132,9 +144,17 @@ class ASRResult:
             # fresh charge would bill a re-run for work ADR-0008 exists to
             # avoid, so the money does not survive the round trip: only the
             # duration does, which is what a per-source-hour figure needs.
-            cost_usd=0.0,
-            priced=True,
-            latency_ms=0,
+            #
+            # `keep_cost` is the one exception, and it is not a re-run: a chunk
+            # memo (`asr/chunking.memo_read`) is money THIS run spent minutes
+            # ago, on a chunk a later attempt of the same stage must not pay
+            # for twice. Zeroing it there would hide the spend of exactly the
+            # jobs that were retried, which is the gap `_record_failure`
+            # already leaves.
+            cost_usd=d.get("costUsd", 0.0) if keep_cost else 0.0,
+            priced=d.get("priced", True) if keep_cost else True,
+            cost_estimated=d.get("costEstimated", False) if keep_cost else False,
+            latency_ms=d.get("latencyMs", 0) if keep_cost else 0,
             chunks=d.get("chunks", 1),
         )
 

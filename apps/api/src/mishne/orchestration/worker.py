@@ -266,6 +266,20 @@ def execute(org_id: str, job_id: str, settings: Settings | None = None) -> str:
     return "complete"
 
 
+def _error_facts(exc: Exception) -> dict:
+    """A failure as the facts that may outlive it — see `sink._error_facts`."""
+    facts: dict = {"code": type(exc).__name__}
+    status = int(getattr(exc, "status", 0) or 0)
+    if status:
+        facts["status"] = status
+    step = getattr(exc, "step", "")
+    if step:
+        # Which stage, so a failed job's row says where without a join. The
+        # runner sets this on the exception before it propagates.
+        facts["step"] = step
+    return facts
+
+
 def _failed(exc: Exception, workspace, org_id: str, job_id: str,
             request: JobRequest, cap: float) -> str:
     """The one end for a job that will not be delivered: hold released, failed.
@@ -282,11 +296,15 @@ def _failed(exc: Exception, workspace, org_id: str, job_id: str,
         _record_cost(s, org_id, job_id, request)
         job_writes.set_status(
             s, org_id, job_id, "failed",
-            # The type, not the message: an exception can quote a filename.
-            error={"code": type(exc).__name__},
+            # The type, not the message: an exception can quote a filename. A
+            # vendor's status code can not, and it is the difference between
+            # "wait and resubmit" and "this job will never run".
+            error=_error_facts(exc),
             finished_at=sa.func.now(),
         )
-    log.warning("job.failed", job_id=job_id, reason=type(exc).__name__)
+    log.warning("job.failed", job_id=job_id, reason=type(exc).__name__,
+                status=int(getattr(exc, "status", 0) or 0) or None,
+                step=getattr(exc, "step", "") or None)
     # Out of retries, so this is a customer waiting for a deliverable that
     # is not coming. A step that failed and was retried never reaches here:
     # the runner raises only once the retries are exhausted.
@@ -295,6 +313,7 @@ def _failed(exc: Exception, workspace, org_id: str, job_id: str,
         step=getattr(exc, "step", ""),
         reason=type(exc).__name__,
         attempts=getattr(exc, "attempt", 0),
+        status=int(getattr(exc, "status", 0) or 0),
     ).emit()
     workspace.cleanup()
     return "failed"

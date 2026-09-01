@@ -17,6 +17,17 @@ silence for the pipeline proper (stage 3), but it runs *after* transcription and
 needs the transcript — so this is deliberately its own, cruder pass over the
 audio rather than a dependency on it.
 
+## A chunk that succeeded is not paid for twice
+
+Stage 3 is retried as a whole (`orchestration/runner`), and the transcript
+cache in `pipeline/steps/transcribe` is written only once every chunk is in. So
+a 46-minute file that failed on its second half used to re-upload and re-pay
+for its first half on every attempt: three times the money, three times the
+wall clock, and — because each attempt spent most of its time redoing work that
+had already succeeded — the request that was actually failing got one try per
+attempt instead of three. `memo_read`/`memo_write` bank each chunk beside its
+audio, so a later attempt asks only for the chunks it never got.
+
 ## The seam is still a seam
 
 Two things do not survive a split and are honest about it:
@@ -35,10 +46,15 @@ least likely to be running.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+from ..logging import get_logger
+
+log = get_logger(__name__)
 
 #: How far back from the limit to look for a silence before giving up and
 #: cutting on the clock. Two minutes: long enough to find a pause in any real
@@ -63,6 +79,53 @@ class Chunk:
     @property
     def offset_ms(self) -> int:
         return int(round(self.start_s * 1000))
+
+
+def memo_path(chunk: Chunk) -> Path | None:
+    """Where a transcribed chunk is banked, or None if there is nowhere.
+
+    Beside the chunk's own audio, so it is cleaned up with the workspace and
+    shares the chunk's lifetime exactly. Deliberately not used for unsplit
+    audio: there `chunk.path` IS the stage's input, and the whole-file cache in
+    `pipeline/steps/transcribe` already covers that case with the normalised
+    transcript rather than the raw one.
+    """
+    return chunk.path.with_suffix(".chunk.json") if chunk.path else None
+
+
+def memo_read(chunk: Chunk):
+    """A chunk this run already transcribed, or None."""
+    from .base import ASRResult
+
+    path = memo_path(chunk)
+    if not path or not path.exists():
+        return None
+    try:
+        # `keep_cost`: this is money the current run spent, not a cache hit
+        # from an earlier one — see `ASRResult.from_dict`.
+        return ASRResult.from_dict(json.loads(path.read_text()), keep_cost=True)
+    except (OSError, ValueError, KeyError) as exc:  # noqa: BLE001
+        # A half-written memo is a reason to transcribe the chunk again, never
+        # a reason to fail the job.
+        log.warning("asr.chunk_memo_unreadable", chunk=chunk.index,
+                    reason=type(exc).__name__)
+        return None
+
+
+def memo_write(chunk: Chunk, result) -> None:
+    path = memo_path(chunk)
+    if not path:
+        return
+    try:
+        tmp = path.with_suffix(".part")
+        tmp.write_text(json.dumps(result.to_dict(), ensure_ascii=False))
+        # Atomic, because the thing this exists to survive is a run that died
+        # partway: a truncated memo read back as a transcript is a silently
+        # short chunk, which is worse than no memo at all.
+        tmp.replace(path)
+    except OSError as exc:  # noqa: BLE001
+        log.warning("asr.chunk_memo_unwritable", chunk=chunk.index,
+                    reason=type(exc).__name__)
 
 
 def probe_duration(path: Path) -> float:

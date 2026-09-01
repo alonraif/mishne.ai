@@ -24,6 +24,22 @@ from .runner import StepRun
 log = get_logger(__name__)
 
 
+def _error_facts(run: StepRun) -> dict:
+    """What may be written about a failed attempt.
+
+    The exception type and, when the vendor answered with one, its HTTP status.
+    Never `run.error` itself: the message is the part that can quote a filename
+    (docs/architecture/04-security). The status is what tells an operator
+    whether to wait or to look at the request — job_ef028410 failed three times
+    with `ASRError` and nothing else, and answering "which ASRError" took an
+    afternoon and a reproduction.
+    """
+    facts: dict = {"code": run.error_code or "Error"}
+    if run.error_status:
+        facts["status"] = run.error_status
+    return facts
+
+
 class DatabaseSink:
     """Writes progress for one job, one short transaction at a time."""
 
@@ -45,7 +61,8 @@ class DatabaseSink:
         self._write(run, status="active")
 
     def step_finished(self, run: StepRun) -> None:
-        self._write(run, status="done", finished=True, costs=True)
+        # `error={}` clears what a failed earlier attempt of this step wrote.
+        self._write(run, status="done", finished=True, costs=True, error={})
         self._check_duration(run)
 
     def step_failed(self, run: StepRun, will_retry: bool) -> None:
@@ -56,7 +73,8 @@ class DatabaseSink:
         # again. `record_llm_calls` is keyed on the step, so the retry rewrites
         # these rows rather than adding to them.
         self._write(run, status="active" if will_retry else "failed",
-                    finished=not will_retry, costs=True)
+                    finished=not will_retry, costs=True,
+                    error=_error_facts(run))
 
     def job_status(self, status: str) -> None:
         if status == self._status:
@@ -118,7 +136,8 @@ class DatabaseSink:
         return bool(row and row.started_at)
 
     def _write(self, run: StepRun, *, status: str, started: bool = False,
-               finished: bool = False, costs: bool = False) -> None:
+               finished: bool = False, costs: bool = False,
+               error: dict | None = None) -> None:
         try:
             with session_for_org(self.org_id) as s:
                 spend = None
@@ -140,6 +159,7 @@ class DatabaseSink:
                     ),
                     from_cache=run.from_cache or None,
                     model_cost_micros=spend,
+                    error=error,
                     started=started, finished=finished,
                 )
         except Exception as exc:  # noqa: BLE001 - progress is not worth a job

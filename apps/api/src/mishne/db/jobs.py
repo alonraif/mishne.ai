@@ -76,6 +76,7 @@ def create_job(
     brief: dict,
     estimate: dict,
     approved_cap: float,
+    media_gaps: dict | None = None,
 ) -> str:
     """The job row, its assets, and the hold — one transaction or none of it."""
     job_id = f"job_{secrets.token_hex(4)}"
@@ -91,6 +92,9 @@ def create_job(
             brief=brief,
             estimate=estimate,
             approved_cap=approved_cap,
+            # None rather than {}: "nothing was missing" and "nobody asked" are
+            # the same answer here, and one of them is cheaper to store.
+            media_gaps=media_gaps or None,
         )
     )
     for idx, asset_id in enumerate(asset_ids):
@@ -209,6 +213,7 @@ def upsert_step(
     cumulative_seconds: float | None = None,
     from_cache: bool | None = None,
     model_cost_micros: int | None = None,
+    error: dict | None = None,
     started: bool = False,
     finished: bool = False,
 ) -> None:
@@ -231,6 +236,12 @@ def upsert_step(
     }
     if output_ref is not None:
         values["output_ref"] = output_ref
+    # An empty dict is "this attempt did not fail", which must CLEAR whatever a
+    # previous attempt recorded — a step that failed twice and then succeeded
+    # is a step that succeeded. `None` keeps the column as it is, like the
+    # fields below. Facts only: a code and a status, never a message.
+    if error is not None:
+        values["error"] = error or None
     # None means "the caller has nothing to say about this field", which is not
     # the same as zero. A progress write mid-step must not blank the duration a
     # previous attempt recorded.
