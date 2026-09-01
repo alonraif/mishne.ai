@@ -186,7 +186,9 @@ async def create_job(
         ) from exc
 
     # The steps this job will run, written now so a queued job shows its shape
-    # rather than an empty panel.
+    # rather than an empty panel. `mode` is what makes it this job's shape: left
+    # to its default the plan was always the AI one, so a transcribe-only job
+    # was planned with span proposal and scoring it will never run.
     job_writes.plan_steps(
         s, org_id, job_id,
         plan_steps(
@@ -195,6 +197,7 @@ async def create_job(
                 assets=[
                     AssetSource(asset_id=a.id, path=Path(a.filename)) for a in assets
                 ],
+                mode=body.mode,
                 out_dir=Path("."), work_dir=Path("."),
             )
         ),

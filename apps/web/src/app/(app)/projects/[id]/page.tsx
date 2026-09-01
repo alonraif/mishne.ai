@@ -2,30 +2,26 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Plus, FileVideo, FileAudio, Layers } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AssetUpload } from "@/components/asset-upload";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { AssetStatusBadge } from "@/components/asset-status-badge";
-import { Timecode } from "@/components/timecode";
+import { AssetMeta, KIND_ICON } from "@/components/asset-meta";
 import { MediaRequirements } from "@/components/media-requirements";
 import { CardsSkeleton, PageSkeleton, QueryState } from "@/components/query-state";
 import { useApi, type Query } from "@/lib/use-api";
 import {
   JOB_MODE_LABEL,
-  formatBytes,
   formatCredits,
   formatDuration,
-  framesToSeconds,
   type Asset,
   type IngestMode,
   type Job,
   type Project,
 } from "@mishne/shared";
-
-const KIND_ICON = { video: FileVideo, audio: FileAudio, aaf: Layers } as const;
 
 const INGEST_LABEL: Record<IngestMode, string> = {
   full_media: "Full media",
@@ -133,7 +129,6 @@ function ProjectView({
         <div className="grid gap-3">
           {assets.map((a) => {
             const Icon = KIND_ICON[a.kind];
-            const seconds = framesToSeconds(a.durationFrames, a.rate);
             return (
               <div key={a.id} className="space-y-2">
               <Card className="flex items-center gap-4 p-4">
@@ -142,18 +137,8 @@ function ProjectView({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{a.filename}</div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    <span>{a.codec}</span>
-                    <span>{formatDuration(seconds)}</span>
-                    <span className="tc">
-                      {(a.rate.num / a.rate.den).toFixed(3).replace(/\.?0+$/, "")} fps
-                      {a.dropFrame ? " DF" : ""}
-                    </span>
-                    <span>{a.audioTracks} audio</span>
-                    <span>{formatBytes(a.bytes)}</span>
-                    <span className="flex items-center gap-1">
-                      start <Timecode frames={a.startTcFrames} rate={a.rate} dropFrame={a.dropFrame} />
-                    </span>
+                  <div className="mt-1">
+                    <AssetMeta asset={a} />
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">

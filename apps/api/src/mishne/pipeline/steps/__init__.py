@@ -122,6 +122,30 @@ STEPS: list[StepSpec] = [
 
 STEPS_BY_NAME: dict[str, StepSpec] = {step.name: step for step in STEPS}
 
+#: Steps a mode never runs, in any pass over the job.
+#:
+#: Not the same question as "what does *this* run skip" — a manual job pauses
+#: after `brief` with `select` unrun, and runs it on the second pass once the
+#: person has marked their cut (`runner.phases_for`). These are the ones no
+#: pass will ever reach, and they are therefore the ones that must not be
+#: planned: a `job_steps` row for a step that will never run is a progress
+#: panel that stops at 85% on a job that finished, listing two stages that were
+#: never going to happen.
+#:
+#: Manual is transcribe-and-hand-edit. Nothing proposes spans and nothing
+#: scores them; the person reading the transcript is doing both.
+SKIPPED_BY_MODE: dict[str, frozenset[str]] = {
+    "ai": frozenset(),
+    "hybrid": frozenset(),
+    "manual": frozenset({"propose", "score"}),
+}
+
+
+def unreachable(mode: str) -> frozenset[str]:
+    """The steps `mode` will never run — for planning and for display."""
+    return SKIPPED_BY_MODE.get(mode, frozenset())
+
+
 #: The per-asset prefix, which is what the state machine runs as a Map over the
 #: job's assets, and what the ingest cache makes free on a re-run.
 ASSET_STEPS = [step for step in STEPS if step.phase == "asset"]
@@ -139,6 +163,7 @@ __all__ = [
     "ASSET_STEPS",
     "JOB_STEPS",
     "PAYLOAD_VERSION",
+    "SKIPPED_BY_MODE",
     "STEPS",
     "STEPS_BY_NAME",
     "STEP_NAMES",
@@ -146,4 +171,5 @@ __all__ = [
     "StepContext",
     "StepSpec",
     "label_for",
+    "unreachable",
 ]

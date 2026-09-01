@@ -28,6 +28,18 @@ export function nominalFps(rate: Rate): number {
   return Math.round(rateToFps(rate));
 }
 
+/**
+ * The rate as a person reads it: "25", "23.976", "29.97".
+ *
+ * Display only, and that is the whole point of it existing — a rate is a
+ * rational everywhere it is computed with, and this is the one place it is
+ * allowed to become a decimal string. Trailing zeros go, so an integer rate
+ * reads as "25" rather than "25.000".
+ */
+export function formatRate(rate: Rate): string {
+  return rateToFps(rate).toFixed(3).replace(/\.?0+$/, "");
+}
+
 export function secondsToFrames(seconds: number, rate: Rate): number {
   return Math.round((seconds * rate.num) / rate.den);
 }

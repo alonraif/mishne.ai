@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/status-badge";
 import { JobStages } from "@/components/job-stages";
+import { AssetFacts, KIND_ICON } from "@/components/asset-meta";
 import { useState } from "react";
 import { PageSkeleton, QueryState } from "@/components/query-state";
 import { ApiError } from "@/lib/api";
@@ -26,6 +27,7 @@ import {
   formatBytes,
   formatCredits,
   formatDuration,
+  framesToSeconds,
   type Artifact,
   type Asset,
   type Job,
@@ -65,7 +67,25 @@ function JobView({ job }: { job: Job }) {
   const assets = (assetsQuery.data ?? []).filter((a) => job.assetIds.includes(a.id));
   const artifacts = artifactsQuery.data ?? [];
   const done = job.steps.filter((s) => s.status === "done").length;
-  const pct = job.steps.length ? Math.round((done / job.steps.length) * 100) : 0;
+  // A finished job is finished. The fraction is the honest answer while the
+  // job is running, but rounding it can leave a complete job at 99%, and the
+  // step list can be short of a stage the mode never ran.
+  const pct =
+    job.status === "complete"
+      ? 100
+      : job.steps.length
+        ? Math.round((done / job.steps.length) * 100)
+        : 0;
+  // Runtime across every upload the job drew on, for the multi-asset case
+  // where no single file's duration is the answer. Summed in seconds because
+  // two reels can be at two rates; frame counts at different rates do not add.
+  const sourceTotal = formatDuration(
+    assets.reduce((s, a) => s + framesToSeconds(a.durationFrames, a.rate), 0)
+  );
+  // Transcribe-only. There is no selection, so the half of the brief that
+  // describes one — target, tolerance, structure, pacing — describes nothing
+  // this job did.
+  const transcription = job.mode === "manual";
 
   return (
     <div className="space-y-6">
@@ -125,52 +145,104 @@ function JobView({ job }: { job: Job }) {
             </Card>
           )}
 
+          {/* One card, whatever the mode, because the mode decides how much of
+              it there is to show. A transcribe-only job has a source and two
+              settings; an AI one adds everything the brief compiler made of
+              the notes, under its own heading rather than as the whole card. */}
           <Card>
             <CardHeader>
-              <CardTitle>Compiled brief</CardTitle>
+              <CardTitle>Job details</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <p className="rounded-md bg-muted/50 p-3 italic text-muted-foreground">
-                &ldquo;{job.notesRaw}&rdquo;
-              </p>
+            <CardContent className="space-y-5 text-sm">
+              {/* What was actually cut. Loading is not an empty section: the
+                  assets are a second request and the label would sit over
+                  nothing until it lands. */}
+              {assets.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs text-muted-foreground">
+                    Source
+                    {assets.length > 1 && ` · ${assets.length} files, ${sourceTotal}`}
+                  </div>
+                  {assets.map((a) => {
+                    const Icon = KIND_ICON[a.kind];
+                    return (
+                      <div key={a.id} className="rounded-md border border-border p-3">
+                        <div className="flex items-center gap-2">
+                          <Icon className="size-4 shrink-0 text-muted-foreground" />
+                          {/* A filename is the customer's own text and can be
+                              Hebrew — `dir="ltr"` keeps the extension at the
+                              end where an editor looks for it. */}
+                          <div className="truncate font-medium" dir="ltr">
+                            {a.filename}
+                          </div>
+                        </div>
+                        <div className="mt-3 border-t border-border pt-3">
+                          <AssetFacts asset={a} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
-                <Row label="Target" value={formatDuration(job.brief.targetDurationS)} mono />
-                <Row label="Tolerance" value={`±${job.brief.durationToleranceS}s`} mono />
-                <Row label="Structure" value={job.brief.narrativeShape.replace(/_/g, " ")} />
-                <Row label="Pacing" value={job.brief.pacing} />
+                {/* Both of these are true in every mode: stage 9 applies
+                    handles to a hand-marked cut too, and the language is what
+                    routed the transcription. */}
                 <Row label="Handles" value={`${job.brief.handleFrames} frames`} mono />
                 <Row label="Language" value={job.brief.language.toUpperCase()} />
               </dl>
-              {job.brief.mustInclude.length > 0 && (
-                <div>
-                  <dt className="text-xs text-muted-foreground">Must include</dt>
-                  <dd className="mt-1.5 flex flex-wrap gap-1.5">
-                    {job.brief.mustInclude.map((m) => (
-                      <Badge key={m} variant="used">{m}</Badge>
-                    ))}
-                  </dd>
-                </div>
-              )}
-              {job.brief.mustExclude.length > 0 && (
-                <div>
-                  <dt className="text-xs text-muted-foreground">Must exclude</dt>
-                  <dd className="mt-1.5 flex flex-wrap gap-1.5">
-                    {job.brief.mustExclude.map((m) => (
-                      <Badge key={m} variant="muted">{m}</Badge>
-                    ))}
-                  </dd>
-                </div>
-              )}
-              {job.brief.clarifications.length > 0 && (
-                <div className="rounded-md border border-border p-3">
-                  <div className="text-xs font-medium text-muted-foreground">
-                    Assumptions made
-                  </div>
-                  <ul className="mt-2 space-y-1.5">
-                    {job.brief.clarifications.map((c) => (
-                      <li key={c} className="text-xs text-muted-foreground">— {c}</li>
-                    ))}
-                  </ul>
+
+              {/* Everything below is what the brief compiler made of the
+                  notes. A transcribe-only job has no selection, so a target, a
+                  tolerance, a structure and a pacing describe nothing it did —
+                  and the submission form never asked for them. */}
+              {!transcription && (
+                <div className="space-y-4 border-t border-border pt-4">
+                  <div className="text-xs text-muted-foreground">Compiled brief</div>
+                  {job.notesRaw.trim().length > 0 && (
+                    <p className="rounded-md bg-muted/50 p-3 italic text-muted-foreground">
+                      &ldquo;{job.notesRaw}&rdquo;
+                    </p>
+                  )}
+                  <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                    <Row label="Target" value={formatDuration(job.brief.targetDurationS)} mono />
+                    <Row label="Tolerance" value={`±${job.brief.durationToleranceS}s`} mono />
+                    <Row label="Structure" value={job.brief.narrativeShape.replace(/_/g, " ")} />
+                    <Row label="Pacing" value={job.brief.pacing} />
+                  </dl>
+                  {job.brief.mustInclude.length > 0 && (
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Must include</dt>
+                      <dd className="mt-1.5 flex flex-wrap gap-1.5">
+                        {job.brief.mustInclude.map((m) => (
+                          <Badge key={m} variant="used">{m}</Badge>
+                        ))}
+                      </dd>
+                    </div>
+                  )}
+                  {job.brief.mustExclude.length > 0 && (
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Must exclude</dt>
+                      <dd className="mt-1.5 flex flex-wrap gap-1.5">
+                        {job.brief.mustExclude.map((m) => (
+                          <Badge key={m} variant="muted">{m}</Badge>
+                        ))}
+                      </dd>
+                    </div>
+                  )}
+                  {job.brief.clarifications.length > 0 && (
+                    <div className="rounded-md border border-border p-3">
+                      <div className="text-xs font-medium text-muted-foreground">
+                        Assumptions made
+                      </div>
+                      <ul className="mt-2 space-y-1.5">
+                        {job.brief.clarifications.map((c) => (
+                          <li key={c} className="text-xs text-muted-foreground">— {c}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

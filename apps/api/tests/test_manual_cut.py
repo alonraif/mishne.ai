@@ -216,6 +216,28 @@ def test_a_skipped_stage_does_not_renumber_the_ones_after_it(stub, tmp_path):
         )
 
 
+def test_a_transcribe_only_job_is_not_planned_stages_it_will_never_run(stub, tmp_path):
+    """The plan is what the progress panel draws, and a row for a stage no pass
+    will reach is a finished job showing two stages pending and a percentage
+    that cannot arrive at 100."""
+    planned = plan(_request(tmp_path, mode="manual"))
+    names = [name for _idx, name, _asset in planned]
+    assert "propose" not in names
+    assert "score" not in names
+    # Both passes of a manual job: the transcript, then the person's cut. Every
+    # stage that runs has a row waiting for it, at the idx it runs under.
+    idx_by_name = {name: idx for idx, name, _asset in planned}
+    ran: list = []
+    for user_cut in ((), ("b1",)):
+        sink = RecordingSink()
+        request = _request(tmp_path, mode="manual", user_cut=user_cut)
+        run_job(request, sink, sleep=lambda _s: None)
+        ran.extend(sink.steps)
+    for run in ran:
+        assert run.name in idx_by_name, f"{run.name} ran and was never planned"
+        assert run.idx == idx_by_name[run.name]
+
+
 # ── the user's cut replaces the solver ─────────────────────────────────────
 
 

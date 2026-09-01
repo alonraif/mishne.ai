@@ -37,7 +37,7 @@ from typing import Protocol
 from ..logging import get_logger
 from ..pipeline import project
 from ..telemetry import span
-from ..pipeline.steps import ASSET_STEPS, JOB_STEPS, STEPS, StepSpec
+from ..pipeline.steps import ASSET_STEPS, JOB_STEPS, STEPS, StepSpec, unreachable
 from ..pipeline.steps.base import PAYLOAD_VERSION, StepContext
 from . import graph
 from .graph import AssetRun, JobRequest, RunState
@@ -217,11 +217,16 @@ def run_job(
 #: (`graph.step_select`).
 def phases_for(mode: str, user_cut: list[str] | None = None
                ) -> tuple[frozenset[str], str]:
-    """(steps to skip, step to stop after) for one run of a job."""
+    """(steps to skip, step to stop after) for one run of a job.
+
+    A superset of `steps.unreachable(mode)`: this pass may also skip a step a
+    later pass will run — `select` on the first pass of a manual job, which
+    happens once the person has marked their cut and the job is resumed.
+    """
     if user_cut:
         return frozenset({"propose", "score"}), ""
     if mode == "manual":
-        return frozenset({"propose", "score", "select"}), "brief"
+        return unreachable(mode) | {"select"}, "brief"
     if mode == "hybrid":
         return frozenset(), "refine"
     return frozenset(), ""
@@ -410,8 +415,15 @@ def plan(request: JobRequest) -> list[tuple[int, str, str]]:
 
     The rows the UI needs the moment a job is accepted, so a job that has not
     started yet still shows its shape rather than an empty panel.
+
+    Its shape, though — not the registry's. A transcribe-only job never
+    proposes or scores spans, and planning those rows anyway left a finished
+    job showing two stages pending forever and a progress figure that could not
+    reach 100%. `idx` still counts them, because it is the key `_run_phases`
+    writes results under and the two have to agree.
     """
     rows: list[tuple[int, str, str]] = []
+    skip = unreachable(request.mode)
     idx = 0
     for source in request.assets:
         for spec in ASSET_STEPS:
@@ -419,6 +431,8 @@ def plan(request: JobRequest) -> list[tuple[int, str, str]]:
             rows.append((idx, spec.name, source.asset_id))
     for spec in JOB_STEPS:
         idx += 1
+        if spec.name in skip:
+            continue
         rows.append((idx, spec.name, ""))
     return rows
 

@@ -7,9 +7,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  FileVideo,
-  FileAudio,
-  Layers,
   Info,
   AlertTriangle,
   Sparkles,
@@ -37,12 +34,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { AssetUpload } from "@/components/asset-upload";
+import { KIND_ICON } from "@/components/asset-meta";
 import { ApiError } from "@/lib/api";
 import { apiSend } from "@/lib/dto";
 import { cn } from "@/lib/utils";
 import type { CreditEstimate } from "@mishne/shared";
 
-const KIND_ICON = { video: FileVideo, audio: FileAudio, aaf: Layers } as const;
 
 const SHAPES: Array<{ id: NarrativeShape; label: string; hint: string }> = [
   { id: "inverted_pyramid", label: "Inverted pyramid", hint: "Strongest material first" },

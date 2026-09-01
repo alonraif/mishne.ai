@@ -165,6 +165,12 @@ def get_asset(s: Session, org_id: str, asset_id: str) -> Asset | None:
 
 
 def _job(row: sa.Row, asset_ids: list[str], steps: list[JobStep]) -> Job:
+    # A step this mode never runs is not part of this job, whatever the plan
+    # says. Jobs accepted before `runner.plan` learned about mode have rows for
+    # `propose` and `score` that will sit pending forever; filtering on the way
+    # out fixes those without a migration, and costs nothing for the jobs
+    # planned correctly, which have no such rows to drop.
+    skipped = _SKIPPED_BY_MODE.get(row.mode, frozenset())
     return Job(
         id=row.id,
         project_id=row.project_id,
@@ -174,7 +180,7 @@ def _job(row: sa.Row, asset_ids: list[str], steps: list[JobStep]) -> Job:
         status=row.status,
         notes_raw=row.notes_raw,
         brief=EditBrief.model_validate(row.brief or {}),
-        steps=steps,
+        steps=[s for s in steps if s.name not in skipped],
         created_at=row.created_at,
         finished_at=row.finished_at,
         # The estimate as approved, read back rather than recomputed. Recomputing
@@ -545,4 +551,11 @@ def _step_labels() -> dict[str, str]:
     return {step.name: step.label for step in STEPS}
 
 
+def _skipped_by_mode() -> dict[str, frozenset[str]]:
+    from ..pipeline.steps import SKIPPED_BY_MODE
+
+    return SKIPPED_BY_MODE
+
+
 _STEP_LABELS = _step_labels()
+_SKIPPED_BY_MODE = _skipped_by_mode()
