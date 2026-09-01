@@ -306,24 +306,20 @@ def step_vad(ctx: StepContext, state: RunState) -> str:
     return f"{len(run.speech.speech)} speech segments"
 
 
-def step_structure(ctx: StepContext, state: RunState) -> str:
-    run = state.run
-    if run.ingest is not None:
-        return "cached"
-    run.beats, run.warnings = project.stage_structure(
-        run.asr, run.speech, run.tracks, run.source.pipeline_id, run.prepared.seams
-    )
-    # What the AAF said about itself belongs with the warnings the job page
-    # already shows — an unresolved sequence must not read as an ordinary run.
-    run.warnings = list(run.prepared.notes) + run.warnings
-    return f"{len(run.beats)} beats"
-
-
 def step_speakers(ctx: StepContext, state: RunState) -> str:
-    """The last per-asset stage, and where the cache is written."""
+    """Who said what — before `structure`, which is what makes it mean anything.
+
+    Attribution rewrites the speaker on every word in place, and a beat takes
+    the speaker of its first word. Run the other way round and the beats keep
+    the label the ASR vendor returned (`c0:spk:0` from a chunked Gemini call)
+    while the speaker legend offers `T0`/`T1` from the microphones — two id
+    spaces, so every line renders with a raw vendor id, one colour and a
+    speaker filter that matches nothing. `project.ingest` has always run
+    speakers first; this is the drift `run.py is the specification` exists to
+    prevent.
+    """
     run = state.run
     if run.ingest is not None:
-        state.assets.append(run.ingest)
         return "cached"
 
     req = state.request
@@ -331,6 +327,23 @@ def step_speakers(ctx: StepContext, state: RunState) -> str:
         run.asr, run.tracks, run.prepared,
         diarize_models=req.diarize_models, on_progress=ctx.on_progress,
     )
+    n = len(run.attribution.speakers)
+    return f"{n} speaker(s)" if n else "not separated"
+
+
+def step_structure(ctx: StepContext, state: RunState) -> str:
+    """The last per-asset stage, and where the cache is written."""
+    run = state.run
+    if run.ingest is not None:
+        state.assets.append(run.ingest)
+        return "cached"
+
+    run.beats, run.warnings = project.stage_structure(
+        run.asr, run.speech, run.tracks, run.source.pipeline_id, run.prepared.seams
+    )
+    # What the AAF said about itself belongs with the warnings the job page
+    # already shows — an unresolved sequence must not read as an ordinary run.
+    run.warnings = list(run.prepared.notes) + run.warnings
     info = run.prepared.info
     run.ingest = project.AssetIngest(
         asset_id=run.source.pipeline_id,
@@ -360,8 +373,7 @@ def step_speakers(ctx: StepContext, state: RunState) -> str:
     # content id, which is what `asset_dir` hydrates from.
     project.finish_ingest(run.adir, run.ingest, state.workspace)
     state.assets.append(run.ingest)
-    n = len(run.attribution.speakers)
-    return f"{n} speaker(s)" if n else "not separated"
+    return f"{len(run.beats)} beats"
 
 
 # ───────────────────────────────────────────────────────────── the job phase

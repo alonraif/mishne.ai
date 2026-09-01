@@ -155,3 +155,38 @@ def test_speaker_display_prefers_the_human_label():
 def test_no_tracks_is_not_reliable():
     result = speakers.attribute([], {})
     assert result.reliable is False
+
+
+def test_a_beat_takes_the_speaker_attribution_gave_the_word_not_the_vendors():
+    """Why `speakers` has to run before `structure`, at the level where it bites.
+
+    Attribution rewrites `Word.speaker` in place and segmentation snapshots it:
+    a beat is labelled with the speaker of its first word, once, when it is
+    built. So the two stages do not commute. The orchestrator ran them the other
+    way round and every beat it cached kept the label the ASR vendor returned
+    (`c0:spk:0` from a chunked Gemini call) while the legend offered `T1`/`T2`
+    from the microphones — beats and speakers in two id spaces, which the UI can
+    only render as a raw vendor id with no colour and a filter that matches
+    nothing.
+
+    The order below is `project.ingest`'s. The assertion is what makes it the
+    right one.
+    """
+    from mishne.pipeline.steps import structure
+    from mishne.pipeline.steps.vad import SpeechMap
+
+    ws = words_at([(1000, 1500), (5000, 5500)])
+    for w in ws:                      # what a diarizing engine hands back
+        w.speaker = "c0:spk:0"
+    envelopes = {1: env([(1000, 1500, 0.5)]), 2: env([(5000, 5500, 0.5)])}
+
+    attribution = speakers.attribute(ws, envelopes)
+    beats = structure.build(ws, SpeechMap(speech=[(1000, 1500), (5000, 5500)],
+                                          duration_ms=10_000),
+                            asset_id="a_test", seams=[])
+
+    roster = {s.id for s in attribution.speakers}
+    assert roster == {"T1", "T2"}
+    assert {b.speaker for b in beats} <= roster, (
+        "a beat is labelled with a speaker the legend has never heard of"
+    )

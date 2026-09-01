@@ -228,7 +228,7 @@ def test_the_orchestrator_publishes_the_ingest_cache_it_just_paid_for(
     the pipeline asks it to.
 
     `project.finish_ingest` takes the workspace as an optional third argument
-    and `graph.step_speakers` was not passing it, so on a worker the ingest
+    and the last per-asset step was not passing it, so on a worker the ingest
     cache was written to scratch that `worker.execute` deletes at the end of
     the job. ADR-0008 was true of `run.py` and false of the product: every
     orchestrated job re-transcribed from cold, and the derived bucket of a
@@ -259,15 +259,20 @@ def test_the_orchestrator_publishes_the_ingest_cache_it_just_paid_for(
     run.prepared = type("P", (), {
         "info": type("I", (), {"rate": Rate(25, 1, False), "start_tc_frames": 0,
                                "duration_frames": 250})(),
-        "aaf": None, "provenance": "rushes", "seams": [],
+        "aaf": None, "provenance": "rushes", "seams": [], "notes": [],
     })()
     state.runs["ast_1"] = run
     state.current = "ast_1"
 
     monkeypatch.setattr(project, "stage_speakers",
                         lambda *a, **k: type("Att", (), {"speakers": []})())
-    graph.step_speakers(
-        graph.StepContext(job_id="job_1", org_id=ORG, project_id=PROJECT), state)
+    monkeypatch.setattr(project, "stage_structure", lambda *a, **k: ([], []))
+    ctx = graph.StepContext(job_id="job_1", org_id=ORG, project_id=PROJECT)
+    # Both, in the registry's order: `structure` is the last per-asset step and
+    # therefore the one that writes the cache, and it needs the attribution
+    # `speakers` put on the run.
+    graph.step_speakers(ctx, state)
+    graph.step_structure(ctx, state)
 
     prefix = storage.derived_key(ORG, PROJECT, "a_deadbeef", "")
     listed = store.client.list_objects_v2(

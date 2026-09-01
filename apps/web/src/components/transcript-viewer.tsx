@@ -8,10 +8,10 @@ import {
   framesToSeconds,
   assetOf,
   type Beat,
-  type Speaker,
   type Transcript,
   type TranscriptAsset,
   directionFor,
+  speakerRoster,
 } from "@mishne/shared";
 import { SpeakerLegend, speakerColor } from "@/components/speaker-legend";
 import { useTranscript } from "@/lib/use-transcript";
@@ -54,12 +54,10 @@ export function TranscriptViewer({
   const { transcript, rename, merge, error } = useTranscript(initial, jobId);
   const roster = transcript.speakers;
 
-  const byId = useMemo(
-    () => new Map(roster.map((s, i) => [s.id, { speaker: s, index: i }])),
-    [roster]
-  );
-  const nameOf = (id: string) =>
-    byId.get(id)?.speaker.label || byId.get(id)?.speaker.defaultLabel || id;
+  // Named voices, and their colours. A beat whose speaker is not in the roster
+  // reads as unattributed rather than as a raw id — see `speakerRoster`.
+  const voices = useMemo(() => speakerRoster(transcript), [transcript]);
+  const nameOf = (id: string) => voices.nameOf(id);
 
   // No job-wide rate. A beat's timecode is only meaningful against its own
   // reel, and a project routinely mixes rates.
@@ -142,7 +140,7 @@ export function TranscriptViewer({
             asset={assetOf(transcript, b)}
             showReel={multiAsset}
             speakerName={nameOf(b.speaker)}
-            speakerIndex={byId.get(b.speaker)?.index ?? 0}
+            speakerIndex={voices.indexOf(b.speaker)}
             open={openId === b.id}
             onToggle={() => setOpenId(openId === b.id ? null : b.id)}
           />
@@ -179,9 +177,12 @@ function BeatRow({
           : "border-transparent hover:border-border"
       )}
     >
+      {/* `text-start`, not `text-left`: a Hebrew transcript sets `dir="rtl"` on
+          the list, and a line has to align with the edge a Hebrew reader starts
+          from rather than the far side of the row from its timecode. */}
       <button
         onClick={onToggle}
-        className="flex w-full items-start gap-3 p-3 text-left"
+        className="flex w-full items-start gap-3 p-3 text-start"
       >
         {/* Gutter */}
         <div className="flex w-[92px] shrink-0 flex-col items-start gap-1 pt-0.5">
@@ -222,11 +223,18 @@ function BeatRow({
         {/* Body */}
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex flex-wrap items-center gap-2">
-            <span className="flex items-center gap-1.5 text-xs font-medium">
-              <span
-                className="size-2 shrink-0 rounded-full"
-                style={{ background: speakerColor(speakerIndex) }}
-              />
+            <span
+              className={cn(
+                "flex items-center gap-1.5 text-xs font-medium",
+                speakerIndex < 0 && "italic text-muted-foreground/60"
+              )}
+            >
+              {speakerIndex >= 0 && (
+                <span
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ background: speakerColor(speakerIndex) }}
+                />
+              )}
               <span
                 className={
                   beat.used ? "text-used-foreground" : "text-muted-foreground"

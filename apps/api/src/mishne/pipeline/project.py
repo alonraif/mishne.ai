@@ -54,7 +54,15 @@ from .steps.vad import SpeechMap
 #: Bumped to 3 when the cache started carrying each beat's words. A cache
 #: written by version 2 has no words in it, and a beat without words cannot be
 #: carved into spans — so an old entry has to be rebuilt rather than served.
-CACHE_VERSION = 3
+#:
+#: Bumped to 4 for two repairs to what a cached ingest *means*. The orchestrator
+#: was running `structure` before `speakers`, so every beat it cached carries
+#: the ASR vendor's own speaker label instead of the microphone the word came
+#: down — beats and the speaker legend in two id spaces. And word timings are
+#: now sanitised at the ASR boundary (`asr/timings.py`), so beats built from a
+#: runaway `end_ms` need rebuilding. Both are free to redo: transcription is
+#: keyed separately and is not repaid by a bump here.
+CACHE_VERSION = 4
 
 
 @dataclass

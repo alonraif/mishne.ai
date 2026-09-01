@@ -16,7 +16,7 @@ guessed at now.
 ## The shape that matters
 
     ┌── per asset, cached forever ────────────────────────────────┐
-    │  prepare → audio → transcribe → vad → structure → speakers  │  × N assets
+    │  prepare → audio → transcribe → vad → speakers → structure  │  × N assets
     └─────────────────────────────────────────────────────────────┘
                                   ↓
     ┌── per job, across the assets it draws on ───────────────────┐
@@ -69,9 +69,6 @@ STEPS: list[StepSpec] = [
     ),
     StepSpec(name="vad", label="Build silence map", phase="asset", status="analyzing"),
     StepSpec(
-        name="structure", label="Structure into beats", phase="asset", status="analyzing"
-    ),
-    StepSpec(
         name="speakers",
         label="Attribute speakers",
         phase="asset",
@@ -79,6 +76,15 @@ STEPS: list[StepSpec] = [
         # Deterministic on multi-track audio; the single-track diarizer is a
         # model, and says so about its own confidence (ADR-0009).
         deterministic=False,
+    ),
+    StepSpec(
+        # After `speakers`, not before: a beat carries the speaker of its first
+        # word, so attribution has to have run or the beat keeps whatever label
+        # the ASR vendor happened to return. `project.ingest` — the
+        # specification — has always run them in this order; this list did not,
+        # and the beats and the speaker legend came out in two different id
+        # spaces.
+        name="structure", label="Structure into beats", phase="asset", status="analyzing"
     ),
     # ── per job ────────────────────────────────────────────────────────────
     StepSpec(

@@ -59,10 +59,40 @@ def test_the_per_asset_phase_is_the_cached_one():
     # Stages 0-4 plus speakers are keyed on the asset's content and survive
     # every re-run (ADR-0008). Everything else is per job.
     assert [s.name for s in ASSET_STEPS] == [
-        "prepare", "audio", "transcribe", "vad", "structure", "speakers",
+        "prepare", "audio", "transcribe", "vad", "speakers", "structure",
     ]
     assert JOB_STEPS[0].name == "brief"
     assert JOB_STEPS[-1].name == "transcript_page"
+
+
+def test_speakers_runs_before_structure_in_the_registry_and_in_the_driver():
+    """The one per-asset ordering that is a data dependency rather than taste.
+
+    Attribution rewrites the speaker on every word in place, and a beat takes
+    the speaker of its first word. `speakers` after `structure` is therefore not
+    a different order, it is a different result: every job the orchestrator ran
+    came out with beats labelled `c0:spk:0` from the ASR vendor while the
+    speaker legend offered `T0`/`T1` from the microphones — two id spaces, so the
+    UI showed a raw vendor id on every line, one colour for everybody, and a
+    speaker filter that matched nothing.
+
+    `project.ingest` had it right throughout, and the registry did not. Both
+    ends are asserted here because fixing either alone leaves the bug: the
+    registry is what the orchestrator executes, and the driver is the
+    specification it must agree with.
+
+    The other per-asset stages are deliberately not pinned. `vad` and
+    `transcribe` are independent and the two drivers run them in opposite
+    orders, which costs nothing.
+    """
+    names = [s.name for s in ASSET_STEPS]
+    assert names.index("speakers") < names.index("structure")
+
+    source = (
+        Path(__file__).parent.parent / "src" / "mishne" / "pipeline" / "project.py"
+    ).read_text()
+    driver = source.split("\ndef ingest(", 1)[1].split("\ndef _save(", 1)[0]
+    assert driver.index("stage_speakers(") < driver.index("stage_structure(")
 
 
 def test_the_expensive_stages_retry_and_the_deterministic_ones_do_not():

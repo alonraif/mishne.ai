@@ -18,9 +18,9 @@ import {
   framesToSeconds,
   type Beat,
   type JobMode,
-  type Speaker,
   type Transcript,
   directionFor,
+  speakerRoster,
 } from "@mishne/shared";
 import { SpeakerLegend, speakerColor } from "@/components/speaker-legend";
 import { useTranscript } from "@/lib/use-transcript";
@@ -112,14 +112,10 @@ export function CutEditor({
     }
   };
 
-  const speakerById = useMemo(
-    () => new Map(roster.map((s, i) => [s.id, { speaker: s, index: i }])),
-    [roster]
-  );
-  const nameOf = (id: string) =>
-    speakerById.get(id)?.speaker.label ||
-    speakerById.get(id)?.speaker.defaultLabel ||
-    id;
+  // Named voices, and their colours. A beat whose speaker is not in the roster
+  // reads as unattributed rather than as a raw id — see `speakerRoster`.
+  const voices = useMemo(() => speakerRoster(transcript), [transcript]);
+  const nameOf = (id: string) => voices.nameOf(id);
 
   const byId = useMemo(
     () => new Map(transcript.beats.map((b) => [b.id, b])),
@@ -224,7 +220,11 @@ export function CutEditor({
                 key={b.id}
                 onClick={() => toggle(b.id)}
                 className={cn(
-                  "flex w-full items-start gap-3 rounded-md border p-3 text-left transition-colors",
+                  // `text-start`, not `text-left`: a Hebrew transcript sets
+                  // `dir="rtl"` on the list and the lines have to align with
+                  // the edge a Hebrew reader starts from. `text-left` pinned
+                  // every line to the far side of the row from its timecode.
+                  "flex w-full items-start gap-3 rounded-md border p-3 text-start transition-colors",
                   on
                     ? "border-used/40 bg-used-surface/30"
                     : "border-transparent hover:border-border hover:bg-accent/20"
@@ -255,15 +255,22 @@ export function CutEditor({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                    <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                      <span
-                        className="size-2 shrink-0 rounded-full"
-                        style={{
-                          background: speakerColor(
-                            speakerById.get(b.speaker)?.index ?? 0
-                          ),
-                        }}
-                      />
+                    <span
+                      className={cn(
+                        "flex items-center gap-1.5 text-xs font-medium",
+                        voices.has(b.speaker)
+                          ? "text-muted-foreground"
+                          : "italic text-muted-foreground/60"
+                      )}
+                    >
+                      {voices.has(b.speaker) && (
+                        <span
+                          className="size-2 shrink-0 rounded-full"
+                          style={{
+                            background: speakerColor(voices.indexOf(b.speaker)),
+                          }}
+                        />
+                      )}
                       {nameOf(b.speaker)}
                     </span>
                     {b.flags.map((f) => (

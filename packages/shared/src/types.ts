@@ -437,3 +437,44 @@ export function assetOf(
     transcript.assets[0]
   );
 }
+
+
+/** Shown where a beat's voice is not one of the transcript's speakers. */
+export const UNATTRIBUTED_SPEAKER = "unattributed";
+
+/**
+ * The transcript's speakers, indexed for display.
+ *
+ * Two screens render a beat's speaker — the transcript viewer and the cut
+ * editor — and both need the same two answers: what to call this voice, and
+ * which colour it is. Sharing them is not just deduplication; it is what makes
+ * "the same voice reads the same everywhere" true rather than intended.
+ *
+ * **A beat's speaker id can legitimately not be in the roster.** A word the
+ * pipeline could not attribute carries a placeholder, and a job ingested by
+ * older code carries whatever the ASR vendor called the voice. Both must read
+ * as *unattributed* — `indexOf` returns -1 so no colour is claimed, and
+ * `nameOf` says so in words. Falling back to the raw id, which is what both
+ * screens used to do, put `c0:spk:0` on the line and one colour on every
+ * speaker in the job, and it did it silently.
+ */
+export function speakerRoster(transcript: Pick<Transcript, "speakers">) {
+  const byId = new Map(
+    transcript.speakers.map((speaker, index) => [speaker.id, { speaker, index }])
+  );
+  return {
+    /** -1 when this voice is not in the roster: no colour, not colour zero. */
+    indexOf(id: string): number {
+      return byId.get(id)?.index ?? -1;
+    },
+    nameOf(id: string): string {
+      const hit = byId.get(id);
+      if (!hit) return UNATTRIBUTED_SPEAKER;
+      return hit.speaker.label || hit.speaker.defaultLabel || UNATTRIBUTED_SPEAKER;
+    },
+    /** False for a beat nothing in the legend accounts for. */
+    has(id: string): boolean {
+      return byId.has(id);
+    },
+  };
+}

@@ -134,16 +134,16 @@
                 "ResultPath": "$.error"
               }
             ],
-            "Next": "structure"
+            "Next": "speakers"
           },
-          "structure": {
+          "speakers": {
             "Type": "Task",
             "Resource": "${worker_task_arn}",
-            "Comment": "Structure into beats",
+            "Comment": "Attribute speakers",
             "Parameters": {
               "job_id.$": "$.job_id",
               "org_id.$": "$.org_id",
-              "step": "structure",
+              "step": "speakers",
               "asset_id.$": "$.asset_id"
             },
             "ResultPath": null,
@@ -156,16 +156,16 @@
                 "ResultPath": "$.error"
               }
             ],
-            "Next": "speakers"
+            "Next": "structure"
           },
-          "speakers": {
+          "structure": {
             "Type": "Task",
             "Resource": "${worker_task_arn}",
-            "Comment": "Attribute speakers",
+            "Comment": "Structure into beats",
             "Parameters": {
               "job_id.$": "$.job_id",
               "org_id.$": "$.org_id",
-              "step": "speakers",
+              "step": "structure",
               "asset_id.$": "$.asset_id"
             },
             "ResultPath": null,
