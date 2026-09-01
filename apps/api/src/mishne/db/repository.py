@@ -123,7 +123,64 @@ def get_project(s: Session, org_id: str, project_id: str) -> Project | None:
 # ──────────────────────────────────────────────────────────────────── assets
 
 
-def _asset(row: sa.Row) -> Asset:
+def _companions_of(s: Session, org_id: str, asset_ids: list[str]) -> dict[str, str]:
+    """Of these assets, which are media some sequence asked for — and whose.
+
+    A companion is an ordinary asset (ADR-0014) and that is right for storage,
+    dedup and retention. It is wrong for a list of source material: a folder of
+    linked media puts four — or 775 — mob-id-named WAVs in a project, and
+    offering them as things to cut invites somebody to transcribe one
+    microphone and pay for another 46 minutes of source.
+    """
+    if not asset_ids:
+        return {}
+    t = m.AssetMediaRequirement.__table__
+    rows = s.execute(
+        sa.select(t.c.satisfied_by_asset_id, t.c.asset_id).where(
+            t.c.org_id == org_id,
+            t.c.satisfied_by_asset_id.in_(asset_ids),
+        )
+    ).all()
+    return {r.satisfied_by_asset_id: r.asset_id for r in rows}
+
+
+def _media_bytes_of(s: Session, org_id: str, asset_ids: list[str]) -> dict[str, int]:
+    """Of these assets, the ones that reference media — and how much has arrived.
+
+    A linked AAF's own size is a few hundred kilobytes of pointers, which tells
+    an editor nothing about the forty gigabytes the sequence is made of. The
+    total lives in the companion assets that satisfied its requirements, so it
+    is summed here rather than stored: a stored total is a number that drifts
+    from the files it claims to describe, and a file arriving would have to
+    remember to update it.
+
+    Outer-joined, so a sequence whose media has not arrived yet still comes back
+    — with a total of zero — rather than being indistinguishable from an
+    embedded AAF that references nothing. A companion can satisfy at most one
+    requirement per sequence (`match_key` is unique there), so nothing is
+    counted twice.
+    """
+    if not asset_ids:
+        return {}
+    t = m.AssetMediaRequirement.__table__
+    a = m.Asset.__table__
+    rows = s.execute(
+        sa.select(t.c.asset_id, sa.func.coalesce(sa.func.sum(a.c.bytes), 0))
+        .select_from(
+            t.outerjoin(
+                a,
+                sa.and_(a.c.id == t.c.satisfied_by_asset_id, a.c.org_id == t.c.org_id),
+            )
+        )
+        .where(t.c.org_id == org_id, t.c.asset_id.in_(asset_ids))
+        .group_by(t.c.asset_id)
+    ).all()
+    return {r[0]: int(r[1]) for r in rows}
+
+
+def _asset(
+    row: sa.Row, companion_of: str | None = None, media_bytes: int | None = None
+) -> Asset:
     probe = row.probe or {}
     return Asset(
         id=row.id,
@@ -142,6 +199,8 @@ def _asset(row: sa.Row) -> Asset:
         codec=probe.get("codec", ""),
         audio_tracks=probe.get("audio_tracks", 0),
         uploaded_at=row.created_at,
+        companion_of=companion_of,
+        media_bytes=media_bytes,
     )
 
 
@@ -152,13 +211,22 @@ def list_assets(s: Session, org_id: str, project_id: str) -> list[Asset]:
         .where(a.c.org_id == org_id, a.c.project_id == project_id)
         .order_by(a.c.created_at)
     ).all()
-    return [_asset(r) for r in rows]
+    ids = [r.id for r in rows]
+    companions = _companions_of(s, org_id, ids)
+    media = _media_bytes_of(s, org_id, ids)
+    return [_asset(r, companions.get(r.id), media.get(r.id)) for r in rows]
 
 
 def get_asset(s: Session, org_id: str, asset_id: str) -> Asset | None:
     a = m.Asset.__table__
     row = s.execute(sa.select(a).where(a.c.org_id == org_id, a.c.id == asset_id)).first()
-    return _asset(row) if row else None
+    if row is None:
+        return None
+    return _asset(
+        row,
+        _companions_of(s, org_id, [row.id]).get(row.id),
+        _media_bytes_of(s, org_id, [row.id]).get(row.id),
+    )
 
 
 # ────────────────────────────────────────────────────────────────────── jobs
@@ -189,6 +257,7 @@ def _job(row: sa.Row, asset_ids: list[str], steps: list[JobStep]) -> Job:
         estimate=CreditEstimate.model_validate(row.estimate),
         credits_settled=float(row.credits_settled) if row.credits_settled is not None else None,
         error=(row.error or {}).get("message") if row.error else None,
+        media_gaps=row.media_gaps or {},
     )
 
 

@@ -27,6 +27,7 @@ class FakeClip:
     media_path: object | None = None
     embedded_mob_id: str | None = None
     mob_id: str = ""
+    track_index: int = 0
 
 
 # ─────────────────────────────────────────────────────────────────── the locator
@@ -65,6 +66,27 @@ def test_one_requirement_per_file_not_per_clip():
     ]
     wanted = reqs.from_clips(clips)
     assert [(r.basename, r.clip_count) for r in wanted] == [("A001.mxf", 2), ("B002.mxf", 1)]
+
+
+def test_every_track_s_media_is_asked_for_not_just_the_first_track_s():
+    """Four microphones on four tracks are four files to ask for.
+
+    `from_clips` folds whatever the parse hands it, so this pins the contract
+    from the other side: a sequence whose clips span several tracks must ask
+    for all of their media. Asking for one of four and then transcribing one
+    microphone is what happened before `parse` read past the first track.
+    """
+    clips = [
+        FakeClip("Audio 1_L", "file:///D:/Export/AAF Media/mic0.wav", track_index=0),
+        FakeClip("Audio 1_R", "file:///D:/Export/AAF Media/mic1.wav", track_index=1),
+        FakeClip("Audio 2_L", "file:///D:/Export/AAF Media/mic2.wav", track_index=2),
+        FakeClip("Audio 2_R", "file:///D:/Export/AAF Media/mic3.wav", track_index=3),
+    ]
+
+    wanted = reqs.from_clips(clips)
+
+    assert sorted(r.basename for r in wanted) == [
+        "mic0.wav", "mic1.wav", "mic2.wav", "mic3.wav"]
 
 
 def test_the_file_that_unblocks_the_most_clips_is_asked_for_first():

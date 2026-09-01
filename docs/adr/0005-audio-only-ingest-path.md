@@ -60,6 +60,13 @@ in any incident.
 is still the best path for relink fidelity because it carries source mob IDs. The
 three modes serve different customers.
 
+*Amended 1 Sep 2026:* there are four. ADR-0014 added the **linked** AAF — the
+sequence plus the folder of media it references, which is what Media Composer
+exports by default — and it inherits the mob IDs that make the embedded path
+the best one for relink without the tens of gigabytes the embedded export
+costs. The sentence above still holds for `aaf_embedded`; `aaf_linked` is the
+same fidelity acquired differently.
+
 ## Implementation note
 
 The desktop helper — local audio extraction plus metadata upload — is Phase 4 work,

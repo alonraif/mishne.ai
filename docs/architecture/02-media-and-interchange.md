@@ -36,15 +36,44 @@ flowchart TD
     A["Customer material"] --> B{"Ingest mode"}
     B -->|"Full media"| C["Upload video<br/>~4–200 GB for 3 h"]
     B -->|"AAF + embedded"| D["Upload AAF<br/>essence demuxed server-side"]
+    B -->|"AAF + linked"| L["Upload AAF, then the folder<br/>it references<br/>~300 KB + the media"]
     B -->|"Audio only"| E["Upload WAV + metadata<br/>~350 MB for 3 h"]
 
     C --> F["ffmpeg: extract audio"]
     D --> G["pyaaf2: extract essence<br/>+ inherit mob IDs"] --> F
+    L --> M["Ask for each referenced file<br/>by basename, then stage<br/>them beside the AAF"] --> G
     E --> H["Trust supplied TC metadata"]
 
     F --> I["Pipeline"]
     H --> I
 ```
+
+### On the linked-AAF path
+
+**This is what Media Composer exports by default** — the reason the mode exists
+rather than being a convenience. A linked AAF is a few hundred kilobytes of
+pointers at media on the editor's SAN, next to a folder the exporter calls
+`AAF Media`. Refusing it is a checkbox in somebody else's application,
+discovered after they have already uploaded, and the embedded alternative can be
+tens of gigabytes larger than the media they already have on disk.
+
+The locators inside are absolute paths into a filesystem we will never see —
+`file:///D%3a/Pepper/Law_Podcast/Export/ForMishne/AAF%20Media/…` in the real
+sample, drive letter and percent-encoding and all. **Resolution is on basename,
+normalised for case**, which is the whole of it: the AAF is probed on arrival,
+one row per referenced file it does not contain goes into
+`asset_media_requirements`, the customer uploads those files, and the worker
+materialises them beside the AAF under their own names so the parser's existing
+same-directory fallback finds them unchanged. ADR-0014.
+
+**Treat it as untrusted input on the same terms as the embedded case** — the
+section below applies, and adds one of its own: a folder is many objects, each
+under `max_upload_bytes`, whose *sum* is what a worker has to hold. See the
+amended sizing note in ADR-0013.
+
+**A sequence's sound tracks are mixed for transcription** and the per-track
+renders are kept for speaker attribution (ADR-0019). A four-microphone podcast
+is four sound tracks and four referenced files, and all four are asked for.
 
 ### On the audio-only path
 

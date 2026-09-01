@@ -121,6 +121,10 @@ def main() -> int:
                     choices=["auto", "model", "claude", "enumerate", "none"],
                     help="propose cuts inside long beats (default: auto)")
     ap.add_argument("--rate", type=float, help="frame rate for audio-only input")
+    ap.add_argument("--media-dir", type=Path, action="append", default=[],
+                    metavar="DIR",
+                    help="where a linked AAF's media lives, if it is not beside "
+                         "the AAF or one level down (repeatable)")
     ap.add_argument("--handles", type=int, default=0,
                     help="extra frames each side; 0 keeps the cut frame accurate")
     ap.add_argument("--diarize", type=Path, metavar="DIR",
@@ -184,6 +188,7 @@ def main() -> int:
         try:
             ing = project.ingest(
                 media, work, language=args.language, provider=args.asr,
+                media_dirs=args.media_dir,
                 ledger=router.ledger,
                 replay=args.replay, model=args.model,
                 model_path=args.model_path, assume_rate=assume_rate(args.rate),

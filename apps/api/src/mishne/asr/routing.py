@@ -7,7 +7,7 @@ happened.
 ## The decision
 
     language xAI publishes        →  xai/grok-stt        $0.10 / source hour
-    Hebrew, or anything else      →  gemini-3.5-transcribe  ~$0.30 / source hour
+    Hebrew, or anything else      →  gemini-3.5-transcribe  ~$0.18 / source hour
     unspecified language          →  gemini-3.5-transcribe
 
 Cost is the tiebreak, not the rule. Among the engines that *can* transcribe the
@@ -59,9 +59,11 @@ def _pinned() -> str:
 def _xai_takes_any_language() -> bool:
     """Opt in to xAI's claim that it transcribes languages it does not list.
 
-    Off by default. If it holds, Hebrew gets three times cheaper — which makes
-    it worth measuring against Gemini on the same material and not worth
-    assuming from a documentation line. See engines.json.
+    Off by default, and measured false for Hebrew on 1 Sep 2026: fluent
+    Hebrew of the wrong words, no diarization, and `language` returned as
+    `en` either way, so nothing in the response admits it. The flag stays
+    because the claim is worth re-testing when the model changes — it is a
+    measurement harness, not an optimisation. See engines.json.
     """
     return os.environ.get("MISHNE_ASR_XAI_ANY_LANGUAGE", "") not in ("", "0")
 

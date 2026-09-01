@@ -65,6 +65,28 @@ export interface Asset {
   codec: string;
   audioTracks: number;
   uploadedAt: string;
+  /**
+   * The sequence this file was uploaded to satisfy, if it is one.
+   *
+   * A linked AAF's companions are ordinary assets and nothing special-cases
+   * them (ADR-0014) — right for storage, dedup and retention, wrong for a list
+   * of source material: four, or 775, mob-id-named WAVs are not that many
+   * things to cut, and offering one invites transcribing a single microphone
+   * and paying for the whole running time again. Absent for anything a
+   * customer would choose.
+   */
+  companionOf?: string | null;
+  /**
+   * How big the media behind this file actually is.
+   *
+   * An AAF is a sequence, not a container: a linked one is a few hundred
+   * kilobytes of pointers, and `bytes` therefore answers a question nobody
+   * asked. This is the sum over the referenced files that have arrived — a
+   * running total while the asset is `awaiting_media`, complete once it is
+   * `ready`. Absent for anything carrying its own essence, where `bytes` is
+   * already the whole answer.
+   */
+  mediaBytes?: number | null;
 }
 
 /* -------------------------------------------------------------------- jobs */
@@ -189,6 +211,17 @@ export interface Job {
   estimate: CreditEstimate;
   creditsSettled?: number;
   error?: string;
+  /**
+   * Media this cut went ahead without: `{assetId: [basename, ...]}`.
+   *
+   * A linked AAF can be submitted while some of the media it references is
+   * still missing, if the person submitting says so — the clips it cannot
+   * resolve are silent in the transcript and still reference the right source
+   * (ADR-0014). Recorded as it stood at submission and never updated, because
+   * uploading the file next week would otherwise erase the reason this
+   * transcript has silence in it. Empty for every other job.
+   */
+  mediaGaps: Record<string, string[]>;
 }
 
 /* --------------------------------------------------------------- artifacts */

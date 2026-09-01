@@ -20,9 +20,12 @@ capacity problem and became a line item.
 ## What the `language` field does, and what it does not
 
 xAI's documentation says the language code drives text formatting rather than
-transcription, and that the model handles audio in any language. If true,
-Hebrew would run here at a third of Gemini's price. It is untested, so
-`asr/routing.py` does not act on it — see the note in `engines.json`.
+transcription, and that the model handles audio in any language. The first half
+is true — sending `he` and omitting it produce word-for-word identical output.
+The second is not: on Hebrew this returns fluent nonsense on a single speaker,
+and reports `language: en` either way, so the response carries no sign of it.
+Measured 1 Sep 2026; the numbers are in `engines.json` and ADR-0018.
+`asr/routing.py` therefore routes on the published list, not on the claim.
 """
 
 from __future__ import annotations

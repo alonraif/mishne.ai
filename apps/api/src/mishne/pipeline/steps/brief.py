@@ -130,7 +130,15 @@ def compile_deterministic(notes: str, target_duration_s: int | None = None,
     """Compile without a model. Every default applied is recorded."""
     clarifications: list[str] = []
 
-    duration = target_duration_s or parse_duration(notes)
+    # `0` is "there is no target", said deliberately; `None` is "none was
+    # given, infer one". A transcription job is the first case: a target length
+    # is a selection parameter, selection does not run, and inventing ten
+    # minutes would put a number on the transcript page that nothing produced
+    # and nobody asked for.
+    if target_duration_s == 0:
+        duration: int | None = 0
+    else:
+        duration = target_duration_s or parse_duration(notes)
     if duration is None:
         duration = 600
         clarifications.append(
@@ -239,7 +247,10 @@ def compile_with_llm(notes: str, target_duration_s: int | None = None,
                 "speaker_priority", "pacing", "keep_filler", "clarifications"):
         if key in data and data[key] is not None:
             setattr(base, key, data[key])
-    if target_duration_s:
+    if target_duration_s is not None:
+        # Including 0. The model is asked for a target and will offer one even
+        # when it was told there is none; the caller's answer is the one that
+        # counts.
         base.target_duration_s = target_duration_s
     for k, v in overrides.items():
         if v is not None and hasattr(base, k):

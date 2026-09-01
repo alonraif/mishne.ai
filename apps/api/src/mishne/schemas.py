@@ -92,6 +92,23 @@ class Asset(BaseModel):
     codec: str
     audio_tracks: int
     uploaded_at: datetime
+    #: The sequence this file was uploaded to satisfy, if it is one.
+    #:
+    #: A linked AAF's companions are ordinary assets and nothing special-cases
+    #: them (ADR-0014) — which is right everywhere except a list of source
+    #: material, where four or 775 mob-id-named WAVs are not four or 775 things
+    #: to cut. `None` for everything a customer would choose.
+    companion_of: str | None = None
+    #: How big the media behind this file actually is.
+    #:
+    #: A linked AAF is a few hundred kilobytes of pointers, so its own `bytes`
+    #: answers a question nobody asked: what an editor wants to know before a
+    #: 46-minute sequence goes anywhere is that the essence is forty gigabytes.
+    #: This is the sum over the referenced files that have arrived — so it is a
+    #: partial total while the asset is `awaiting_media`, which is exactly what
+    #: that status is for. `None` for anything carrying its own essence, where
+    #: `bytes` is already the whole answer.
+    media_bytes: int | None = None
 
 
 class EditBrief(BaseModel):
@@ -163,6 +180,11 @@ class Job(BaseModel):
     estimate: CreditEstimate
     credits_settled: float | None = None
     error: str | None = None
+    #: {asset_id: [basename, ...]} — media this cut went ahead without, as it
+    #: stood at submission. Never re-derived from the requirement rows: those
+    #: describe the asset now, and a file uploaded tomorrow would erase the
+    #: reason this transcript has silence in it.
+    media_gaps: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class Artifact(BaseModel):
@@ -486,6 +508,31 @@ class CreateJobRequest(BaseModel):
     language: str = "en"
     # The user must approve an estimate before a job is accepted.
     approved_cap: float
+    #: Cut this sequence even though some of the media it references has not
+    #: arrived. Default false, and refused outright when *none* of it has: a
+    #: job with nothing to transcribe is the case ADR-0014 was right about.
+    #: What was missing is recorded on the job, because a transcript with
+    #: silence in it has to be able to say why.
+    accept_missing_media: bool = False
+
+    @model_validator(mode="after")
+    def _a_target_only_where_it_means_something(self) -> "CreateJobRequest":
+        """`0` is "no target", and it is only honest in transcription mode.
+
+        A target length is a selection parameter — the solver's hard duration
+        constraint (ADR-0004) and what scoring aims at. In `manual` neither
+        runs, so the wizard does not ask and sends 0. In `ai` and `hybrid` a
+        target of nothing would ask the solver to choose nothing, so it is
+        refused here rather than defaulted quietly somewhere downstream.
+        """
+        if self.target_duration_s < 0:
+            raise ValueError("target_duration_s cannot be negative")
+        if self.target_duration_s == 0 and self.mode != "manual":
+            raise ValueError(
+                "a target length is required for this mode — only a "
+                "transcription job may have none"
+            )
+        return self
 
     @field_validator("name")
     @classmethod

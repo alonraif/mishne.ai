@@ -323,6 +323,12 @@ class Job(Base):
     # The reproducibility contract: without it "why did the output change?" has
     # no answer (ADR-0011).
     model_versions = sa.Column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    # {asset_id: [basename, ...]} — referenced media that had not arrived when
+    # this job was submitted, and which the submitter accepted running without
+    # (ADR-0014). A fact about the job as submitted: never updated when the
+    # files turn up later, because a transcript with silence in it has to be
+    # able to say why months afterwards. NULL means nothing was missing.
+    media_gaps = sa.Column(JSONB)
     # Vendor cost, in cents. NOT the customer's credits — different number,
     # different currency, different purpose. Unit economics live here.
     cost_cents = sa.Column(sa.Integer, nullable=False, server_default=sa.text("0"))

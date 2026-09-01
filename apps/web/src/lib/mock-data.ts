@@ -198,6 +198,7 @@ export const mockJobs: Job[] = [
     assetIds: ["ast_9d41"],
     mode: "ai",
     status: "analyzing",
+    mediaGaps: {},
     notesRaw:
       "Ten minutes, tight. Lead on the harbour closure decision — that's the story. Margret's line about her father's boat has to be in there. Keep it conversational, not stuffy. Drop anything about the council vote, we're covering that separately.",
     brief: {
@@ -228,6 +229,7 @@ export const mockJobs: Job[] = [
     assetIds: ["ast_2b77"],
     mode: "ai",
     status: "complete",
+    mediaGaps: {},
     notesRaw:
       "Six minutes for the web cut. Jonas only. Warm, reflective. Lose the technical stuff about quota systems.",
     brief: {
@@ -261,6 +263,7 @@ export const mockJobs: Job[] = [
     assetIds: ["ast_5e10"],
     mode: "ai",
     status: "failed",
+    mediaGaps: {},
     notesRaw: "Twelve minutes. Keynote highlights, energy transition focus.",
     brief: {
       targetDurationS: 720,
@@ -293,6 +296,7 @@ mockJobs.push({
   id: "job_2e57",
   name: "Ep. 3 — web version, starting point",
   projectId: "prj_harbour",
+  mediaGaps: {},
   // Two uploads in one cut — the interview and the pickup shoot. Any screen
   // that renders a job must survive this, not just the single-asset case.
   assetIds: ["ast_9d41", "ast_2b77"],

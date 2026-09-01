@@ -36,6 +36,26 @@ rest, unchanged.
 and the sequence is intact. It is also not `ready`, because a job started
 against it would transcribe silence.
 
+**A folder is N ordinary assets, and only the referenced ones.** *Added 1 Sep
+2026.* The customer drops the folder their editor exported — or the whole export
+folder, AAF included — and each file in it that a requirement asks for is
+uploaded as its own asset, by the same presigned multipart path as any other
+upload. Files nothing references are skipped and counted, not uploaded: a folder
+can hold a year of rushes and a cut needs four of them. The frame rate every
+audio companion has to declare (ADR-0005) is taken from the sequence, because
+the sequence knows and asking 775 times does not.
+
+**A job may run with an acknowledged gap.** *Added 1 Sep 2026, and it reverses
+the last consequence below.* Submission refuses an `awaiting_media` sequence by
+default and names the files it is waiting for. The submitter can say to go
+ahead anyway; the clips that cannot be resolved are silent in the transcript and
+still reference the right source, and what was missing is recorded on the job in
+`jobs.media_gaps` — never re-derived, because uploading the file next week
+satisfies the requirement row and would erase the reason the transcript has
+silence in it. The floor is that a sequence which resolved *none* of its media
+is still refused, whatever the flag says: that job transcribes silence, and the
+customer cannot know that is what they are buying.
+
 **Rows, not a `jsonb` column on `assets`.** The question the feature exists to
 answer is *given a file the customer just uploaded, which sequences were waiting
 for it?* — a lookup across every awaiting asset in the org, on every completed
@@ -71,6 +91,25 @@ enough to matter.
   again.
 - **Ingest must materialise the companions beside the AAF**, under their
   original names. `workspace.materialise` takes them for exactly this reason.
-- **A job must refuse to start against an `awaiting_media` asset.** That check
+- **A job must refuse to start against an `awaiting_media` asset.** ~~That check
   belongs with job submission (B3/C1) and is not yet written; until then the
-  status is advisory rather than enforced.
+  status is advisory rather than enforced.~~ *Superseded 1 Sep 2026.* The check
+  was written (`routers/jobs.py`) and then softened, because a flat refusal is
+  wrong for the ordinary export: `samples/peppercreative_habatim…` references
+  776 files and ships 775 — the absent one is a video reference — and under a
+  flat refusal it can never be submitted at all. It is now a question with a
+  floor under it, as the Decision above says.
+
+- **A basename asked for is the whole of what the customer is told.** The
+  requirement rows are also the upload filter, so what the panel lists and what
+  a dropped folder uploads are the same set by construction. A file the parse
+  could not name — a clip with no locator at all — is invisible to both, and
+  that is deliberate: a clip *name* is whatever the editor typed and sending
+  somebody to look for it is worse than silence about it.
+
+- **Requirements are discovered across every sound track.** *Added 1 Sep 2026.*
+  They always came from `aaf_ingest.parse`, and `parse` read only the first
+  audio track — so a four-microphone podcast asked for one file of four and
+  transcribed one microphone of four, with nothing anywhere reporting a problem.
+  Reading every track is what makes the list the customer is shown complete.
+  See [ADR-0019](0019-mix-sound-tracks-for-transcription.md) for what is then done with those tracks.

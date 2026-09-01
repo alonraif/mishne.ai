@@ -435,7 +435,7 @@ def _extents(asset: AssetRef) -> dict:
     # site, alongside the source positions, so the two can never diverge.
     fps = asset.rate.fps
     out: dict = {}
-    for c in asset.aaf.clips:
+    for c in asset.aaf.primary_clips:
         key = c.mob_id or c.name
         lo_f = _to_frames(c.src_in, c.src_rate, fps)
         hi_f = _to_frames(c.src_out, c.src_rate, fps)

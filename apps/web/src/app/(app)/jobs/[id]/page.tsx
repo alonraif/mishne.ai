@@ -148,6 +148,40 @@ function JobView({ job, onRenamed }: { job: Job; onRenamed: () => void }) {
             </Card>
           )}
 
+          {/* Media this cut went ahead without.
+              A linked AAF can be submitted while some of the media it
+              references is missing, if the submitter says so (ADR-0014). Those
+              clips are silent, so the transcript has gaps that are nothing to
+              do with the material — and this is the only place that can say
+              why. Recorded on the job at submission, so it still says so after
+              the files have since been uploaded. */}
+          {Object.keys(job.mediaGaps).length > 0 && (
+            <Card className="border-flag-lowconf/30 bg-flag-lowconf/5">
+              <CardContent className="flex gap-3 pt-5 text-sm">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-flag-lowconf" />
+                <div className="min-w-0">
+                  <div className="font-medium text-flag-lowconf">
+                    Cut without some of its media
+                  </div>
+                  <p className="mt-1 text-muted-foreground">
+                    These referenced files had not arrived when this cut was
+                    submitted. The clips that need them are silent in the
+                    transcript, and nothing was chosen from them.
+                  </p>
+                  <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                    {Object.values(job.mediaGaps)
+                      .flat()
+                      .map((basename) => (
+                        <li key={basename} className="truncate" dir="ltr">
+                          {basename}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* One card, whatever the mode, because the mode decides how much of
               it there is to show. A transcribe-only job has a source and two
               settings; an AI one adds everything the brief compiler made of
@@ -209,7 +243,12 @@ function JobView({ job, onRenamed }: { job: Job; onRenamed: () => void }) {
                     </p>
                   )}
                   <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
-                    <Row label="Target" value={formatDuration(job.brief.targetDurationS)} mono />
+                    {/* A transcription job has no target: it is a selection
+                        parameter, it does not affect the price, and nothing
+                        reads it. "Target 0s" is worse than no row. */}
+                    {job.brief.targetDurationS > 0 && (
+                      <Row label="Target" value={formatDuration(job.brief.targetDurationS)} mono />
+                    )}
                     <Row label="Tolerance" value={`±${job.brief.durationToleranceS}s`} mono />
                     <Row label="Structure" value={job.brief.narrativeShape.replace(/_/g, " ")} />
                     <Row label="Pacing" value={job.brief.pacing} />

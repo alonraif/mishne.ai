@@ -28,6 +28,7 @@ import {
   type TierId,
 } from "@mishne/shared";
 import { Button } from "@/components/ui/button";
+import { MediaRequirements } from "@/components/media-requirements";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -140,11 +141,17 @@ export function NewJobFlow({
   assets,
   balance,
   tierId,
+  arriving = 0,
+  onAssetsChanged,
 }: {
   project: Project;
   assets: Asset[];
   balance: number;
   tierId: TierId;
+  /** Uploads still being read. The empty state is different if any are. */
+  arriving?: number;
+  /** Re-read the project's assets — an upload here changes the list. */
+  onAssetsChanged?: () => void;
 }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -167,6 +174,11 @@ export function NewJobFlow({
   const [tones, setTones] = useState<string[]>(["conversational"]);
   const [notes, setNotes] = useState("");
   const [approved, setApproved] = useState(false);
+  //: Ticked only when a chosen sequence is short of media. Kept separate from
+  //: `approved`: one is about money and the other about what the cut will be
+  //: missing, and rolling them into one box means the customer agrees to the
+  //: second by reading about the first.
+  const [acceptMissingMedia, setAcceptMissingMedia] = useState(false);
   const [estimate, setEstimate] = useState<CreditEstimate | null>(null);
   const [pricing, setPricing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,6 +196,9 @@ export function NewJobFlow({
    * and the customer sees an approval screen followed by a 409 they cannot
    * act on. One source for the number the customer approves.
    */
+  // Transcription mode has no target length: 0 is how "none" travels, and the
+  // estimate and the submission have to say the same thing about it.
+  const noTarget = mode === "manual";
   useEffect(() => {
     if (assetIds.length === 0) {
       setEstimate(null);
@@ -194,7 +209,7 @@ export function NewJobFlow({
     apiSend<CreditEstimate>("/v1/jobs/estimate", {
       json: {
         asset_ids: assetIds,
-        target_duration_s: targetMinutes * 60,
+        target_duration_s: noTarget ? 0 : targetMinutes * 60,
         mode,
       },
     })
@@ -225,6 +240,20 @@ export function NewJobFlow({
     if (!nameTouched) setName(suggestedName(firstChosen?.filename));
   }, [firstChosen?.filename, nameTouched]);
 
+  // The list can fill in after mount now that it is polled, and an upload
+  // started on this screen is the case that matters: having watched it arrive,
+  // nobody expects to have to click it as well.
+  useEffect(() => {
+    if (assetIds.length === 0 && assets.length > 0) setAssetIds([assets[0].id]);
+  }, [assets, assetIds.length]);
+
+  // Sequences in this cut that are short of media. Their clips will be silent
+  // in the transcript and will still reference the right source, which is a
+  // trade worth offering and not one to make on somebody's behalf.
+  const shortOfMedia = assets.filter(
+    (a) => assetIds.includes(a.id) && a.status === "awaiting_media"
+  );
+
   const submit = async () => {
     if (!estimate) return;
     setSubmitting(true);
@@ -236,7 +265,7 @@ export function NewJobFlow({
           name: name.trim(),
           mode,
           notes,
-          target_duration_s: targetMinutes * 60,
+          target_duration_s: noTarget ? 0 : targetMinutes * 60,
           narrative_shape: shape,
           tone: tones,
           // Sent in every mode, transcribe-only included: the transcript is
@@ -246,6 +275,10 @@ export function NewJobFlow({
           // What the customer approved, sent so the API can compare it with
           // what it recomputes. It is a check, not the price.
           approved_cap: estimate.cap,
+          // Only ever true because the box below was ticked. The API refuses
+          // the submission without it, and refuses it regardless when none of
+          // a sequence's media has arrived.
+          accept_missing_media: acceptMissingMedia,
         },
       });
       router.push(`/jobs/${job.id}`);
@@ -315,14 +348,17 @@ export function NewJobFlow({
               {/* The same uploader as the project page, not a second one: an
                   upload started here resumes on the project page and the other
                   way round, because there is one implementation of it. */}
-              <AssetUpload projectId={project.id} />
+              <AssetUpload projectId={project.id} onUploaded={onAssetsChanged} />
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {assets.length === 0 && (
               <p className="py-6 text-center text-sm text-muted-foreground">
-                Nothing ready to cut yet. Upload footage, and it appears here
-                once it has been probed.
+                {arriving > 0
+                  ? arriving === 1
+                    ? "Reading the upload — it appears here in a moment."
+                    : `Reading ${arriving} uploads — they appear here in a moment.`
+                  : "Nothing ready to cut yet. Upload footage, and it appears here once it has been probed."}
               </p>
             )}
             {assets.map((a) => {
@@ -352,11 +388,33 @@ export function NewJobFlow({
                       {a.codec} · {formatDuration(framesToSeconds(a.durationFrames, a.rate))} ·{" "}
                       {a.audioTracks} audio tracks
                     </div>
+                    {a.status === "awaiting_media" && (
+                      <div className="mt-1 text-xs text-flag-lowconf">
+                        Still waiting for media it references. Cutting it now
+                        leaves those clips silent.
+                      </div>
+                    )}
                   </div>
                   {selected && <Check className="size-4 shrink-0 text-primary" />}
                 </button>
               );
             })}
+
+            {/* The sequence says which files it needs and this is where they
+                arrive. It used to render only on the project page, so anyone
+                who uploaded a linked AAF *here* — which is the obvious place,
+                since this is the screen that asks for source material — got an
+                upload that completed, a row that would not become ready, and
+                nothing telling them why or what to do about it. */}
+            {shortOfMedia.map((a) => (
+              <MediaRequirements
+                key={a.id}
+                projectId={project.id}
+                assetId={a.id}
+                onUploaded={onAssetsChanged}
+                onSatisfied={onAssetsChanged}
+              />
+            ))}
           </CardContent>
         </Card>
       )}
@@ -402,7 +460,7 @@ export function NewJobFlow({
         <Card>
           <CardHeader>
             <CardTitle>
-              {mode === "manual" ? "Name and target length" : "Name and production notes"}
+              {mode === "manual" ? "Name and language" : "Name and production notes"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -437,25 +495,34 @@ export function NewJobFlow({
               </p>
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="target">Target length</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="target"
-                  type="number"
-                  min={1}
-                  value={targetMinutes}
-                  onChange={(e) => setTargetMinutes(Number(e.target.value))}
-                  className="w-24 tc"
-                />
-                <span className="text-sm text-muted-foreground">minutes</span>
+            {/* Not asked in transcription mode. A target length is a
+                *selection* parameter: the solver's hard duration constraint
+                (ADR-0004) and what scoring is told to aim at. In transcription
+                mode neither runs, it does not move the price — cost scales with
+                source duration, not cut length — and nothing reads it before
+                the cut editor, which is the first place anybody could answer it
+                honestly anyway. So the wizard sends no target and the editor
+                says there is none. */}
+            {mode !== "manual" && (
+              <div className="grid gap-2">
+                <Label htmlFor="target">Target length</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="target"
+                    type="number"
+                    min={1}
+                    value={targetMinutes}
+                    onChange={(e) => setTargetMinutes(Number(e.target.value))}
+                    className="w-24 tc"
+                  />
+                  <span className="text-sm text-muted-foreground">minutes</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Target length does not affect price — the work is in reading
+                  the source, not in writing the cut.
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                {mode === "manual"
-                  ? "Used to show you how close your cut is as you build it."
-                  : "Target length does not affect price — the work is in reading the source, not in writing the cut."}
-              </p>
-            </div>
+            )}
 
             {/* Every mode. A transcribe-only job is *entirely* this decision. */}
             <div className="grid gap-2">
@@ -678,6 +745,35 @@ export function NewJobFlow({
                 </div>
               )}
 
+              {shortOfMedia.length > 0 && (
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-flag-lowconf/40 bg-flag-lowconf/5 p-3 text-sm transition-colors hover:bg-flag-lowconf/10">
+                  <input
+                    type="checkbox"
+                    checked={acceptMissingMedia}
+                    onChange={(e) => setAcceptMissingMedia(e.target.checked)}
+                    className="mt-0.5 size-4 accent-[oklch(0.65_0.17_274)]"
+                  />
+                  <span>
+                    Cut{" "}
+                    <span dir="ltr">
+                      {shortOfMedia.map((a) => a.filename).join(", ")}
+                    </span>{" "}
+                    without the media that has not arrived. Those clips will be
+                    silent in the transcript and nothing will be chosen from
+                    them — the rest of the sequence is cut normally, and what
+                    was missing is recorded on the job.
+                    {/* The price does not move, and it would be a nasty
+                        surprise to discover that after the fact: transcription
+                        is priced on the sequence's length, and the silence is
+                        part of that length. */}
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      The price is unchanged: it is based on the length of the
+                      sequence, silence included.
+                    </span>
+                  </span>
+                </label>
+              )}
+
               {estimate.sufficient && (
                 <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border p-3 text-sm transition-colors hover:bg-accent/30">
                   <input
@@ -716,7 +812,12 @@ export function NewJobFlow({
           <Button
             onClick={submit}
             disabled={
-              !approved || !estimate?.sufficient || submitting || pricing || !name.trim()
+              !approved ||
+              (shortOfMedia.length > 0 && !acceptMissingMedia) ||
+              !estimate?.sufficient ||
+              submitting ||
+              pricing ||
+              !name.trim()
             }
           >
             <Check />{" "}

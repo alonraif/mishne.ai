@@ -79,7 +79,12 @@ log = get_logger(__name__)
 CACHEABLE = ("ingest.json", "*.wav", "*.asr.json", "transcript.json")
 
 #: Never mirrored, even though they match the patterns above.
-NOT_CACHEABLE = ("_seg_", "_sil_", "_concat")
+#:
+#: `_track_` is the per-sound-track render a multi-track sequence is mixed from
+#: (ADR-0019). Four microphones on a 46-minute podcast is four full-length WAVs
+#: — 350 MB per asset — wanted only during the run that produced them, and
+#: rebuildable from the source. Exactly what ADR-0013 says not to mirror.
+NOT_CACHEABLE = ("_seg_", "_sil_", "_concat", "_track_")
 
 
 @dataclass

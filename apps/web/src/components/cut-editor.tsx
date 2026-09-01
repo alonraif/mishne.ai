@@ -137,8 +137,13 @@ export function CutEditor({
     return a + framesToSeconds(b.endFrames - b.startFrames, assetOf(transcript, b).rate);
   }, 0);
   const cutS = cutSeconds;
+  // A transcription job has no target: the field is a selection parameter, it
+  // does not move the price, and nothing reads it before this screen — so the
+  // wizard stops asking for one and sends 0. Without this the delta is the
+  // whole cut length and the bar's width is `cutS / 0`.
+  const hasTarget = targetDurationS > 0;
   const delta = cutS - targetDurationS;
-  const onTarget = Math.abs(delta) <= 30;
+  const onTarget = !hasTarget || Math.abs(delta) <= 30;
 
   const dirty = useMemo(
     () => JSON.stringify(order) !== JSON.stringify(aiOrder),
@@ -309,24 +314,32 @@ export function CutEditor({
               {formatDuration(cutS)}
             </span>
           </div>
-          <div className="mt-1 flex items-baseline justify-between text-xs text-muted-foreground">
-            <span>target {formatDuration(targetDurationS)}</span>
-            <span className={cn("tc", onTarget ? "text-used" : "text-flag-lowconf")}>
-              {delta >= 0 ? "+" : "−"}
-              {formatDuration(Math.abs(delta))}
-            </span>
-          </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-secondary">
-            <div
-              className={cn(
-                "h-full rounded-full transition-all",
-                onTarget ? "bg-used" : "bg-flag-lowconf"
-              )}
-              style={{
-                width: `${Math.min(100, (cutS / targetDurationS) * 100)}%`,
-              }}
-            />
-          </div>
+          {hasTarget ? (
+            <>
+              <div className="mt-1 flex items-baseline justify-between text-xs text-muted-foreground">
+                <span>target {formatDuration(targetDurationS)}</span>
+                <span className={cn("tc", onTarget ? "text-used" : "text-flag-lowconf")}>
+                  {delta >= 0 ? "+" : "−"}
+                  {formatDuration(Math.abs(delta))}
+                </span>
+              </div>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-secondary">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    onTarget ? "bg-used" : "bg-flag-lowconf"
+                  )}
+                  style={{
+                    width: `${Math.min(100, (cutS / targetDurationS) * 100)}%`,
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="mt-1 text-xs text-muted-foreground">
+              No target length — this cut is whatever you make it.
+            </div>
+          )}
           <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
             <span>{order.length} segments</span>
             {mode !== "manual" && dirty && (

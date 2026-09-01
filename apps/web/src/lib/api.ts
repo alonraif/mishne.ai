@@ -17,7 +17,12 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly detail: string,
-    readonly body?: unknown
+    readonly body?: unknown,
+    /** Response headers, when there was a response. Some refusals carry the
+     *  thing the caller needs in one — `409` on an asset that is already
+     *  uploaded returns its id in `X-Asset-Id`, which turns an error into an
+     *  answer. */
+    readonly headers?: Headers
   ) {
     super(detail || `HTTP ${status}`);
     this.name = "ApiError";
@@ -60,7 +65,7 @@ export async function api<T>(
       typeof body === "object" && body !== null && "detail" in body
         ? String((body as { detail: unknown }).detail)
         : response.statusText;
-    throw new ApiError(response.status, detail, body);
+    throw new ApiError(response.status, detail, body, response.headers);
   }
   return body as T;
 }

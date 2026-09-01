@@ -94,8 +94,15 @@ export function AssetUpload({
         });
         onUploaded?.(assetId);
       } catch {
-        // The progress callback has already reported `failed` or `cancelled`;
-        // rethrowing here would only produce an unhandled rejection.
+        // `uploadAsset` reports `failed` or `cancelled` through `onProgress`
+        // before it throws, so there is nothing to do with the exception and
+        // rethrowing would only produce an unhandled rejection.
+        //
+        // That was not true of anything thrown between hashing and the first
+        // part — the create call, most often a 409 — and this comment asserted
+        // it anyway: the control sat at "Reading the file, 100%" for ever with
+        // no message and no way back. `upload.ts` now reports before it throws
+        // on that path too, and a 409 is treated as the answer it is.
       }
     },
     [projectId, rate, onUploaded]

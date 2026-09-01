@@ -24,6 +24,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Response headers a cross-origin caller is allowed to read. Without this a
+    # browser can see the status and the body and nothing else, so the id
+    # `assets.create_asset` returns on a 409 — the identity of the file already
+    # uploaded, which is what turns that refusal into an answer — was
+    # unreadable from the app that needed it.
+    expose_headers=["X-Asset-Id"],
 )
 
 @app.middleware("http")

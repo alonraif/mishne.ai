@@ -59,3 +59,8 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+markers = [
+    # Renders real media end to end. Only reachable when a sample is present,
+    # so `-m "not slow"` is for the case where one is and you are in a hurry.
+    "slow: minutes, not seconds — renders real media",
+]

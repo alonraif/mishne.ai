@@ -2,6 +2,9 @@
 # Bring the whole thing up on one machine, in the right order.
 #
 #   ./dev.sh            # infra, schema, buckets, then API + web + the runner
+#   ./dev.sh restart    # stop whatever is already running, clear the web
+#                       # build cache, then the above — one command, from any
+#                       # state, including a broken one
 #   ./dev.sh setup      # everything except the three processes
 #   ./dev.sh api        # just one of them, in its own terminal
 #   ./dev.sh web
@@ -153,6 +156,65 @@ require_port() {
   return 1
 }
 
+# ── stopping what is already running ───────────────────────────────────────
+#
+# `restart` exists because of one failure that is common, confusing and not
+# self-healing: `npm run build` writes a production build into `apps/web/.next`
+# while `next dev` is serving out of the same directory, the build prunes chunks
+# the dev server still has in memory, and from then on every request dies with
+# `Cannot find module './383.js'`. The dev server never recovers, and the fix is
+# three commands nobody remembers in that moment.
+#
+# It stops only what `all` starts. The back-office on 3001/8001 is a process you
+# chose to start and this does not take it away from you, and Postgres and MinIO
+# stay up because they hold state and `setup` is idempotent against them.
+stop_port() {
+  local port="$1" what="$2" pids
+  pids=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null || true)
+  [ -n "$pids" ] || return 0
+  echo "   ${D}stopping $what on $port$([ -n "$pids" ] && echo " — pid $(echo $pids | tr '\n' ' ')")${X}"
+  kill $pids 2>/dev/null || true
+  local waited=0
+  while [ "$waited" -lt 10 ]; do
+    port_is_free "$port" && return 0
+    sleep 0.5
+    waited=$((waited + 1))
+  done
+  # Five seconds in and still holding the socket: it is not going to let go.
+  echo "   ${D}  it did not stop on asking — forcing it${X}"
+  kill -9 $pids 2>/dev/null || true
+  sleep 0.5
+}
+
+stop_all() {
+  step "stopping what is already running"
+  # The wrappers as well as the port holder. `next dev` sits under `npm run
+  # dev`, and killing only the listening child leaves npm to print a lifecycle
+  # error into the terminal you are about to reuse. Matched on the port so the
+  # back-office's own `next dev` is left alone.
+  pkill -f "next dev --port $WEB_PORT" 2>/dev/null || true
+  pkill -f "mishne.orchestration.devrunner" 2>/dev/null || true
+  # And any earlier `./dev.sh all`, which is a shell sitting in `wait` on the
+  # three children we are stopping. Left alone it holds a terminal and prints
+  # nothing ever again. Never this shell, and never the one that launched it.
+  for pid in $(pgrep -f "dev\.sh" 2>/dev/null || true); do
+    [ "$pid" = "$$" ] && continue
+    [ "$pid" = "${PPID:-0}" ] && continue
+    kill "$pid" 2>/dev/null || true
+  done
+  stop_port "$WEB_PORT" "the app"
+  stop_port "$API_PORT" "the API"
+}
+
+# The web build cache, which is the thing that was poisoned. Cheap to lose: a
+# dev server rebuilds it in a second or two, and a stale one is a class of bug
+# that looks like a code error and is not.
+clear_web_cache() {
+  step "clearing the web build cache"
+  rm -rf "$WEB/.next"
+  echo "   ${D}apps/web/.next removed${X}"
+}
+
 api()    { cd "$API" && exec "$PY" -m uvicorn mishne.main:app --reload --port "$API_PORT"; }
 # 127.0.0.1 explicitly. `mishne.admin.main` refuses to start on anything else
 # without ADMIN_ALLOW_PUBLIC_BIND, and this is the command people copy.
@@ -242,6 +304,14 @@ case "${1:-all}" in
     echo "   back-office  http://localhost:$ADMIN_WEB_PORT"
     wait
     ;;
+  restart|fresh)
+    stop_all
+    clear_web_cache
+    # Falls through into the same start as `all`, deliberately: two ways to
+    # start the stack is how they drift apart.
+    set -- all
+    exec "$0" all
+    ;;
   all)
     require_port "$WEB_PORT" "the app" || exit 1
     require_port "$API_PORT" "the API" || exit 1
@@ -262,7 +332,7 @@ case "${1:-all}" in
     wait
     ;;
   *)
-    echo "usage: ./dev.sh [all|setup|api|web|worker|admin]"
+    echo "usage: ./dev.sh [all|restart|setup|api|web|worker|admin]"
     echo "  one word at a time — 'api|web|worker' is a shell pipeline, not a choice"
     exit 2 ;;
 esac

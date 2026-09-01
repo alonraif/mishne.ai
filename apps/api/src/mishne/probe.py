@@ -169,9 +169,12 @@ def _probe_aaf(session, org_id: str, row, path: Path) -> str:
         duration_frames=source.duration_frames,
         probe={
             "codec": "aaf",
-            # Every clip is a source of audio; a sequence has no track count of
-            # its own in the sense ffprobe means.
-            "audio_tracks": 0,
+            # The sequence's sound tracks — one per microphone on a recorded
+            # conversation. This was 0, on the grounds that a sequence has no
+            # track count in the sense ffprobe means; it does have one, `parse`
+            # now reads every one of them (ADR-0019), and "0 audio tracks" on a
+            # four-microphone podcast reads as a sequence with no sound in it.
+            "audio_tracks": len(source.tracks),
             "clips": len(source.clips),
             "embedded": source.embedded,
             "unresolved_clips": len(source.missing),

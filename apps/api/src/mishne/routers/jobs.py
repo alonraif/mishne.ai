@@ -19,6 +19,7 @@ from ..db import jobs as job_writes
 from ..db import speakers as speaker_writes
 from ..db import models as m
 from ..db import repository
+from ..db import requirements as reqs
 from ..deps import current_principal, require_write, writable_db
 from ..logging import get_logger
 from ..orchestration import AssetSource, JobRequest, plan as plan_steps
@@ -53,6 +54,40 @@ def _default_name(filename: str) -> str:
     """
     stem = Path(filename).stem.strip()
     return stem[:JOB_NAME_MAX] if stem else "Untitled job"
+
+
+def _gaps(s: Session, org_id: str, assets: list) -> dict[str, list[str]]:
+    """Per sequence, the referenced media that has not arrived.
+
+    Only an `awaiting_media` asset can have any: `refresh_status` moves an asset
+    to `ready` the moment nothing is outstanding, so asking a ready asset is a
+    query that can only return nothing.
+
+    Raises rather than reports in the two cases where there is no question to
+    put to the customer:
+
+    * **Nothing outstanding, and still `awaiting_media`.** `refresh_status` does
+      not produce that state. Something is inconsistent, and guessing which way
+      is worse than saying the asset is not ready.
+    * **Nothing satisfied.** A sequence that resolved none of its media would
+      transcribe silence, which is what ADR-0014 was right about, and no
+      acknowledgement should be able to buy it.
+    """
+    out: dict[str, list[str]] = {}
+    for asset in assets:
+        if asset.status != "awaiting_media":
+            continue
+        names = reqs.outstanding_names(s, org_id, asset.id)
+        if not names:
+            raise HTTPException(409, f"asset {asset.id} is not ready to cut")
+        if len(names) >= reqs.total(s, org_id, asset.id):
+            raise HTTPException(
+                422,
+                f"none of the media asset {asset.id} references has arrived — "
+                f"there would be nothing to transcribe",
+            )
+        out[asset.id] = names
+    return out
 
 
 #: How far the recomputed estimate may differ from the figure the client says
@@ -120,12 +155,27 @@ async def create_job(
     missing = [a for a, row in zip(body.asset_ids, assets) if row is None]
     if missing:
         raise HTTPException(404, f"no such asset: {missing[0]}")
-    not_ready = [a.id for a in assets if a.status != "ready"]
-    if not_ready:
-        # An `awaiting_media` sequence would transcribe silence; a `probing`
-        # asset has no duration yet and therefore no price.
+    # A `probing` asset has no duration yet and therefore no price; an
+    # `uploading` or `failed` one has no media. None of that is a question the
+    # customer can answer, so none of it is negotiable.
+    unusable = [a.id for a in assets if a.status not in ("ready", "awaiting_media")]
+    if unusable:
+        raise HTTPException(409, f"asset {unusable[0]} is not ready to cut")
+
+    # A sequence still waiting for referenced media IS a question they can
+    # answer. ADR-0014 refused it outright, on the grounds that it would
+    # transcribe silence — right about the sequence that resolved nothing, and
+    # wrong about the ordinary export that is missing one video reference out
+    # of 776. So: run it if they say so, refuse it if there would be nothing to
+    # transcribe either way, and record what was absent.
+    media_gaps = _gaps(s, org_id, assets)
+    if media_gaps and not body.accept_missing_media:
+        names = sorted(n for basenames in media_gaps.values() for n in basenames)
         raise HTTPException(
-            409, f"asset {not_ready[0]} is not ready to cut"
+            409,
+            f"{len(names)} referenced file(s) have not arrived: "
+            + ", ".join(names[:5])
+            + (f" and {len(names) - 5} more" if len(names) > 5 else ""),
         )
 
     org = repository.get_org(s, org_id)
@@ -177,6 +227,7 @@ async def create_job(
         brief=brief,
         estimate=estimate.model_dump(),
         approved_cap=estimate.cap,
+        media_gaps=media_gaps,
     )
     try:
         job_writes.hold(s, org_id, job_id, assets[0].project_id, estimate.cap)
@@ -209,7 +260,9 @@ async def create_job(
         user_agent=request.headers.get("user-agent"),
     )
     log.info("job.accepted", job_id=job_id, assets=len(assets),
-             cap=float(estimate.cap), mode=body.mode)
+             cap=float(estimate.cap), mode=body.mode,
+             # A count, never the names: a locator is the customer's filename.
+             missing_media=sum(len(v) for v in media_gaps.values()))
 
     job = repository.get_job(s, org_id, job_id)
     if job is None:  # pragma: no cover

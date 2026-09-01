@@ -32,8 +32,8 @@ as a supported option and stops being the default.**
 | material | engine | ~cost / source hour |
 |---|---|---|
 | a language xAI publishes (25 of them) | `xai/grok-stt` | $0.10 |
-| Hebrew | `google/gemini-3.5-transcribe` | ~$0.30 |
-| anything else, or an unidentified language | `google/gemini-3.5-transcribe` | ~$0.30 |
+| Hebrew | `google/gemini-3.5-transcribe` | ~$0.18 (measured; $0.30 published) |
+| anything else, or an unidentified language | `google/gemini-3.5-transcribe` | ~$0.18 |
 | a broadcaster who will not let audio leave the building | `faster-whisper` | a machine hour |
 
 The engine list, its prices, and the language lists are **data**
@@ -52,11 +52,12 @@ expensive than Gemini, which meets it *and* speaks Hebrew.
 ### Why Hebrew is not sent to xAI
 
 xAI's documentation says the `language` field gates text formatting rather than
-transcription, and that the model handles audio in any language. If that holds,
-Hebrew is three times cheaper. It is unvalidated, and the failure mode is not an
-error — it is a fluent transcript of the wrong words. The engine's published
-language list routes; `MISHNE_ASR_XAI_ANY_LANGUAGE=1` lifts the restriction for
-a deliberate measurement run against Gemini output on the same material.
+transcription, and that the model handles audio in any language. If that held,
+Hebrew would be roughly half the price. **It was measured on 1 September 2026
+and it does not hold** — see *Measured, 1 September 2026* below. The engine's
+published language list routes; `MISHNE_ASR_XAI_ANY_LANGUAGE=1` lifts the
+restriction, and is now the harness for re-taking that measurement when the
+model changes rather than a saving waiting to be switched on.
 
 ### Unidentified language routes to the wide engine
 
@@ -170,3 +171,50 @@ attribution unless the diarizer is deployed too, and places cut points four to
 five frames from where the managed engines agree they are. That is a real
 product, and it is a worse one; a broadcaster choosing it should choose it
 knowing that, rather than being sold it as equivalent.
+
+## Measured, 1 September 2026 — xAI on Hebrew
+
+The run the flag exists for. Both engines on the same 3.7 minutes of Hebrew
+(`SyncDaniel.aaf`), xAI reached via `MISHNE_ASR_XAI_ANY_LANGUAGE=1`.
+
+| | xAI grok-stt | Gemini 3.5 Transcribe |
+|---|---|---|
+| words | 421 | 478 |
+| **speakers found** | **1** | **3** |
+| filler retained | 0.0% | 0.4% |
+| wall clock, 3.7 min of audio | 2.9s (77x real time) | 14.9s (15x) |
+| cost | $0.0062 | $0.0111 |
+| per source hour | $0.100 | $0.180 |
+| language reported back | **`en`** | `he` |
+
+**It transcribes Hebrew, and it transcribes it wrong.** The two transcripts
+share 37% of Gemini's vocabulary. Where Gemini has `מעצבות הפנים של הפרויקט`
+("the project's interior designers") xAI has `אצופות את פנימי של הפרויקט`, which
+is not Hebrew; where Gemini has `בית המסיבות האולטימטיבי` ("the ultimate party
+house") xAI has `בת-מסיבות אולימפיות` ("Olympic party daughter"). Twelve tokens
+carry a script the speaker never used — Russian `там`, Arabic `بين`, romanised
+Hebrew `ב-etsem` — four of them mixed *inside* a single Hebrew word
+(`אlements`, `בבеж`). `asr/script.py` repairs Arabic letters inside Hebrew
+words; it cannot repair a word that was never heard.
+
+This is precisely the failure `Engine.speaks` is written to prevent: not an
+error, not a low score, but a fluent transcript of the wrong words. An editor
+reading it in a rough cut has no way to tell.
+
+**Diarization is the second disqualification and it is on its own sufficient.**
+All 421 words came back on one speaker. Stage 4 needs a speaker change to find a
+beat boundary and stage 7 needs `speaker_priority`; a single-speaker transcript
+of a three-speaker interview is not a cheaper input, it is a different job.
+
+**And nothing in the response says any of this.** `language` comes back as `en`
+whether `he` is sent or omitted. A control run with the field omitted entirely
+returned 417 words, one speaker, and a word-for-word identical opening — so the
+documentation's claim about the field is true (it is formatting-only) and the
+claim about the model is false. There is no vendor signal to route on, no error
+to fail over from, and the ledger would record a successful $0.0062 call.
+
+**The 34 ms boundary agreement is not a mitigation.** It held over only 45% of
+words, against 94% on English. Two engines placing the same word in the same
+frame means nothing when they only agree on the word 45% of the time.
+
+The saving forgone is $0.08 per source hour. The routing stands.

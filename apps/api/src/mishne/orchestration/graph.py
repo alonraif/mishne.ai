@@ -259,8 +259,17 @@ def step_prepare(ctx: StepContext, state: RunState) -> str:
         on_progress=ctx.on_progress,
     )
     info = run.prepared.info
-    kind = "sequence" if run.prepared.aaf is not None else "media"
-    return f"{kind} · {info.rate} · {info.duration_frames} frames"
+    aaf = run.prepared.aaf
+    kind = "sequence" if aaf is not None else "media"
+    detail = f"{kind} · {info.rate} · {info.duration_frames} frames"
+    if aaf is not None:
+        # Counts, never basenames: a locator is the customer's filename and does
+        # not belong in a step's detail or a log line. The names live in
+        # `asset_media_requirements`, which is where the UI reads them.
+        resolved = len(aaf.clips) - len(aaf.missing)
+        detail += (f" · {len(aaf.tracks)} track(s) · "
+                   f"{resolved}/{len(aaf.clips)} clips resolved")
+    return detail
 
 
 def step_audio(ctx: StepContext, state: RunState) -> str:
@@ -304,6 +313,9 @@ def step_structure(ctx: StepContext, state: RunState) -> str:
     run.beats, run.warnings = project.stage_structure(
         run.asr, run.speech, run.tracks, run.source.pipeline_id, run.prepared.seams
     )
+    # What the AAF said about itself belongs with the warnings the job page
+    # already shows — an unresolved sequence must not read as an ordinary run.
+    run.warnings = list(run.prepared.notes) + run.warnings
     return f"{len(run.beats)} beats"
 
 

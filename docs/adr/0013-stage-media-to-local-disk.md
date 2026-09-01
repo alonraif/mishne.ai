@@ -62,10 +62,33 @@ more to store than to rebuild.
 
   This is an input to B3's worker sizing, not an afterthought.
 
+- **A linked AAF is not one asset on disk, it is a folder.** Amended 1 Sep 2026,
+  after ADR-0014. The sequence is a few hundred kilobytes; the companions it
+  references all land beside it, and the several sound tracks a multi-track
+  sequence is mixed from are rendered at full length before the mix (ADR-0019).
+  So for a linked sequence the figure is:
+
+  ```
+  disk >= aaf_bytes + sum(companion_bytes) + mixed_audio + (tracks * flat_audio)
+  ```
+
+  A real export in `samples/` is 1.0 GB of companions across four tracks;
+  another is 2.1 GB across 775 files. Neither is close to `largest_asset_bytes
+  * 2` for any of the individual objects, and both are the number that has to
+  fit. The per-track renders are 16 kHz mono, so `tracks * flat_audio` is small
+  beside the companions — but it is not nothing on a feature-length sequence,
+  and it is why `_track_` is in `workspace.NOT_CACHEABLE`.
+
 - **`Settings.max_upload_bytes` is our ceiling, and it is a product decision.**
   `storage.MAX_OBJECT_BYTES` is S3's 5 TiB; ours is whatever a worker class can
   actually hold. Accepting an upload no worker can process is a job that fails
   after the customer has already waited for the upload.
+
+  It is a **per-object** ceiling, and a folder of linked media is many objects
+  none of which approaches it while their sum is what a worker must hold. There
+  is no ceiling on that sum today, and that is a gap rather than a decision:
+  the requirement rows say how many files a sequence wants before any of them
+  is uploaded, so it is a check that can be made early, and is not made yet.
 
 - **Time-to-first-stage includes a full download.** For a large asset that is
   minutes before anything appears to happen, so the job's step timeline has to

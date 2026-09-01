@@ -48,9 +48,10 @@ def ready_asset(tenant, owner):
         conn.execute(sa.text("DELETE FROM assets WHERE id = :a"), {"a": ASSET})
 
 
-def _estimate(http, asset_id: str = ASSET) -> dict:
+def _estimate(http, asset_id: str = ASSET, **overrides) -> dict:
     resp = http.post(
-        "/v1/jobs/estimate", json={"asset_id": asset_id, "target_duration_s": 300}
+        "/v1/jobs/estimate",
+        json={"asset_id": asset_id, "target_duration_s": 300, **overrides},
     )
     assert resp.status_code == 200, resp.text
     return resp.json()
@@ -163,6 +164,143 @@ def test_a_job_cannot_be_started_against_an_asset_that_is_not_ready(
     refused = _submit(http, estimate)
     assert refused.status_code == 409
     assert "not ready" in refused.json()["detail"]
+
+
+def _awaiting(owner, *, outstanding: list[str], satisfied: list[str] = ()) -> None:
+    """Put the asset in `awaiting_media` with the requirement rows to match.
+
+    The rows are the point: `awaiting_media` alone says a file is wanted, and
+    only `asset_media_requirements` says which — and how much of the sequence
+    each one unblocks, which is what decides whether there is anything left to
+    transcribe.
+    """
+    with owner.begin() as conn:
+        conn.execute(
+            sa.text("UPDATE assets SET status = 'awaiting_media' WHERE id = :a"),
+            {"a": ASSET},
+        )
+        rows = [(n, None) for n in outstanding] + [(n, ASSET) for n in satisfied]
+        for idx, (basename, by) in enumerate(rows):
+            conn.execute(
+                sa.text(
+                    "INSERT INTO asset_media_requirements (id, org_id, asset_id, "
+                    "basename, match_key, clip_count, satisfied_by_asset_id, "
+                    "satisfied_at) VALUES (:i, :o, :a, :b, :k, 1, "
+                    "cast(:by as text), "
+                    "CASE WHEN cast(:by as text) IS NULL THEN NULL ELSE now() END)"
+                ),
+                {"i": f"req_{idx}", "o": ORG, "a": ASSET,
+                 "b": basename, "k": basename.lower(), "by": by},
+            )
+
+
+def test_a_sequence_waiting_for_media_says_which_files_it_wants(
+    api, owner, ready_asset
+):
+    """A refusal the customer can act on names the files.
+
+    "asset ast_… is not ready to cut" is a complaint. "A002.wav has not
+    arrived" is an instruction, and it is the same list the requirements panel
+    is already showing them.
+    """
+    http, _ = api
+    estimate = _estimate(http)
+    _awaiting(owner, outstanding=["B002.wav"], satisfied=["A001.wav"])
+
+    refused = _submit(http, estimate)
+
+    assert refused.status_code == 409
+    assert "B002.wav" in refused.json()["detail"]
+
+
+def test_a_cut_can_go_ahead_without_media_that_never_arrived(
+    api, owner, ready_asset
+):
+    """The Habatim case: 776 files referenced, 775 present, one video absent.
+
+    Refusing this outright — which is what ADR-0014 originally said — means a
+    real export can never be submitted at all. The gap is recorded on the job,
+    because a transcript with silence in it has to be able to say why.
+    """
+    http, _ = api
+    estimate = _estimate(http)
+    _awaiting(owner, outstanding=["B002.wav"], satisfied=["A001.wav"])
+
+    accepted = _submit(http, estimate, accept_missing_media=True)
+
+    assert accepted.status_code == 202, accepted.text
+    body = accepted.json()
+    assert body["media_gaps"] == {ASSET: ["B002.wav"]}
+    with owner.begin() as conn:
+        stored = conn.execute(
+            sa.text("SELECT media_gaps FROM jobs WHERE id = :j"), {"j": body["id"]}
+        ).scalar_one()
+    assert stored == {ASSET: ["B002.wav"]}
+
+
+def test_a_cut_with_no_media_at_all_is_refused_however_hard_you_ask(
+    api, owner, ready_asset
+):
+    """The thing ADR-0014 was right about, and the floor under the flag.
+
+    A sequence that resolved none of its media transcribes silence. No
+    acknowledgement should be able to buy that, because the customer cannot
+    know it is what they are buying.
+    """
+    http, _ = api
+    estimate = _estimate(http)
+    _awaiting(owner, outstanding=["A001.wav", "B002.wav"])
+
+    refused = _submit(http, estimate, accept_missing_media=True)
+
+    assert refused.status_code == 422
+    assert "nothing to transcribe" in refused.json()["detail"]
+
+
+def test_an_ordinary_job_records_no_gap(api, owner, ready_asset):
+    """`media_gaps` is empty for the jobs that are not this feature."""
+    http, _ = api
+    estimate = _estimate(http)
+
+    accepted = _submit(http, estimate)
+
+    assert accepted.status_code == 202, accepted.text
+    assert accepted.json()["media_gaps"] == {}
+
+
+def test_a_transcription_job_needs_no_target_length(api, owner, ready_asset):
+    """It is a selection parameter, and selection does not run.
+
+    It also does not move the price — cost scales with source duration, not cut
+    length — and nothing reads it before the cut editor, which is the first
+    place anybody could answer it honestly. So the wizard stops asking and
+    sends 0, and 0 has to survive submission rather than being defaulted.
+    """
+    http, _ = api
+    # Priced as the mode it will be submitted as: transcription costs less
+    # because the LLM stages do not run (ADR-0007), and a cap from the wrong
+    # mode is refused — correctly — by the price check.
+    estimate = _estimate(http, mode="manual", target_duration_s=0)
+
+    accepted = _submit(http, estimate, mode="manual", target_duration_s=0)
+
+    assert accepted.status_code == 202, accepted.text
+    assert accepted.json()["brief"]["target_duration_s"] == 0
+
+
+def test_a_cut_that_gets_made_for_you_still_needs_a_target(api, owner, ready_asset):
+    """`ai` and `hybrid` hand the number to a solver, which cannot choose none.
+
+    Refused at the edge rather than defaulted quietly three stages later, where
+    the customer would be charged for a cut against a length they never chose.
+    """
+    http, _ = api
+    estimate = _estimate(http)
+
+    for mode in ("ai", "hybrid"):
+        refused = _submit(http, estimate, mode=mode, target_duration_s=0)
+        assert refused.status_code == 422, f"{mode}: {refused.text}"
+        assert "target length is required" in refused.text
 
 
 def test_a_viewer_cannot_start_a_job(api, owner, ready_asset):

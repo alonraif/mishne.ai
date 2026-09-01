@@ -188,7 +188,7 @@ class _FakeClip:
 
 
 class _FakeSource:
-    def __init__(self, clips, embedded=False):
+    def __init__(self, clips, embedded=False, tracks=None):
         self.rate = Rate(25, 1)
         self.duration_frames = 5550
         self.start_tc_frames = 0
@@ -196,11 +196,17 @@ class _FakeSource:
         self.embedded = embedded
         self.missing = [c.name for c in clips if c.media_path is None and not c.embedded_mob_id]
         self.notes = []
+        # What the probe records as the sequence's audio track count. Derived
+        # from the clips by default, the way the real `AAFSource.tracks` is.
+        self.tracks = (tracks if tracks is not None
+                       else sorted({getattr(c, "track_index", 0) for c in clips}))
 
 
 def _fake_aaf(monkeypatch, source):
     aaf_ingest = pytest.importorskip("mishne.pipeline.steps.aaf_ingest")
-    monkeypatch.setattr(aaf_ingest, "parse", lambda path: source)
+    # `parse` takes `search_dirs` now; the stub has to accept what the caller
+    # passes or the probe fails with an AttributeError it reports as a bad AAF.
+    monkeypatch.setattr(aaf_ingest, "parse", lambda path, **_: source)
 
 
 def test_an_embedded_aaf_is_ready_on_its_own(api, owner, monkeypatch):
@@ -260,6 +266,56 @@ def test_uploading_the_missing_media_releases_the_sequence(api, owner, monkeypat
     body = http.get(f"/v1/assets/{aaf_id}/requirements").json()
     assert body["outstanding"] == 0
     assert all(r["satisfied"] for r in body["requirements"])
+
+
+def _listed(http, asset_id: str) -> dict:
+    """The asset as the project screen reads it."""
+    rows = http.get(f"/v1/projects/{PROJECT}/assets").json()
+    return next(a for a in rows if a["id"] == asset_id)
+
+
+def test_a_sequence_reports_the_size_of_its_media_and_not_of_itself(
+    api, owner, monkeypatch
+):
+    """1500 bytes of pointers over a 46-minute podcast is true and useless.
+
+    What an editor checks before believing an upload is that the essence is
+    there, and a linked AAF's own size cannot tell them: it is the same few
+    hundred kilobytes whether the media is forty gigabytes or absent. The total
+    is a running one while the files arrive, which is why it is reported for a
+    sequence with nothing yet — zero is an answer, and no answer is what an
+    embedded AAF gives.
+    """
+    http, client = api
+    aaf_id = _uploaded(http, client, b"AAF" * 500, "Sequence.aaf")
+    _fake_aaf(monkeypatch, _FakeSource([
+        _FakeClip("one", "file:///san/A001.mxf"),
+        _FakeClip("two", "file:///san/B002.mxf"),
+    ]))
+    probe_module.probe_asset(ORG, aaf_id)
+
+    assert _listed(http, aaf_id)["media_bytes"] == 0
+
+    _uploaded(http, client, b"first" * 100, "A001.mxf")
+    _uploaded(http, client, b"second" * 100, "B002.mxf")
+
+    listed = _listed(http, aaf_id)
+    assert listed["bytes"] == 1500
+    assert listed["media_bytes"] == 500 + 600
+
+
+def test_a_file_that_carries_its_own_essence_reports_no_media_total(
+    api, owner, monkeypatch
+):
+    """`None`, not zero: `bytes` is already the whole answer for these."""
+    http, client = api
+    aaf_id = _uploaded(http, client, b"AAF" * 500, "SyncDaniel.aaf")
+    _fake_aaf(monkeypatch, _FakeSource(
+        [_FakeClip("shot", "file:///san/A001.mxf", embedded="urn:mob:1")], embedded=True
+    ))
+    probe_module.probe_asset(ORG, aaf_id)
+
+    assert _listed(http, aaf_id)["media_bytes"] is None
 
 
 def test_a_re_probe_drops_a_requirement_that_has_gone_away(api, owner, monkeypatch):

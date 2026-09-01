@@ -66,6 +66,7 @@ that refuses.
 
 from __future__ import annotations
 
+import math
 import subprocess
 import wave
 from dataclasses import dataclass, field
@@ -103,6 +104,12 @@ class SourceClip:
     #: upload, and B2's `asset_media_requirements` is built from it. Defaulted
     #: because it is additive: every existing construction call still works.
     target_url: str | None = None
+    #: Which of the sequence's sound tracks this clip sits on. A podcast AAF
+    #: keeps each microphone on its own track, and the media those tracks
+    #: reference has to be asked for in full even though only one of them is
+    #: the track the cut is expressed against (ADR-0019).
+    track_index: int = 0
+    track_name: str | None = None
 
     @property
     def frames(self) -> int:
@@ -132,13 +139,24 @@ class AAFSource:
     missing: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
+    #: The track the cut is expressed against. `clips` spans every sound track
+    #: — that is what the transcript is mixed from and what the customer is
+    #: asked to upload — but a timeline range maps back to source clips on one
+    #: track, because that is what the output document can say (ADR-0019).
+    primary_track: int = 0
+
     @property
     def duration_s(self) -> float:
         return self.duration_frames / self.rate.fps
 
     @property
-    def resolved_clips(self) -> list[SourceClip]:
-        return [c for c in self.clips if c.resolved]
+    def primary_clips(self) -> list[SourceClip]:
+        """The clips the output references, in timeline order."""
+        return [c for c in self.clips if c.track_index == self.primary_track]
+
+    @property
+    def tracks(self) -> list[int]:
+        return sorted({c.track_index for c in self.clips})
 
 
 def basename_of(url: str | None) -> str:
@@ -161,28 +179,75 @@ def basename_of(url: str | None) -> str:
     return raw.replace("\\", "/").rstrip("/").split("/")[-1]
 
 
-def _url_to_path(url: str | None, aaf_dir: Path) -> Path | None:
+def search_dirs_for(path: Path, extra: list[Path] | None = None) -> list[Path]:
+    """Where to look for media the locator's own absolute path does not find.
+
+    The AAF's own directory first — that is where a worker materialises the
+    companions, and ADR-0014 rests on it — then the folder Media Composer
+    exports alongside the AAF, then any other directory one level down, then
+    whatever the caller named.
+
+    `AAF Media/` is not an exotic case; it is what "export AAF with linked
+    media" produces, next to an absolute path into a filesystem we will never
+    see. Only immediate children are considered: a recursive walk of somebody's
+    media drive is a different and much worse promise.
+    """
+    aaf_dir = path.parent
+    dirs = [aaf_dir]
+    conventional = aaf_dir / "AAF Media"
+    if conventional.is_dir():
+        dirs.append(conventional)
+    try:
+        for child in sorted(aaf_dir.iterdir()):
+            if child.is_dir() and child not in dirs:
+                dirs.append(child)
+    except OSError:  # an unreadable directory is not an error here
+        pass
+    for named in extra or []:
+        named = Path(named)
+        if named.is_dir() and named not in dirs:
+            dirs.append(named)
+    return dirs
+
+
+def _url_to_path(url: str | None,
+                 search_dirs: Path | list[Path]) -> Path | None:
     """Resolve a locator URL to a local file.
 
     AAFs are routinely moved between machines, so the absolute path inside is
-    frequently wrong while the media sits right next to the AAF. Falling back to
-    a filename match in the AAF's own directory handles the common case without
-    guessing wildly.
+    frequently wrong while the media sits right next to the AAF — or one level
+    down, in the folder the locator itself names. Two fallbacks per directory:
+    the bare basename, and the last two segments of the locator's path, which
+    is what finds `AAF Media/A001.wav` under a directory that is no longer
+    called what the exporting machine called it.
     """
     if not url:
         return None
     parsed = urlparse(url)
-    if parsed.scheme in ("", "file"):
-        candidate = Path(unquote(parsed.path))
-        if candidate.exists():
-            return candidate
-        beside = aaf_dir / candidate.name
+    if parsed.scheme not in ("", "file"):
+        return None
+    raw = unquote(parsed.path or url)
+
+    # As written. Correct on the machine that exported the AAF, and there only.
+    candidate = Path(raw)
+    if candidate.exists():
+        return candidate
+
+    # Some AAFs store Windows paths, backslashes and all.
+    segments = [seg for seg in raw.replace("\\", "/").rstrip("/").split("/") if seg]
+    if not segments:
+        return None
+    name = segments[-1]
+    tail = "/".join(segments[-2:])
+
+    dirs = [search_dirs] if isinstance(search_dirs, Path) else list(search_dirs)
+    for directory in dirs:
+        beside = directory / name
         if beside.exists():
             return beside
-        # Some AAFs store Windows paths; take the basename and look locally.
-        beside = aaf_dir / candidate.name.replace("\\", "/").split("/")[-1]
-        if beside.exists():
-            return beside
+        nested = directory / tail
+        if nested.exists():
+            return nested
     return None
 
 
@@ -202,8 +267,13 @@ def _drop_frame(path: Path) -> bool:
     return False
 
 
-def parse(path: Path) -> AAFSource:
-    """Read an AAF into a source map."""
+def parse(path: Path, search_dirs: list[Path] | None = None) -> AAFSource:
+    """Read an AAF into a source map.
+
+    `search_dirs` names extra directories to look for linked media in. The
+    AAF's own directory and the folders one level down are always searched;
+    this is for a caller who keeps the media somewhere else entirely.
+    """
     path = Path(path)
     timeline = otio.adapters.read_from_file(str(path), adapter_name="AAF")
 
@@ -214,29 +284,39 @@ def parse(path: Path) -> AAFSource:
                (int(round(rate_fps)), 1)
     rate = Rate(num, den, drop_frame=_drop_frame(path))
 
-    # Prefer the audio track: it is what gets transcribed, and in a sequence
+    # Prefer the audio tracks: they are what gets transcribed, and in a sequence
     # with separate audio the audio edits are the ones that matter.
+    #
+    # EVERY sound track, not the first. A four-microphone podcast keeps each mic
+    # on its own track; taking one of them asks the customer to upload a quarter
+    # of the media and then transcribes a quarter of the room. The tracks are
+    # mixed for transcription and the cut is expressed against the first of them
+    # (ADR-0019).
     tracks = list(timeline.tracks)
     audio = [t for t in tracks if t.kind == otio.schema.TrackKind.Audio]
     video = [t for t in tracks if t.kind == otio.schema.TrackKind.Video]
-    chosen = (audio or video or tracks)[:1]
+    chosen = audio or video or tracks
 
     notes: list[str] = []
     if audio and video:
-        notes.append("Using the audio track for transcription.")
+        notes.append("Using the audio for transcription.")
     elif not audio:
         notes.append("No audio track in this AAF — using the video track's "
                      "media references for audio.")
+    if len(chosen) > 1:
+        notes.append(f"{len(chosen)} sound tracks — mixed for transcription.")
 
     embedded_ids = _embedded_mob_ids(path)
     origins = _mob_origins(path)
-    aaf_dir = path.parent
+    dirs = search_dirs_for(path, search_dirs)
     clips: list[SourceClip] = []
     missing: list[str] = []
-    tl_pos = 0
+    duration_frames = 0
     idx = 0
 
-    for track in chosen:
+    for track_index, track in enumerate(chosen):
+        # Tracks are parallel, so each one's position starts again at zero.
+        tl_pos = 0
         for child in track:
             dur = round(child.duration().value)
             if isinstance(child, otio.schema.Gap):
@@ -252,7 +332,7 @@ def parse(path: Path) -> AAFSource:
             mob_id = str(mr.metadata.get("AAF", {}).get("MobID", "")) or \
                      str(child.metadata.get("AAF", {}).get("SourceID", ""))
             url = getattr(mr, "target_url", None)
-            media = _url_to_path(url, aaf_dir)
+            media = _url_to_path(url, dirs)
             emb = mob_id if mob_id in embedded_ids else None
 
             if media is None and emb is None:
@@ -274,9 +354,11 @@ def parse(path: Path) -> AAFSource:
                 src_in=src_start, src_out=src_start + src_len,
                 src_rate=src_rate, origin=origins.get(mob_id, 0),
                 tl_in=tl_pos, tl_out=tl_pos + dur, target_url=url,
+                track_index=track_index, track_name=track.name or None,
             ))
             idx += 1
             tl_pos += dur
+        duration_frames = max(duration_frames, tl_pos)
 
     start_tc = round(timeline.global_start_time.value) \
         if timeline.global_start_time else 0
@@ -292,8 +374,9 @@ def parse(path: Path) -> AAFSource:
         )
 
     return AAFSource(
-        path=path, rate=rate, duration_frames=tl_pos, start_tc_frames=start_tc,
-        clips=clips, embedded=bool(embedded_ids), missing=missing, notes=notes,
+        path=path, rate=rate, duration_frames=duration_frames,
+        start_tc_frames=start_tc, clips=clips, embedded=bool(embedded_ids),
+        missing=missing, notes=notes, primary_track=0,
     )
 
 
@@ -368,32 +451,18 @@ def extract_embedded(path: Path, out_dir: Path) -> dict[str, Path]:
     return written
 
 
-def flatten_audio(source: AAFSource, out_dir: Path) -> Path:
-    """Render the AAF timeline's audio to one 16 kHz mono WAV.
-
-    Position in this file equals position on the AAF timeline, exactly — gaps
-    and unresolvable clips become silence rather than being skipped. That
-    invariant is what makes `map_to_source` a lookup instead of a guess.
-    """
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / f"{source.path.stem}_flat.wav"
-    if out.exists():
-        return out
-
+def _render_track(source: AAFSource, clips: list[SourceClip], out_dir: Path,
+                  essence: dict[str, Path], tag: str, target: Path) -> Path:
+    """Render one track's clips to `target`, timeline position preserved."""
     fps = source.rate.fps
     parts: list[Path] = []
     cursor = 0
+    gaps = 0
 
-    # Embedded essence has to come out of the container before ffmpeg can read
-    # it. Done once, cached on disk, because a long sequence references the
-    # same streams many times.
-    essence: dict[str, Path] = {}
-    if source.embedded:
-        essence = extract_embedded(source.path, out_dir / "essence")
-
-    for clip in source.clips:
+    for clip in clips:
         if clip.tl_in > cursor:
-            parts.append(_silence(out_dir, len(parts),
+            gaps += 1
+            parts.append(_silence(out_dir, f"{tag}_g{gaps:05d}",
                                   (clip.tl_in - cursor) / fps))
         seg = out_dir / f"_seg_{clip.index:05d}.wav"
         media = clip.media_path
@@ -412,24 +481,119 @@ def flatten_audio(source: AAFSource, out_dir: Path) -> Path:
                  "-c:a", "pcm_s16le", str(seg)],
                 capture_output=True, text=True)
             if proc.returncode != 0 or not seg.exists() or seg.stat().st_size < 100:
-                seg = _silence(out_dir, clip.index, clip.frames / fps)
+                seg = _silence(out_dir, f"{tag}_c{clip.index:05d}",
+                               clip.frames / fps)
         else:
-            seg = _silence(out_dir, clip.index, clip.frames / fps)
+            seg = _silence(out_dir, f"{tag}_c{clip.index:05d}",
+                           clip.frames / fps)
         parts.append(seg)
         cursor = clip.tl_out
 
-    listing = out_dir / "_concat.txt"
+    if not parts:
+        # A track of nothing but gaps still has to be the sequence's length, or
+        # the mix is shorter than the timeline it describes.
+        parts.append(_silence(out_dir, f"{tag}_empty",
+                              max(source.duration_frames, 1) / fps))
+
+    listing = out_dir / f"_concat_{tag}.txt"
     listing.write_text("".join(f"file '{p.resolve()}'\n" for p in parts))
     subprocess.run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
          "-f", "concat", "-safe", "0", "-i", str(listing),
-         "-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(out)],
+         "-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(target)],
         check=True, capture_output=True)
+    return target
+
+
+def track_render_name(track_index: int) -> str:
+    return f"_track_{track_index:02d}.wav"
+
+
+def track_renders(source: AAFSource, out_dir: Path) -> dict[int, Path]:
+    """The per-track WAVs `flatten_audio` left behind, if there are any.
+
+    They are one microphone each, at the sequence's full length, aligned to the
+    same timeline as the mix — which is exactly the input
+    `speakers.attribute_from_files` wants. A four-microphone podcast therefore
+    gets its speakers by arithmetic, the way multi-track material always has:
+    the loudest mic is whoever is talking. Mixing for transcription (ADR-0019)
+    must not cost that, and without this it would.
+
+    Deterministic names checked for existence, rather than a second return
+    value threaded through every caller of `flatten_audio`.
+    """
+    if len(source.tracks) < 2:
+        return {}
+    found = {}
+    for track in source.tracks:
+        path = out_dir / track_render_name(track)
+        if path.exists():
+            found[track] = path
+    return found
+
+
+def flatten_audio(source: AAFSource, out_dir: Path) -> Path:
+    """Render the AAF timeline's audio to one 16 kHz mono WAV.
+
+    Position in this file equals position on the AAF timeline, exactly — gaps
+    and unresolvable clips become silence rather than being skipped. That
+    invariant is what makes `map_to_source` a lookup instead of a guess.
+
+    A sequence with several sound tracks — four microphones on four tracks is
+    what a podcast AAF looks like — is rendered track by track and mixed
+    (ADR-0019). One track takes the path it always took and produces the same
+    bytes: there is no mix where there is nothing to mix.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / f"{source.path.stem}_flat.wav"
+    if out.exists():
+        return out
+
+    # Embedded essence has to come out of the container before ffmpeg can read
+    # it. Done once, cached on disk, because a long sequence references the
+    # same streams many times.
+    essence: dict[str, Path] = {}
+    if source.embedded:
+        essence = extract_embedded(source.path, out_dir / "essence")
+
+    tracks = source.tracks or [source.primary_track]
+    if len(tracks) == 1:
+        return _render_track(source, source.clips, out_dir, essence,
+                             f"{tracks[0]:02d}", out)
+
+    rendered = [
+        _render_track(source, [c for c in source.clips if c.track_index == t],
+                      out_dir, essence, f"{t:02d}",
+                      out_dir / track_render_name(t))
+        for t in tracks
+    ]
+
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
+    for part in rendered:
+        cmd += ["-i", str(part)]
+    # Sum, not average. `normalize=1` divides by the input count, so four tracks
+    # where one person is talking make that person a quarter as loud — and a
+    # quiet mic is the case transcription is already worst at. The 1/sqrt(N)
+    # trim is the incoherent-sum compensation: it keeps four mics off the
+    # clipping ceiling without flattening one.
+    trim = 1.0 / math.sqrt(len(rendered))
+    cmd += ["-filter_complex",
+            (f"amix=inputs={len(rendered)}:duration=longest:"
+             f"dropout_transition=0:normalize=0,volume={trim:.6f}"),
+            "-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(out)]
+    subprocess.run(cmd, check=True, capture_output=True)
     return out
 
 
-def _silence(out_dir: Path, idx: int, seconds: float) -> Path:
-    p = out_dir / f"_sil_{idx:05d}.wav"
+def _silence(out_dir: Path, tag: str, seconds: float) -> Path:
+    """A silent WAV of exactly this length.
+
+    `tag` has to be unique within a render. It used to be an int taken from two
+    different counters — a clip index for an unresolvable clip and a
+    parts-length for a gap — so a gap and a clip could name the same file, and
+    the second write silently changed the first one's length.
+    """
+    p = out_dir / f"_sil_{tag}.wav"
     frames = max(1, int(seconds * SAMPLE_RATE))
     with wave.open(str(p), "wb") as w:
         w.setnchannels(1)
@@ -450,7 +614,7 @@ def map_to_source(source: AAFSource, tl_in: int,
     """
     fps = source.rate.fps
     out: list[tuple[SourceClip, int, int]] = []
-    for clip in source.clips:
+    for clip in source.primary_clips:
         lo = max(tl_in, clip.tl_in)
         hi = min(tl_out, clip.tl_out)
         if lo >= hi:

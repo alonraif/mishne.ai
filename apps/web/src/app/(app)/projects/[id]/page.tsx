@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useCallback } from "react";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { AssetStatusBadge } from "@/components/asset-status-badge";
 import { AssetMeta, KIND_ICON } from "@/components/asset-meta";
 import { MediaRequirements } from "@/components/media-requirements";
 import { CardsSkeleton, PageSkeleton, QueryState } from "@/components/query-state";
+import { cn } from "@/lib/utils";
 import { useApi, type Query } from "@/lib/use-api";
 import {
   JOB_MODE_LABEL,
@@ -35,8 +37,18 @@ const INGEST_LABEL: Record<IngestMode, string> = {
 
 export default function ProjectPage() {
   const { id } = useParams<{ id: string }>();
-  const project = useApi<Project>(`/v1/projects/${id}`);
-  const assetsQuery = useApi<Asset[]>(`/v1/projects/${id}/assets`);
+  const projectQuery = useApi<Project>(`/v1/projects/${id}`);
+  // Polled while anything is still arriving, for the same reason the job list
+  // is: an upload finishes on this screen and a probe takes a few seconds after
+  // it. Without this the list was whatever it had been at page load, so the
+  // only way to see a file you had just watched upload was to reload the page.
+  // Stops as soon as nothing is moving — see `use-api.ts`.
+  const assetsQuery = useApi<Asset[]>(`/v1/projects/${id}/assets`, {
+    poll: (list) =>
+      list.some((a) => a.status === "uploading" || a.status === "probing")
+        ? 2_000
+        : null,
+  });
   // A job's status changes while the customer is looking at the list it is in.
   // Polling stops as soon as nothing is moving — see `use-api.ts`.
   const jobsQuery = useApi<Job[]>(`/v1/projects/${id}/jobs`, {
@@ -44,9 +56,18 @@ export default function ProjectPage() {
   });
 
   return (
-    <QueryState query={project} missing="No such project." skeleton={<PageSkeleton />}>
+    <QueryState query={projectQuery} missing="No such project." skeleton={<PageSkeleton />}>
       {(project) => (
-        <ProjectView id={id} project={project} assets={assetsQuery} jobs={jobsQuery} />
+        <ProjectView
+          id={id}
+          project={project}
+          assets={assetsQuery}
+          jobs={jobsQuery}
+          // The header counts assets and jobs, and they are a different
+          // request from the lists below them. Left alone it said "8 assets"
+          // over a list of nine.
+          reloadProject={projectQuery.refetch}
+        />
       )}
     </QueryState>
   );
@@ -88,12 +109,21 @@ function ProjectView({
   project,
   assets,
   jobs,
+  reloadProject,
 }: {
   id: string;
   project: Project;
   assets: Query<Asset[]>;
   jobs: Query<Job[]>;
+  reloadProject: () => void;
 }) {
+  // Named here because `QueryState` shadows `assets` with the array it unwraps,
+  // and every path that creates an asset has to be able to say so — the list
+  // and the count in the header both.
+  const reloadAssets = useCallback(() => {
+    assets.refetch();
+    reloadProject();
+  }, [assets, reloadProject]);
   return (
     <div className="space-y-8">
       <div>
@@ -112,7 +142,9 @@ function ProjectView({
             </p>
           </div>
           <div className="flex gap-2">
-            <AssetUpload projectId={id} />
+            {/* An upload changes the list beside it, and only this component
+                knows when one finished. */}
+            <AssetUpload projectId={id} onUploaded={reloadAssets} />
             <Button asChild>
               <Link href={`/projects/${id}/new`}>
                 <Plus /> New job
@@ -127,26 +159,76 @@ function ProjectView({
         <QueryState query={assets} missing="No source material yet." skeleton={<CardsSkeleton rows={2} />}>
           {(assets) => (
         <div className="grid gap-3">
-          {assets.map((a) => {
+          {/* Sequences and plain media first, then the files a sequence asked
+              for. A linked AAF's companions are ordinary assets (ADR-0014), so
+              they land in this list too — and a folder of 775 of them would
+              bury the one row anybody came here to look at. They are kept
+              visible, because a customer who uploaded a gigabyte should be able
+              to see where it went, and made plainly subordinate to it. */}
+          {[...assets]
+            .sort((x, y) =>
+              Number(Boolean(x.companionOf)) - Number(Boolean(y.companionOf))
+            )
+            .map((a) => {
             const Icon = KIND_ICON[a.kind];
+            const companion = Boolean(a.companionOf);
             return (
               <div key={a.id} className="space-y-2">
-              <Card className="flex items-center gap-4 p-4">
-                <div className="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
-                  <Icon className="size-4" />
+              <Card
+                className={cn(
+                  "flex items-center gap-4",
+                  companion ? "bg-transparent p-3 opacity-70" : "p-4"
+                )}
+              >
+                <div
+                  className={cn(
+                    "grid shrink-0 place-items-center rounded-md bg-muted text-muted-foreground",
+                    companion ? "size-7" : "size-10"
+                  )}
+                >
+                  <Icon className={companion ? "size-3.5" : "size-4"} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{a.filename}</div>
-                  <div className="mt-1">
-                    <AssetMeta asset={a} />
+                  <div
+                    className={cn(
+                      "truncate",
+                      companion ? "text-xs text-muted-foreground" : "text-sm font-medium"
+                    )}
+                    dir="ltr"
+                  >
+                    {a.filename}
                   </div>
+                  {!companion && (
+                    <div className="mt-1">
+                      <AssetMeta asset={a} />
+                    </div>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Badge variant="muted">{INGEST_LABEL[a.ingestMode]}</Badge>
-                  <AssetStatusBadge status={a.status} />
+                  {companion ? (
+                    <Badge variant="muted" className="text-xs">
+                      referenced media
+                    </Badge>
+                  ) : (
+                    <>
+                      <Badge variant="muted">{INGEST_LABEL[a.ingestMode]}</Badge>
+                      <AssetStatusBadge status={a.status} />
+                    </>
+                  )}
                 </div>
               </Card>
-              {a.status === "awaiting_media" && <MediaRequirements assetId={a.id} />}
+              {a.status === "awaiting_media" && (
+                <MediaRequirements
+                  projectId={id}
+                  assetId={a.id}
+                  // Each companion is a new asset in this project, and the
+                  // sequence goes ready when the last one lands. Neither is
+                  // something the list poll can see: it only watches rows it
+                  // already has.
+                  onUploaded={reloadAssets}
+                  onSatisfied={reloadAssets}
+                />
+              )}
               </div>
             );
           })}

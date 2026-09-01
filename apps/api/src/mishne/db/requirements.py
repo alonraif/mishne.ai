@@ -183,6 +183,40 @@ def outstanding(s: Session, org_id: str, asset_id: str) -> int:
     )
 
 
+def total(s: Session, org_id: str, asset_id: str) -> int:
+    """How many files this sequence references and does not contain, in all."""
+    table = m.AssetMediaRequirement.__table__
+    return int(
+        s.execute(
+            sa.select(sa.func.count())
+            .select_from(table)
+            .where(table.c.org_id == org_id, table.c.asset_id == asset_id)
+        ).scalar_one()
+    )
+
+
+def outstanding_names(s: Session, org_id: str, asset_id: str) -> list[str]:
+    """The basenames still missing, most-needed first.
+
+    `outstanding` counts them; this names them. Job submission needs the names
+    twice over: to tell the customer what it is about to cut without, and to
+    record on the job what it did cut without — which nothing can re-derive
+    later, because uploading the file tomorrow satisfies the row.
+    """
+    table = m.AssetMediaRequirement.__table__
+    return list(
+        s.execute(
+            sa.select(table.c.basename)
+            .where(
+                table.c.org_id == org_id,
+                table.c.asset_id == asset_id,
+                table.c.satisfied_by_asset_id.is_(None),
+            )
+            .order_by(table.c.clip_count.desc(), table.c.basename)
+        ).scalars().all()
+    )
+
+
 def satisfy(s: Session, org_id: str, asset_id: str, filename: str) -> list[str]:
     """A file just landed. Which sequences in this org were waiting for it?
 

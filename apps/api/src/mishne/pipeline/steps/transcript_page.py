@@ -195,14 +195,21 @@ def render(beats: list[Beat], cuts: list[Cut], brief, rate: Rate,
         )
 
     clar = "".join(f"<li>{esc(c)}</li>" for c in brief.clarifications)
+    # A transcription job carries no target length — it is a selection
+    # parameter and selection did not run — so the row is left out rather than
+    # printed as `0s`, which reads as a target of nothing rather than none.
     kv = "".join(
         f"<span><b>{k}</b>{esc(str(v))}</span>" for k, v in (
-            ("Target", dur(brief.target_duration_s)),
-            ("Structure", brief.narrative_shape.replace("_", " ")),
-            ("Pacing", brief.pacing),
-            ("Handles", f"{brief.handle_frames} frames"),
-            ("Language", language),
-        ) + ((("Sources", f"{len(contexts)} uploads"),) if multi else ()))
+            ((("Target", dur(brief.target_duration_s)),)
+             if brief.target_duration_s else ())
+            + (
+                ("Structure", brief.narrative_shape.replace("_", " ")),
+                ("Pacing", brief.pacing),
+                ("Handles", f"{brief.handle_frames} frames"),
+                ("Language", language),
+            )
+            + ((("Sources", f"{len(contexts)} uploads"),) if multi else ())
+        ))
 
     out_path.write_text(f"""<!doctype html>
 <html lang="{esc(language)}" dir="ltr">

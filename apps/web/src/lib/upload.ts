@@ -109,22 +109,56 @@ export async function uploadAsset(options: UploadOptions): Promise<string> {
   // The digest is the asset's identity: it is what makes a retry idempotent and
   // what lets the same rushes be transcribed once across two projects.
   report({ phase: "hashing", fraction: 0 });
-  const checksum = await hashFile(
-    file,
-    (read, total) => report({ phase: "hashing", fraction: read / (total || 1) }),
-    signal
-  );
+  let checksum: string;
+  let created: PresignedUpload;
+  try {
+    checksum = await hashFile(
+      file,
+      (read, total) => report({ phase: "hashing", fraction: read / (total || 1) }),
+      signal
+    );
 
-  // ── ask for the parts ───────────────────────────────────────────────────
-  const created = await api<PresignedUpload>(`/v1/projects/${projectId}/assets`, {
-    method: "POST",
-    json: {
-      filename: file.name,
-      bytes: file.size,
-      checksum,
-      ...(rate ? { rate } : {}),
-    },
-  });
+    // ── ask for the parts ─────────────────────────────────────────────────
+    created = await api<PresignedUpload>(`/v1/projects/${projectId}/assets`, {
+      method: "POST",
+      json: {
+        filename: file.name,
+        bytes: file.size,
+        checksum,
+        ...(rate ? { rate } : {}),
+      },
+    });
+  } catch (error) {
+    // Everything before the first part goes out used to throw silently: the
+    // caller's `onProgress` had only ever heard `hashing`, so the control sat
+    // at "Reading the file, 100%" for ever with no message and no way back.
+    // Anything that can fail has to report that it did.
+    if (signal?.aborted) {
+      report({ phase: "cancelled" });
+      throw error;
+    }
+    // A file already uploaded to this project is not a failure — it is this
+    // exact file, already here. The API says so with the id in a header, which
+    // is the whole reason it sends one.
+    if (error instanceof ApiError && error.status === 409) {
+      const existing = error.headers?.get("X-Asset-Id");
+      if (existing) {
+        report({
+          phase: "done",
+          fraction: 1,
+          bytesSent: file.size,
+          totalBytes: file.size,
+          assetId: existing,
+        });
+        return existing;
+      }
+    }
+    report({
+      phase: "failed",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 
   // Whatever S3 already holds from a previous attempt. On a first upload this
   // is empty and costs one request; on a resumed one it is the whole point.

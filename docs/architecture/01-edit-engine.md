@@ -56,6 +56,20 @@ existing mob IDs, tape names, and source TC ranges. Inheriting the source's mob 
 is what makes the output AAF relink cleanly in the editor's project — the single
 biggest advantage of AAF-in / AAF-out over flat-file input.
 
+The essence may be inside the AAF or beside it. **Embedded** is self-contained
+and extracted here; **linked** is a few hundred kilobytes of pointers, and the
+files it names are asked for by basename and staged beside it before this stage
+runs (ADR-0014). Either way this stage sees files on a local disk, because
+`pyaaf2` reads structured storage by seeking around inside it and cannot be
+handed a stream (ADR-0013).
+
+**Every sound track is read**, not the first. One microphone per track is what a
+recorded conversation looks like, and the tracks are mixed into the single mono
+file stage 2 transcribes while the per-track renders are kept for speaker
+attribution (ADR-0019). The cut itself is expressed against the first sound
+track: `clips` is what to transcribe, `primary_clips` is what the output
+document can say.
+
 ## Stage 1 — Audio conditioning
 
 ```
@@ -66,6 +80,14 @@ ffmpeg -i <source> -vn -ac 1 -ar 16000 -c:a pcm_s16le <out>.wav
 sequences, knowing which microphone a word came from is what allows the engine to
 choose the best-recorded take of the same line, and to keep A-roll on the right
 source.
+
+What that rule forbids is accepting a *programme mix* — a stereo mixdown of a
+finished show — in place of the isolated tracks, because the microphones no
+longer exist in it and nothing can recover them. An AAF's own sound tracks are a
+different case: they are the isolated tracks, they are rendered and kept, and
+the mix made from them has exactly one consumer, the transcriber, which takes
+one mono file. Speaker attribution still reads the isolated renders, so nothing
+downstream is handed a mix in place of something better. ADR-0019.
 
 Also run `ebur128` loudness analysis per track. Used later to flag unusable audio
 and to break ties between near-identical takes.

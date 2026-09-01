@@ -43,7 +43,13 @@ by invitation: `/signup` is closed unless `PUBLIC_SIGNUP=true`, which is how the
 first owner of a deployment is made.
 
 **The pipeline is real, end to end.** `run.py` takes a media file or an AAF to
-four interchange artifacts and a transcript page. Transcription is a managed API
+four interchange artifacts and a transcript page. An AAF may carry its essence
+or reference it: a **linked** AAF plus the folder it points at is what Media
+Composer exports by default, and it is a first-class input — the media is
+resolved by basename beside the AAF or one level down in `AAF Media/`, or from
+`--media-dir` (ADR-0014). Every sound track is read and they are mixed for
+transcription, with the per-track renders kept for speaker attribution
+(ADR-0019); the cut is expressed against the first sound track. Transcription is a managed API
 routed by language (ADR-0018) — xAI for what it covers, Gemini for Hebrew;
 self-hosted Whisper is still one flag, for an air-gapped customer.
 
@@ -55,7 +61,10 @@ C3 per-job cost as a projection of recorded model calls.
 
 **C2 is done: the screens read the API, not fixtures.** Upload, submission,
 progress, a cut edited in the browser, speaker renames and merges, artifact
-download. `use_mocks` still exists and is refused outside `environment=local`.
+download. A linked AAF's media is acquired by dropping the folder on the
+requirements panel, which uploads only the files the sequence asks for; a job
+may be submitted with media still missing, on an explicit acknowledgement, and
+what was absent is recorded on the job. `use_mocks` still exists and is refused outside `environment=local`.
 
 **A platform back-office exists**, outside the tenant model: its own process on
 :8001 bound to loopback, its own BYPASSRLS role, its own credential table, its
@@ -68,8 +77,10 @@ Moving to AWS + S3 is the next infrastructure step — see
 [docs/HANDOFF-CLAUDE-CODE.md](docs/HANDOFF-CLAUDE-CODE.md).
 
 **Still open:** the browser-to-AAF path has never been clicked through end to
-end against MinIO; the Buy buttons are inert; A1 (selection corpus) and A2 (Avid
-acceptance) are the two risks that can still end the product.
+end against MinIO — including the folder upload, which has only been exercised
+by the CLI; the Buy buttons are inert; a multi-track cut still emits one audio
+track (ADR-0019); A1 (selection corpus) and A2 (Avid acceptance) are the two
+risks that can still end the product.
 
 ## Rules that matter
 
@@ -96,6 +107,13 @@ functions in the same order; where the two could drift, they share the
 implementation instead (`project.stage_*`). If you change what a stage does,
 change it there — not in `orchestration/graph.py`.
 
+**A sequence's tracks are mixed for transcription, never for the cut.** All of
+an AAF's sound tracks are read, asked for, and mixed into the one mono file
+stage 2 transcribes. Speakers come from the per-track renders — arithmetic, not
+a model. The output references `primary_clips`, the first sound track, and
+widening that to N parallel tracks is a new decision, not a tidy-up. See
+[ADR-0019](docs/adr/0019-mix-sound-tracks-for-transcription.md).
+
 **Stage 9 runs in every mode.** A hand-marked cut still gets silence snapping,
 handles and frame quantization. The user picks *what*; stage 9 decides *where*.
 
@@ -121,11 +139,24 @@ Component primitives in `apps/web/src/components/ui/` follow shadcn/ui conventio
 ```bash
 npm install            # once, from the repo root (apps/admin is a workspace)
 ./dev.sh               # everything: Postgres, MinIO, schema, buckets, API, web, worker
+./dev.sh restart       # the same, from any state: stops whatever is already
+                       # running, clears apps/web/.next, then starts
 ./dev.sh setup         # stop before the processes
 ./dev.sh api|web|worker|admin      # one of them, in its own terminal
 npm run typecheck
 npm run build
 ```
+
+**Do not `npm run build` while `./dev.sh` or `next dev` is running.** They share
+`apps/web/.next`, and the production build prunes chunks the running dev server
+still has in memory — from then on every request dies with `Cannot find module
+'./383.js'` and the dev server never recovers. `./dev.sh restart` is the way
+back. `npm run typecheck` is safe at any time and is what you want for a quick
+check anyway.
+
+**The port goes after a `--`, or npm eats it:** `npm run dev -- --port 3000`.
+Without it npm passes `3000` to `next dev` as a positional and Next reads it as
+a project directory. `./dev.sh web` gets this right.
 
 The Python side lives in `apps/api/.venv` and is not on your PATH. Prefix with
 `.venv/bin/` or activate it — this is the single most common five minutes lost

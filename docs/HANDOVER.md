@@ -82,7 +82,25 @@ Verified on two pieces of real material:
 | Cut at target | 4 spans, 50s | 14 clips, median 10.2s |
 | Artifacts | AAF, FCPXML, EDL, OTIO — all validate | all validate |
 
-90 tests pass. Everything above runs on one machine with no cloud dependency.
+And, as of 1 Sep 2026, on a **linked** export — the shape Media Composer
+produces by default, and the one that had never been run end to end:
+
+| | Law_Podcast_EP_39 Gelem.aaf (Hebrew) |
+|---|---|
+| Source | 46 min · 4 sound tracks · 4 mono WAVs of 265 MB in `AAF Media/` · no embedded essence |
+| Locators | `file:///D%3a/Pepper/…/AAF%20Media/…` — a Windows volume that does not exist here |
+| Resolution | 4 of 4 clips, by basename, one directory down |
+| Mix | four tracks summed with a 1/sqrt(N) trim; peak 9783 of 32767, RMS above every track (ADR-0019) |
+| Speakers | 2 voices from 4 microphones, no model — and marked unreliable, because the four tracks are two stereo pairs |
+| Cut | run on the first 3 minutes, to fit the Gemini quota on this key: 423 words, 60 beats, 13 spans, four artifacts, all validate |
+| Relink | source mob IDs inherited from the customer's own project |
+
+The 46-minute run stops at transcription on this machine — `generativelanguage`
+paid-tier input tokens, limit 10000, and 46 minutes is 44,969 — which is a key
+quota and not a pipeline finding. Everything up to and including the mix and the
+speech detection ran on the full sequence: 548 speech segments.
+
+Tests pass. Everything above runs on one machine with no cloud dependency.
 
 ### What does *not* exist
 
@@ -322,6 +340,9 @@ why the current shape is what it is.
 | [0014](adr/0014-linked-aaf-companions.md) | A linked AAF is accepted, and asks for the media it references |
 | [0015](adr/0015-identity-behind-a-provider-interface.md) | Identity behind a provider interface; one email is one person |
 | [0016](adr/0016-resume-is-re-execution.md) | Resume is idempotent re-execution, not a checkpoint restore |
+| [0017](adr/0017-log-and-trace-retention.md) | Logs and traces are retained on a different clock from the audit log |
+| [0018](adr/0018-two-asr-engines-routed-by-language.md) | Two ASR engines, routed by language |
+| [0019](adr/0019-mix-sound-tracks-for-transcription.md) | A sequence's sound tracks are mixed for transcription, kept separate for the cut |
 
 ## Things that will bite you
 

@@ -176,10 +176,22 @@ class Prepared:
     aaf: object | None = None          # aaf_ingest.AAFSource
     provenance: str = "rushes"
     seams: list[int] = field(default_factory=list)
+    #: What the AAF had to say about itself — how many tracks, and how many
+    #: clips it could not resolve to media. `parse` has always produced these
+    #: and only `probe` ever read them, so a sequence that resolved none of its
+    #: media looked like an ordinary run until stage 5 said "nothing
+    #: transcribed" — after an hour of silence had been sent to a vendor.
+    notes: list[str] = field(default_factory=list)
+    #: {track_index: wav} — one microphone each, when the sequence had several
+    #: sound tracks and they were mixed for transcription (ADR-0019). Speaker
+    #: attribution uses them directly: the loudest mic is whoever is talking,
+    #: which is arithmetic rather than a model. Empty for a single-track
+    #: sequence and for flat media.
+    mic_tracks: dict = field(default_factory=dict)
 
 
 def stage_prepare(path: Path, adir: Path, assume_rate: Rate | None = None,
-                  on_progress=None) -> Prepared:
+                  on_progress=None, media_dirs: list[Path] | None = None) -> Prepared:
     """Stage 0. Probe, and for a sequence, flatten it first.
 
     Called by `ingest` on one machine and by the orchestrator's per-asset step
@@ -191,8 +203,12 @@ def stage_prepare(path: Path, adir: Path, assume_rate: Rate | None = None,
     if path.suffix.lower() != ".aaf":
         return Prepared(info=prepare.probe(path, assume_rate=assume_rate), source=path)
 
-    aaf = aaf_ingest.parse(path)
-    say(f"AAF · {len(aaf.clips)} clips · {'embedded' if aaf.embedded else 'linked'}")
+    aaf = aaf_ingest.parse(path, search_dirs=media_dirs)
+    tracks = len(aaf.tracks)
+    resolved = len(aaf.clips) - len(aaf.missing)
+    say(f"AAF · {len(aaf.clips)} clips on {tracks} track(s) · "
+        f"{resolved}/{len(aaf.clips)} resolved · "
+        f"{'embedded' if aaf.embedded else 'linked'}")
     flat = aaf_ingest.flatten_audio(aaf, adir)
     info = prepare.probe(flat, assume_rate=aaf.rate)
     # The sequence's own coordinates, not the flattened file's.
@@ -201,11 +217,18 @@ def stage_prepare(path: Path, adir: Path, assume_rate: Rate | None = None,
     # More than one clip means a person has already made cut decisions in this
     # material. Their positions on the flattened timeline, in ms — the boundary
     # between clips, not clip zero's start.
-    seams = ([round(c.tl_in / aaf.rate.fps * 1000) for c in aaf.clips[1:]]
-             if len(aaf.clips) > 1 else [])
+    #
+    # The primary track, not every track: the seams that matter are the cuts on
+    # the track the output is expressed against. Four microphones running
+    # continuously are not four sets of cut decisions.
+    primary = aaf.primary_clips
+    seams = ([round(c.tl_in / aaf.rate.fps * 1000) for c in primary[1:]]
+             if len(primary) > 1 else [])
     return Prepared(
         info=info, source=flat, aaf=aaf,
         provenance="sequence" if seams else "rushes", seams=seams,
+        notes=list(aaf.notes),
+        mic_tracks=aaf_ingest.track_renders(aaf, adir),
     )
 
 
@@ -262,6 +285,16 @@ def stage_speakers(asr: ASRResult, tracks, prepared: Prepared, *,
     if len(tracks) > 1:
         return spk.attribute_from_files(
             asr.words, {t.track_index: t.path for t in tracks})
+    # A sequence's sound tracks were mixed to one file for transcription, so
+    # stage 1 found one track where the material has four. The per-track renders
+    # are still on disk and they are microphones — use them, rather than falling
+    # through to diarization or to "never separated" for material that needs
+    # neither.
+    if len(prepared.mic_tracks) > 1:
+        attribution = spk.attribute_from_files(asr.words, prepared.mic_tracks)
+        say(f"{len(attribution.speakers)} voice(s) from "
+            f"{len(prepared.mic_tracks)} microphones")
+        return attribution
     if diarize_models:
         from ..diarize import get_provider
         say("separating voices")
@@ -324,7 +357,8 @@ def ingest(path: Path, work_dir, language: str | None = None,
            model: str = "base", model_path: str | None = None,
            assume_rate: Rate | None = None, diarize_models: Path | None = None,
            on_progress=None, content_hash: str | None = None,
-           ledger: object = None, keyterms: str = "") -> AssetIngest:
+           ledger: object = None, keyterms: str = "",
+           media_dirs: list[Path] | None = None) -> AssetIngest:
     """Stages 0-4 plus speaker attribution for one asset. Cached.
 
     `path` is a real file on a real disk, always — ffmpeg takes argv and pyaaf2
@@ -352,7 +386,8 @@ def ingest(path: Path, work_dir, language: str | None = None,
     if hit is not None:
         return hit
 
-    prepared = stage_prepare(path, adir, assume_rate=assume_rate, on_progress=say)
+    prepared = stage_prepare(path, adir, assume_rate=assume_rate, on_progress=say,
+                             media_dirs=media_dirs)
     tracks = stage_audio(prepared, adir)
     speech = stage_vad(tracks)
     say(f"{len(speech.speech)} speech segments")
@@ -363,6 +398,7 @@ def ingest(path: Path, work_dir, language: str | None = None,
     attribution = stage_speakers(asr, tracks, prepared,
                                  diarize_models=diarize_models, on_progress=say)
     beats, warnings = stage_structure(asr, speech, tracks, aid, prepared.seams)
+    warnings = list(prepared.notes) + warnings
     say(f"{len(beats)} beats")
 
     info = prepared.info
