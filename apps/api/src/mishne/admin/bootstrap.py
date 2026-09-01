@@ -9,21 +9,66 @@ through `POST /admin/v1/admins`.
 
 The password is read from a prompt, never from an argument — an argument is in
 the shell history and in `ps` output for as long as the command runs.
+
+## Getting back in
+
+`--reset-password` sets a new password on an administrator who already exists.
+Without it there was no way back in at all: the command refused a duplicate
+email, the back-office has no reset flow on purpose, and so a forgotten
+password meant inventing a second address for the same person. The password is
+the only thing it changes — the id, the action log and everything attributed to
+them stay where they are, which is the reason to reset rather than to delete
+and recreate.
+
+## `--ensure`, and why it is local-only
+
+`--ensure` is the idempotent form `dev.sh` calls: create the administrator if
+there is not one, do nothing if there is, and take the password from
+`ADMIN_BOOTSTRAP_PASSWORD` rather than a prompt. That is a real weakening of
+the rule above, so it is refused outside `environment=local` — a deployment
+gets the prompt, always, and there is no flag that changes it.
+
+The trade it makes is worth stating. On a laptop the alternative was not a
+stronger secret, it was a *ritual*: choose a password, forget it, run this
+again. The credential that comes out of `--ensure` protects a back-office bound
+to loopback holding fixture data, and being able to write it down once in
+`.env` is what makes the back-office survive a reboot and a test run.
 """
 
 from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import sys
 
 import sqlalchemy as sa
 
 from ..auth import passwords
-from ..config import load_env_file
+from ..config import get_settings, load_env_file
 from ..db import models as m
 from . import actions, auth
 from .db import bypasses_rls, connected_as, transaction
+
+
+def _password(from_env: bool) -> str | None:
+    """The new password, typed twice — or read from the environment for `--ensure`."""
+    if from_env:
+        password = os.environ.get("ADMIN_BOOTSTRAP_PASSWORD", "")
+        if not password:
+            print(
+                "--ensure needs ADMIN_BOOTSTRAP_PASSWORD set. Put it in "
+                "apps/api/.env and it survives a reboot and a test run.",
+                file=sys.stderr,
+            )
+            return None
+        return password
+
+    password = getpass.getpass("password: ")
+    if password != getpass.getpass("again: "):
+        print("those did not match.", file=sys.stderr)
+        return None
+    return password
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,7 +76,23 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Create a platform administrator.")
     parser.add_argument("--email", required=True)
     parser.add_argument("--name", default="")
+    parser.add_argument(
+        "--reset-password", action="store_true",
+        help="set a new password on an administrator who already exists")
+    parser.add_argument(
+        "--ensure", action="store_true",
+        help="create only if absent, taking the password from "
+             "ADMIN_BOOTSTRAP_PASSWORD. Local environments only.")
     args = parser.parse_args(argv)
+
+    if args.ensure and get_settings().environment != "local":
+        print(
+            f"--ensure takes the password from the environment and this is "
+            f"{get_settings().environment!r}. Run it without --ensure and type "
+            "one.",
+            file=sys.stderr,
+        )
+        return 2
 
     if not bypasses_rls():
         print(
@@ -47,15 +108,46 @@ def main(argv: list[str] | None = None) -> int:
         existing = s.execute(
             sa.select(admins.c.id).where(admins.c.email == email)
         ).first()
-        if existing is not None:
-            print(f"{email} is already an administrator.", file=sys.stderr)
-            return 1
         first = s.execute(sa.select(sa.func.count()).select_from(admins)).scalar() or 0
 
-    password = getpass.getpass("password: ")
-    if password != getpass.getpass("again: "):
-        print("those did not match.", file=sys.stderr)
+    if existing is not None:
+        if args.ensure:
+            print(f"{email} is already an administrator.")
+            return 0
+        if not args.reset_password:
+            print(
+                f"{email} is already an administrator. Use --reset-password to "
+                "set a new password for them.",
+                file=sys.stderr,
+            )
+            return 1
+
+    if args.reset_password and existing is None:
+        print(f"{email} is not an administrator.", file=sys.stderr)
         return 1
+
+    password = _password(args.ensure)
+    if password is None:
+        return 1
+
+    if existing is not None:  # --reset-password, checked above
+        try:
+            with transaction() as s:
+                auth.set_password(s, existing[0], password)
+                actions.record(
+                    s,
+                    actions.ADMIN_PASSWORD_RESET,
+                    admin_id=existing[0],
+                    target_type="admin",
+                    target_id=existing[0],
+                    reason="reset from the shell",
+                    detail={"email": email},
+                )
+        except passwords.WeakPassword as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(f"new password set for {email} ({existing[0]}).")
+        return 0
 
     try:
         with transaction() as s:

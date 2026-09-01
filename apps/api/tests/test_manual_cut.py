@@ -94,6 +94,74 @@ def test_a_manual_job_stops_after_the_brief(stub, tmp_path):
     assert "propose" not in stub and "score" not in stub
 
 
+def test_a_manual_briefs_model_call_is_not_made_at_all(tmp_path):
+    """The stage runs; the model call inside it does not.
+
+    Stage 5 is not skipped in manual mode — stage 9 needs `handle_frames` and
+    the transcript page prints the brief. But every reader of the brief's
+    *judgment* is skipped, so the model call was output nobody reads. On a job
+    submitted with no notes it was worse than waste: it invented a tone and a
+    narrative shape, wrote them to the transcript page, and no model ever
+    chose a span with them.
+    """
+    from mishne.orchestration.graph import _brief_has_a_reader
+
+    assert _brief_has_a_reader(_request(tmp_path, mode="ai")) is True
+    assert _brief_has_a_reader(_request(tmp_path, mode="hybrid")) is True
+    assert _brief_has_a_reader(_request(tmp_path, mode="manual")) is False
+    # Resumed with a person's cut: `select` runs, but on their beats. The
+    # solver is the only reader of the brief in that stage, and it does not run.
+    assert _brief_has_a_reader(
+        _request(tmp_path, mode="manual", user_cut=["b1"])) is False
+    assert _brief_has_a_reader(
+        _request(tmp_path, mode="hybrid", user_cut=["b1"])) is False
+
+
+def test_a_manual_brief_still_carries_what_stage_9_and_the_page_need(tmp_path):
+    """Deterministic is not degraded here — it is complete.
+
+    `handle_frames` and the target come from the request, not from a model, so
+    a manual brief compiled without one is missing nothing any later stage
+    reads. A router that would raise if called proves the call is not made.
+    """
+    class ExplodingRouter:
+        def available_for(self, task):  # pragma: no cover - must not be called
+            raise AssertionError("a manual job must not consult a model here")
+
+    request = _request(tmp_path, mode="manual")
+    request.notes = "keep it punchy, about six minutes"
+    request.handle_frames = 12
+    request.router = ExplodingRouter()
+
+    state = graph.RunState(request=request)
+    state.assets = [_FakeIngest()]
+    detail = graph.step_brief(graph.StepContext(job_id="job_1", org_id="org_1",
+                                                project_id="prj_1"), state)
+
+    assert state.brief.handle_frames == 12
+    assert state.brief.target_duration_s == 360      # read from the notes
+    assert "360s" in detail
+
+
+class _FakeIngest:
+    """Just enough of an `AssetIngest` for the job phase to gather."""
+
+    asset_id = "ast_1"
+    language = "en"
+    duration_s = 10.0
+    rate = None
+    start_tc_frames = 0
+    duration_frames = 250
+    speech = None
+    speakers: list = []
+
+    def __init__(self):
+        from mishne.pipeline.steps.structure import Beat
+
+        self.beats = [Beat(id="b1", idx=0, asset_id="ast_1", speaker="",
+                           start_ms=0, end_ms=1000, text="x", flags=[])]
+
+
 def test_a_hybrid_job_stops_with_a_refined_suggestion(stub, tmp_path):
     """Refined rather than raw: the suggestion an editor judges should be the
     cut they would actually get — silence-snapped, handled, frame-accurate —

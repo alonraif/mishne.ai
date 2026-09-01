@@ -303,6 +303,10 @@ class Job(Base):
     project_id = sa.Column(
         sa.Text, sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
+    # What the customer calls this cut. Not unique and not an identifier — the
+    # id above is — and never empty: submission derives one from the first
+    # asset's filename when the client sends none. See migration 0010.
+    name = sa.Column(sa.Text, nullable=False, server_default=sa.text("''"))
     # ai | manual | hybrid. Absent from the architecture doc's table list, but it
     # decides which of stages 5-8 run and it changes the price.
     mode = sa.Column(sa.Text, nullable=False, server_default=sa.text("'ai'"))

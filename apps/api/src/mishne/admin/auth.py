@@ -81,6 +81,31 @@ def create_admin(
     return admin_id
 
 
+def set_password(s: Session, admin_id: str, password: str) -> None:
+    """A new password for an existing administrator, and nothing else.
+
+    Every live session is revoked with it. A password is reset either because
+    it was forgotten or because it was exposed, and in the second case leaving
+    the sessions it issued alive would make the reset decorative.
+
+    Raises `passwords.WeakPassword` before anything is written.
+    """
+    encoded = passwords.hash_password(password)
+    s.execute(
+        sa.update(m.PlatformAdmin.__table__)
+        .where(m.PlatformAdmin.__table__.c.id == admin_id)
+        .values(password_hash=encoded)
+    )
+    s.execute(
+        sa.update(m.PlatformSession.__table__)
+        .where(
+            m.PlatformSession.__table__.c.admin_id == admin_id,
+            m.PlatformSession.__table__.c.revoked_at.is_(None),
+        )
+        .values(revoked_at=sa.func.now())
+    )
+
+
 def issue(s: Session, admin_id: str, *, ip: str | None = None) -> str:
     token = secrets.token_urlsafe(32)
     hours = get_settings().admin_session_hours

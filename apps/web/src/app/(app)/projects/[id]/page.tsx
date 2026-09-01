@@ -14,6 +14,7 @@ import { MediaRequirements } from "@/components/media-requirements";
 import { CardsSkeleton, PageSkeleton, QueryState } from "@/components/query-state";
 import { useApi, type Query } from "@/lib/use-api";
 import {
+  JOB_MODE_LABEL,
   formatBytes,
   formatCredits,
   formatDuration,
@@ -62,6 +63,30 @@ function isRunning(job: Job): boolean {
   );
 }
 
+/**
+ * The two or three facts worth showing about a job, chosen by its mode.
+ *
+ * A target length is a promise the engine is trying to keep, so it belongs on
+ * an AI job and on a draft the engine proposed. It is meaningless on a
+ * transcription: nothing is being selected, the customer marks the cut
+ * themselves afterwards, and the number on the row was only ever the figure
+ * they typed into a form that told them it would not affect the price. What a
+ * transcription job is actually about is how much source went through it and
+ * which language it was read in — the two things that decided what it cost.
+ */
+function jobFacts(job: Job): string[] {
+  const language = job.brief.language.toUpperCase();
+  const source = formatDuration(job.estimate.sourceHours * 3600);
+  if (job.mode === "manual") {
+    return [`${source} source`, language];
+  }
+  return [
+    `target ${formatDuration(job.brief.targetDurationS)}`,
+    job.brief.narrativeShape.replace(/_/g, " "),
+    language,
+  ];
+}
+
 function ProjectView({
   id,
   project,
@@ -94,7 +119,7 @@ function ProjectView({
             <AssetUpload projectId={id} />
             <Button asChild>
               <Link href={`/projects/${id}/new`}>
-                <Plus /> New rough cut
+                <Plus /> New job
               </Link>
             </Button>
           </div>
@@ -146,17 +171,17 @@ function ProjectView({
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Rough cuts</h2>
-        <QueryState query={jobs} missing="No rough cuts yet." skeleton={<CardsSkeleton rows={2} />}>
+        <h2 className="text-sm font-medium text-muted-foreground">Job list</h2>
+        <QueryState query={jobs} missing="No jobs yet." skeleton={<CardsSkeleton rows={2} />}>
           {(jobs) =>
           jobs.length === 0 ? (
           <Card className="p-10 text-center">
             <p className="text-sm text-muted-foreground">
-              No rough cuts yet. Upload source material and describe the piece you want.
+              No jobs yet. Upload source material and describe the piece you want.
             </p>
             <Button asChild className="mt-4">
               <Link href={`/projects/${id}/new`}>
-                <Plus /> New rough cut
+                <Plus /> New job
               </Link>
             </Button>
           </Card>
@@ -167,31 +192,37 @@ function ProjectView({
                 <Card className="p-4 transition-colors hover:border-primary/50 hover:bg-accent/30">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2.5">
-                        <span className="tc text-sm font-medium">{j.id}</span>
+                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                        <span className="truncate text-sm font-medium">{j.name}</span>
+                        <Badge variant="outline">{JOB_MODE_LABEL[j.mode]}</Badge>
                         <StatusBadge status={j.status} />
                       </div>
-                      <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-                        {j.notesRaw}
-                      </p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        {jobFacts(j).map((fact) => (
+                          <span key={fact}>{fact}</span>
+                        ))}
+                      </div>
+                      {/* A transcribe-only job has no notes — there was nobody
+                          to brief. An empty quotation mark where the brief
+                          goes reads as a job someone forgot to describe. */}
+                      {j.notesRaw && (
+                        <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                          {j.notesRaw}
+                        </p>
+                      )}
                     </div>
-                    <div className="shrink-0 text-right">
-                      <div className="text-sm">
-                        target {formatDuration(j.brief.targetDurationS)}
-                      </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {j.creditsSettled != null ? (
-                          <>
-                            <span className="tc">{formatCredits(j.creditsSettled)}</span> credits
-                          </>
-                        ) : j.status === "failed" ? (
-                          "refunded"
-                        ) : (
-                          <>
-                            <span className="tc">{formatCredits(j.estimate.cap)}</span> held
-                          </>
-                        )}
-                      </div>
+                    <div className="shrink-0 text-right text-xs text-muted-foreground">
+                      {j.creditsSettled != null ? (
+                        <>
+                          <span className="tc">{formatCredits(j.creditsSettled)}</span> credits
+                        </>
+                      ) : j.status === "failed" ? (
+                        "refunded"
+                      ) : (
+                        <>
+                          <span className="tc">{formatCredits(j.estimate.cap)}</span> held
+                        </>
+                      )}
                     </div>
                   </div>
                 </Card>

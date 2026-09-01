@@ -17,6 +17,7 @@ import {
   Blend,
 } from "lucide-react";
 import {
+  JOB_MODE_LABEL,
   TIERS,
   formatCredits,
   formatDuration,
@@ -52,31 +53,89 @@ const SHAPES: Array<{ id: NarrativeShape; label: string; hint: string }> = [
 
 const TONES = ["conversational", "urgent", "warm", "reflective", "authoritative", "punchy"];
 
-const MODES: Array<{
-  id: JobMode;
-  label: string;
-  hint: string;
-  icon: typeof Sparkles;
-}> = [
+/**
+ * The language of the material, asked rather than guessed.
+ *
+ * This is the transcription routing decision (ADR-0018) and it has to be made
+ * before a word has been transcribed, so nothing downstream can supply it. An
+ * unanswered question here is treated as unidentified audio, not as English —
+ * which is the safe reading and the expensive one.
+ *
+ * The list is the languages the engines publish, Hebrew first because it is a
+ * first-class target for this product. `other` exists so a language nobody
+ * listed is still submittable: it routes exactly as an unspecified language
+ * would, to the engine with general coverage.
+ */
+const LANGUAGES: Array<{ code: string; label: string }> = [
+  { code: "he", label: "Hebrew" },
+  { code: "en", label: "English" },
+  { code: "ar", label: "Arabic" },
+  { code: "cs", label: "Czech" },
+  { code: "da", label: "Danish" },
+  { code: "nl", label: "Dutch" },
+  { code: "fil", label: "Filipino" },
+  { code: "fr", label: "French" },
+  { code: "de", label: "German" },
+  { code: "hi", label: "Hindi" },
+  { code: "id", label: "Indonesian" },
+  { code: "it", label: "Italian" },
+  { code: "ja", label: "Japanese" },
+  { code: "ko", label: "Korean" },
+  { code: "mk", label: "Macedonian" },
+  { code: "ms", label: "Malay" },
+  { code: "fa", label: "Persian" },
+  { code: "pl", label: "Polish" },
+  { code: "pt", label: "Portuguese" },
+  { code: "ro", label: "Romanian" },
+  { code: "ru", label: "Russian" },
+  { code: "es", label: "Spanish" },
+  { code: "sv", label: "Swedish" },
+  { code: "th", label: "Thai" },
+  { code: "tr", label: "Turkish" },
+  { code: "vi", label: "Vietnamese" },
+  { code: "und", label: "Something else / not sure" },
+];
+
+/**
+ * The label is `JOB_MODE_LABEL`, not a second wording of it: this form is
+ * where a customer learns what the three modes are called, and the job list is
+ * where they read it back. Only the hint lives here, because only this screen
+ * has room for a sentence.
+ */
+const MODES: Array<{ id: JobMode; hint: string; icon: typeof Sparkles }> = [
   {
     id: "ai",
-    label: "AI rough cut",
     hint: "Describe the piece and get a finished rough cut back.",
     icon: Sparkles,
   },
   {
     id: "hybrid",
-    label: "AI draft, then edit",
     hint: "The engine proposes a cut, you adjust it before assembly.",
     icon: Blend,
   },
   {
     id: "manual",
-    label: "Transcribe only",
     hint: "Just the transcript. You mark the cut yourself. Costs less.",
     icon: PenLine,
   },
 ];
+
+// Matches `JOB_NAME_MAX` in the API, which refuses anything longer.
+const NAME_MAX = 120;
+
+/**
+ * A name for a job the customer has not named yet.
+ *
+ * Derived from the first source file rather than left blank, because a
+ * required empty field on step three of four is a wall, and because the name
+ * it produces is the one the API would have chosen anyway. It is a starting
+ * point in an editable box, not a decision made on the customer's behalf.
+ */
+function suggestedName(filename: string | undefined): string {
+  if (!filename) return "";
+  const stem = filename.replace(/\.[^./\\]+$/, "").trim();
+  return stem.slice(0, NAME_MAX);
+}
 
 const STEPS = ["Source", "Method", "Brief", "Estimate"] as const;
 
@@ -101,7 +160,13 @@ export function NewJobFlow({
   const [assetIds, setAssetIds] = useState<string[]>(
     assets[0] ? [assets[0].id] : []
   );
+  // Left empty until the customer reaches the brief, where it is seeded from
+  // whatever they picked on step one. Seeding it at mount would name the job
+  // after an asset they may be about to deselect.
+  const [name, setName] = useState("");
+  const [nameTouched, setNameTouched] = useState(false);
   const [targetMinutes, setTargetMinutes] = useState(10);
+  const [language, setLanguage] = useState("en");
   const [shape, setShape] = useState<NarrativeShape>("inverted_pyramid");
   const [tones, setTones] = useState<string[]>(["conversational"]);
   const [notes, setNotes] = useState("");
@@ -156,6 +221,14 @@ export function NewJobFlow({
   // the approval.
   useEffect(() => setApproved(false), [estimate?.cap]);
 
+  // The suggestion follows the source selection right up until the customer
+  // edits the field, and then it stops — an input that rewrites itself under
+  // somebody who is typing in it is worse than no suggestion at all.
+  const firstChosen = assets.find((a) => a.id === assetIds[0]);
+  useEffect(() => {
+    if (!nameTouched) setName(suggestedName(firstChosen?.filename));
+  }, [firstChosen?.filename, nameTouched]);
+
   const submit = async () => {
     if (!estimate) return;
     setSubmitting(true);
@@ -164,11 +237,16 @@ export function NewJobFlow({
       const job = await apiSend<{ id: string }>("/v1/jobs", {
         json: {
           asset_ids: assetIds,
+          name: name.trim(),
           mode,
           notes,
           target_duration_s: targetMinutes * 60,
           narrative_shape: shape,
           tone: tones,
+          // Sent in every mode, transcribe-only included: the transcript is
+          // what a manual job is for, and this is what decides which engine
+          // writes it.
+          language,
           // What the customer approved, sent so the API can compare it with
           // what it recomputes. It is a check, not the price.
           approved_cap: estimate.cap,
@@ -187,7 +265,11 @@ export function NewJobFlow({
     }
   };
 
-  const canAdvance = step === 0 ? chosen.length > 0 : true;
+  // Step three is the only one that can be left in an unusable state: no
+  // source is a job with nothing to cut, and no name is a job the customer
+  // will be looking at as an id a week from now.
+  const canAdvance =
+    step === 0 ? chosen.length > 0 : step === 2 ? name.trim().length > 0 : true;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -198,7 +280,7 @@ export function NewJobFlow({
         >
           <ArrowLeft className="size-3.5" /> {project.name}
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">New rough cut</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">New job</h1>
       </div>
 
       {/* Step rail */}
@@ -304,7 +386,7 @@ export function NewJobFlow({
                 >
                   <Icon className={cn("mt-0.5 size-4 shrink-0", on ? "text-primary" : "text-muted-foreground")} />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium">{m.label}</div>
+                    <div className="text-sm font-medium">{JOB_MODE_LABEL[m.id]}</div>
                     <div className="mt-0.5 text-xs text-muted-foreground">{m.hint}</div>
                   </div>
                   {on && <Check className="mt-0.5 size-4 shrink-0 text-primary" />}
@@ -324,10 +406,41 @@ export function NewJobFlow({
         <Card>
           <CardHeader>
             <CardTitle>
-              {mode === "manual" ? "Target length" : "Production notes"}
+              {mode === "manual" ? "Name and target length" : "Name and production notes"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Asked, not generated. A project holds several cuts of the same
+                interview and the id tells nobody which is which — this is the
+                only thing on the job list that will. */}
+            <div className="grid gap-2">
+              <Label htmlFor="job-name">Job name</Label>
+              <Input
+                id="job-name"
+                value={name}
+                maxLength={NAME_MAX}
+                placeholder="Ep. 3 — web cut"
+                aria-invalid={!name.trim()}
+                onChange={(e) => {
+                  setNameTouched(true);
+                  setName(e.target.value);
+                }}
+              />
+              {/* Said rather than only enforced: Continue is disabled while
+                  this is empty, and a dead button with no explanation is a
+                  dead end. */}
+              <p
+                className={cn(
+                  "text-xs",
+                  name.trim() ? "text-muted-foreground" : "text-destructive"
+                )}
+              >
+                {name.trim()
+                  ? "What this job is called everywhere you will look for it again. Suggested from the source file; change it to whatever you will recognise."
+                  : "Give the job a name — it is how you will find it again in the job list."}
+              </p>
+            </div>
+
             <div className="grid gap-2">
               <Label htmlFor="target">Target length</Label>
               <div className="flex items-center gap-2">
@@ -345,6 +458,29 @@ export function NewJobFlow({
                 {mode === "manual"
                   ? "Used to show you how close your cut is as you build it."
                   : "Target length does not affect price — the work is in reading the source, not in writing the cut."}
+              </p>
+            </div>
+
+            {/* Every mode. A transcribe-only job is *entirely* this decision. */}
+            <div className="grid gap-2">
+              <Label htmlFor="language">Language</Label>
+              <select
+                id="language"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="h-9 w-full max-w-xs rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                {LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                The language spoken in the source. It decides which engine
+                transcribes it, so this is worth getting right — a transcript in
+                the wrong language is not an error you will see, it is a
+                plausible transcript of the wrong words.
               </p>
             </div>
 
@@ -436,6 +572,10 @@ export function NewJobFlow({
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-md bg-muted/50 p-3 text-sm">
+                <div className="mb-1 flex justify-between gap-4">
+                  <span className="shrink-0 text-muted-foreground">Name</span>
+                  <span className="truncate text-right">{name}</span>
+                </div>
                 <div className="flex justify-between gap-4">
                   <span className="shrink-0 text-muted-foreground">
                     {chosen.length === 1 ? "Source" : `${chosen.length} sources`}
@@ -449,7 +589,14 @@ export function NewJobFlow({
                 </div>
                 <div className="mt-1 flex justify-between">
                   <span className="text-muted-foreground">Method</span>
-                  <span>{MODES.find((m) => m.id === mode)!.label}</span>
+                  <span>{JOB_MODE_LABEL[mode]}</span>
+                </div>
+                {/* On the screen where the customer approves a number: the
+                    language is the one setting here they cannot correct after
+                    the fact without paying for the source to be read again. */}
+                <div className="mt-1 flex justify-between">
+                  <span className="text-muted-foreground">Language</span>
+                  <span>{LANGUAGES.find((l) => l.code === language)!.label}</span>
                 </div>
                 <div className="mt-1 flex justify-between">
                   <span className="text-muted-foreground">Duration</span>
@@ -572,7 +719,9 @@ export function NewJobFlow({
         ) : (
           <Button
             onClick={submit}
-            disabled={!approved || !estimate?.sufficient || submitting || pricing}
+            disabled={
+              !approved || !estimate?.sufficient || submitting || pricing || !name.trim()
+            }
           >
             <Check />{" "}
             {submitting

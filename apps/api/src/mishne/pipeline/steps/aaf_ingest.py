@@ -141,6 +141,26 @@ class AAFSource:
         return [c for c in self.clips if c.resolved]
 
 
+def basename_of(url: str | None) -> str:
+    """The filename an AAF locator points at, whatever shape the locator is in.
+
+    Locators in the wild are `file:///Volumes/...`, bare Windows paths with
+    backslashes, percent-encoded URLs, and occasionally nothing at all. All that
+    is wanted is the last segment.
+
+    It lives here rather than in `db.requirements`, which is where it started
+    and which still re-exports it, because two callers now need it and the
+    other one is stage 10: an AAF's own locator is the only place the
+    *customer's* name for a linked source survives. The pipeline does not import
+    from `db`, and this is a pure string function about AAF locators, so this is
+    where it belongs.
+    """
+    if not url:
+        return ""
+    raw = unquote(urlparse(url).path or url) if "://" in url else unquote(url)
+    return raw.replace("\\", "/").rstrip("/").split("/")[-1]
+
+
 def _url_to_path(url: str | None, aaf_dir: Path) -> Path | None:
     """Resolve a locator URL to a local file.
 

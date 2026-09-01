@@ -23,7 +23,9 @@ export default function EditPage() {
               href={`/jobs/${job.id}`}
               className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
             >
-              <ArrowLeft className="size-3.5" /> {job.id}
+              {/* The job's own name, as on every other crumb in the app —
+                  a breadcrumb is a label, and the id is not one. */}
+              <ArrowLeft className="size-3.5" /> {job.name}
             </Link>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-semibold tracking-tight">Build the cut</h1>

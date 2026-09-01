@@ -67,10 +67,25 @@ def list_projects(s: Session, org_id: str) -> list[Project]:
         .where(j.c.project_id == p.c.id)
         .scalar_subquery()
     )
+    # Every ledger row this project owns, not just the settlements — the same
+    # expression as `jobs.project_spend`, and for the same reason.
+    #
+    # `delta` is the change in AVAILABLE credits, so a settle is *positive*: it
+    # returns the unused part of a hold that already took the whole cap out.
+    # Summing `-delta` over `kind = 'settle'` therefore reported
+    # `charged - cap`, which is zero for a job that used its whole estimate and
+    # negative for every job that came in under it. A project whose jobs had
+    # all completed showed a negative number of credits used.
+    #
+    # Over all three job rows the arithmetic is right in each case at once: a
+    # completed job nets to what it was charged, a failed or cancelled one to
+    # zero, and a job still running shows its hold — which is honest, because
+    # that money is genuinely unavailable right now. `purchase` and `grant`
+    # carry no project and drop out on their own.
     credits = (
         sa.select(sa.func.coalesce(sa.func.sum(-lg.c.delta), 0))
         .select_from(lg)
-        .where(lg.c.project_id == p.c.id, lg.c.kind == "settle")
+        .where(lg.c.project_id == p.c.id)
         .scalar_subquery()
     )
 
@@ -93,7 +108,9 @@ def list_projects(s: Session, org_id: str) -> list[Project]:
             created_at=r.created_at,
             asset_count=r.asset_count,
             job_count=r.job_count,
-            credits_used=float(r.credits_used),
+            # Rounded here rather than in the page: a sum of two-decimal
+            # credit amounts is a float, and 41.800000000000004 is not a price.
+            credits_used=round(float(r.credits_used), 2),
         )
         for r in rows
     ]
@@ -151,6 +168,7 @@ def _job(row: sa.Row, asset_ids: list[str], steps: list[JobStep]) -> Job:
     return Job(
         id=row.id,
         project_id=row.project_id,
+        name=row.name,
         asset_ids=asset_ids,
         mode=row.mode,
         status=row.status,

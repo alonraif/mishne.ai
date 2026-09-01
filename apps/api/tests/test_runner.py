@@ -213,3 +213,28 @@ def test_the_plan_is_the_rows_the_ui_needs_before_anything_runs(tmp_path):
     assert rows[0][1] == ASSET_STEPS[0].name
     assert rows[-1][1] == JOB_STEPS[-1].name
     assert rows[-1][2] == ""
+
+
+def test_the_job_caches_land_under_a_workspace_as_well_as_a_path(tmp_path):
+    """A worker hands the runner a `Workspace`, not a `Path`.
+
+    `worker.prepare_request` sets `work_dir=workspace`, and every test above
+    sets it to a `tmp_path` — so `RunState.job_dir` dividing it by a string was
+    only ever exercised on the shape that supports it. On a real job that is a
+    `TypeError` at stage 5, after every per-asset stage has already been paid
+    for.
+    """
+    from mishne.workspace import S3Workspace
+
+    workspace = S3Workspace(
+        org_id="org_1", project_id="prj_1", scratch=tmp_path / "ws",
+    )
+    for work_dir, root in (
+        (workspace, tmp_path / "ws"),
+        (tmp_path / "work", tmp_path / "work"),
+    ):
+        request = _request(tmp_path)
+        request.work_dir = work_dir
+        job_dir = graph.RunState(request=request).job_dir
+        assert job_dir == root / "jobs" / "job_1"
+        assert job_dir.is_dir()

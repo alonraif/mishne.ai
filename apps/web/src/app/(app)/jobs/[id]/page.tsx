@@ -22,6 +22,7 @@ import { ApiError } from "@/lib/api";
 import { apiGet } from "@/lib/dto";
 import { useApi } from "@/lib/use-api";
 import {
+  JOB_MODE_LABEL,
   formatBytes,
   formatCredits,
   formatDuration,
@@ -75,12 +76,19 @@ function JobView({ job }: { job: Job }) {
         >
           <ArrowLeft className="size-3.5" /> {project.data?.name ?? "Project"}
         </Link>
-        <div className="flex items-center gap-3">
-          <h1 className="tc text-2xl font-semibold tracking-tight">{job.id}</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">{job.name}</h1>
+          <Badge variant="outline">{JOB_MODE_LABEL[job.mode]}</Badge>
           <StatusBadge status={job.status} />
         </div>
-        <p className="mt-1 truncate text-sm text-muted-foreground" dir="ltr">
-          {assets.map((a) => a.filename).join(" · ") || "\u00a0"}
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
+          {/* The id is still worth showing — it is what a support conversation
+              and every artifact filename are keyed on — just not as the
+              heading, which is the customer's own name for the job. */}
+          <span className="tc">{job.id}</span>
+          <span className="truncate" dir="ltr">
+            {assets.map((a) => a.filename).join(" · ")}
+          </span>
         </p>
       </div>
 

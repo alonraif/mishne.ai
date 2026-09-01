@@ -43,6 +43,8 @@ it needs, per
   no useful message.
 - The Step Functions machine from `statemachine.json`, and an S3 event
   notification on the raw bucket calling `mishne.probe.handle_s3_event`.
+  MinIO here sends no such notification, so locally both halves are the same
+  poll: `./dev.sh worker` probes completed uploads and runs queued jobs.
 - Separate AWS accounts per environment: staging and production only.
   Development runs against staging; schema iteration runs against the local
   Postgres above. See ADR-0012.

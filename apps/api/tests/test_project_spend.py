@@ -339,3 +339,80 @@ def test_the_threshold_scales_to_what_this_orgs_jobs_actually_cost(api, owner, r
     assert body["low"] is True
     assert body["typical_job"] == 40.0
     assert body["threshold"] == 80.0
+
+
+# ── the same number on the project page as on the billing page ─────────────
+
+
+def _credits_used(http, project_id: str = PROJECT) -> float:
+    """What the project screen prints under the heading."""
+    resp = http.get(f"/v1/projects/{project_id}")
+    assert resp.status_code == 200, resp.text
+    return resp.json()["credits_used"]
+
+
+@requires_schema
+def test_the_project_page_and_the_billing_page_report_the_same_spend(
+    api, owner, ready_asset
+):
+    """`Project.credits_used` is `project_spend` for one project, or it is a
+    second answer to a question that has one.
+
+    It was a second answer. `list_projects` summed `-delta` over `kind =
+    'settle'` alone, and a settle is the *positive* remainder of a hold coming
+    back — so the expression evaluated to `charged - cap`: zero for a job that
+    used its whole estimate, negative for every job that came in under one, and
+    blind to jobs still running. A project whose work had all finished under
+    budget reported a negative number of credits used, on the same screen as a
+    billing page that had the figure right.
+    """
+    from mishne.db import jobs as job_writes
+    from sqlalchemy.orm import Session
+
+    http, _ = api
+
+    # One job in flight: its hold is money the customer cannot spend, and both
+    # pages have to say so.
+    _submit(http)
+    assert _credits_used(http) == pytest.approx(_credits(http), abs=0.01)
+
+    # And one that finished under its cap, which is the case that went negative.
+    job_id = _submit(http)
+    with owner.begin() as conn:
+        cap = float(
+            conn.execute(
+                sa.text("SELECT approved_cap FROM jobs WHERE id = :j"), {"j": job_id}
+            ).scalar_one()
+        )
+    with Session(owner) as s:
+        job_writes.settle(s, ORG, job_id, round(cap / 4, 2), cap)
+        s.commit()
+
+    assert _credits_used(http) == pytest.approx(_credits(http), abs=0.01)
+    assert _credits_used(http) > 0
+
+
+@requires_schema
+def test_a_finished_job_under_budget_does_not_read_as_negative_spend(
+    api, owner, ready_asset
+):
+    """The symptom, on its own, because the parity test above would still pass
+    if both numbers were wrong in the same way."""
+    from mishne.db import jobs as job_writes
+    from sqlalchemy.orm import Session
+
+    http, _ = api
+    before = _credits_used(http)
+    job_id = _submit(http)
+    with owner.begin() as conn:
+        cap = float(
+            conn.execute(
+                sa.text("SELECT approved_cap FROM jobs WHERE id = :j"), {"j": job_id}
+            ).scalar_one()
+        )
+    charged = round(cap / 2, 2)
+    with Session(owner) as s:
+        job_writes.settle(s, ORG, job_id, charged, cap)
+        s.commit()
+
+    assert _credits_used(http) - before == pytest.approx(charged, abs=0.01)

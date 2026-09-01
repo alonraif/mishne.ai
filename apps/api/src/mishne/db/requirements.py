@@ -23,11 +23,11 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from urllib.parse import unquote, urlparse
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
+from ..pipeline.steps import aaf_ingest
 from . import models as m
 
 
@@ -42,17 +42,12 @@ class Requirement:
     clip_name: str | None = None
 
 
-def basename_of(url: str | None) -> str:
-    """The filename an AAF locator points at, whatever shape the locator is in.
-
-    Locators in the wild are `file:///Volumes/...`, bare Windows paths with
-    backslashes, percent-encoded URLs, and occasionally nothing at all. All that
-    is wanted is the last segment.
-    """
-    if not url:
-        return ""
-    raw = unquote(urlparse(url).path or url) if "://" in url else unquote(url)
-    return raw.replace("\\", "/").rstrip("/").split("/")[-1]
+#: Re-exported. It moved to `aaf_ingest` when stage 10 became a second caller —
+#: an AAF's locator is the only record of what the customer calls a linked
+#: source, and the artifacts have to say that name rather than the sanitised one
+#: the file was staged under. Kept importable from here because this module is
+#: where the concept is documented and where callers already look for it.
+basename_of = aaf_ingest.basename_of
 
 
 def match_key_for(basename: str) -> str:

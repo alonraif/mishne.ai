@@ -193,6 +193,7 @@ export const mockEstimate = estimateJob({
 export const mockJobs: Job[] = [
   {
     id: "job_c41a",
+    name: "Ep. 3 — broadcast cut",
     projectId: "prj_harbour",
     assetIds: ["ast_9d41"],
     mode: "ai",
@@ -222,6 +223,7 @@ export const mockJobs: Job[] = [
   },
   {
     id: "job_8f23",
+    name: "Ep. 3 — web cut, Jonas only",
     projectId: "prj_harbour",
     assetIds: ["ast_2b77"],
     mode: "ai",
@@ -254,6 +256,7 @@ export const mockJobs: Job[] = [
   },
   {
     id: "job_1d90",
+    name: "Keynote highlights",
     projectId: "prj_summit",
     assetIds: ["ast_5e10"],
     mode: "ai",
@@ -288,6 +291,7 @@ export const mockJobs: Job[] = [
 
 mockJobs.push({
   id: "job_2e57",
+  name: "Ep. 3 — web version, starting point",
   projectId: "prj_harbour",
   // Two uploads in one cut — the interview and the pickup shoot. Any screen
   // that renders a job must survive this, not just the single-asset case.

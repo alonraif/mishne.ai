@@ -279,3 +279,114 @@ def test_a_project_with_billing_history_can_still_be_deleted(api, owner, ready_a
 
     # The project and the job are gone; the financial record is not.
     assert [k for k, _ in _ledger(owner, job_id)] == ["hold"]
+
+
+# ── the language reaches the transcriber ───────────────────────────────────
+#
+# `asr/routing.py` decides the engine from the language and treats "not stated"
+# as "not identified", which only the general-coverage engine may take. That is
+# the right rule and it was being fed nothing: the brief this router writes had
+# no `language` key, `worker.prepare_request` read `brief.get("language")` back
+# as None, and so every job in the product — English rushes included — was
+# routed to the engine that costs three times as much. The rule was never
+# wrong; nothing was ever asked.
+
+
+def _brief_of(owner, job_id: str) -> dict:
+    with owner.begin() as conn:
+        return conn.execute(
+            sa.text("SELECT brief FROM jobs WHERE id = :j"), {"j": job_id}
+        ).scalar_one()
+
+
+def test_the_declared_language_is_stored_where_the_worker_reads_it(
+    api, owner, ready_asset
+):
+    http, _ = api
+    accepted = _submit(http, _estimate(http), language="he")
+    assert accepted.status_code == 202, accepted.text
+
+    brief = _brief_of(owner, accepted.json()["id"])
+    assert brief["language"] == "he"
+
+    # The hop that matters: this dict is what `prepare_request` turns into
+    # `JobRequest.language`, and that is the argument `routing.plan` routes on.
+    from mishne.asr import routing
+
+    assert [
+        e.provider for e in routing.plan(brief["language"], have=["xai", "google"])
+    ] == ["google"]
+
+
+def test_an_unstated_language_defaults_to_english_and_the_cheap_engine(
+    api, owner, ready_asset
+):
+    http, _ = api
+    accepted = _submit(http, _estimate(http))
+    assert accepted.status_code == 202, accepted.text
+
+    from mishne.asr import routing
+
+    assert _brief_of(owner, accepted.json()["id"])["language"] == "en"
+    assert routing.plan("en", have=["xai", "google"])[0].provider == "xai"
+
+
+def test_a_language_is_normalised_so_two_spellings_route_alike(
+    api, owner, ready_asset
+):
+    http, _ = api
+    for sent, stored in (("EN", "en"), ("pt-br", "pt-BR"), (" he ", "he")):
+        accepted = _submit(http, _estimate(http), language=sent)
+        assert accepted.status_code == 202, accepted.text
+        assert _brief_of(owner, accepted.json()["id"])["language"] == stored
+
+
+def test_a_language_that_is_not_a_code_is_refused_at_submission(api, ready_asset):
+    http, _ = api
+    refused = _submit(http, _estimate(http), language="Hebrew, I think")
+    assert refused.status_code == 422, refused.text
+
+
+# ──────────────────────────────────────────────────────────────── the name
+
+
+def test_a_job_is_called_what_the_customer_called_it(api, ready_asset):
+    """The name is stored and read back, not derived from anything.
+
+    Before this, a job's only label was its primary key, and a project holding
+    four cuts of one interview showed four rows of `job_8a98a1ca`.
+    """
+    http, _ = api
+    accepted = _submit(http, _estimate(http), name="Ep. 3 — web cut")
+    assert accepted.status_code == 202, accepted.text
+    assert accepted.json()["name"] == "Ep. 3 — web cut"
+
+    read_back = http.get(f"/v1/jobs/{accepted.json()['id']}")
+    assert read_back.json()["name"] == "Ep. 3 — web cut"
+
+
+def test_an_unnamed_job_is_named_after_its_source_not_after_its_id(api, ready_asset):
+    """An API client with nothing to say still gets a readable row.
+
+    The fallback is deliberately the source filename rather than the job id:
+    the column exists precisely so that no screen has to print the id, and a
+    default of `job_8a98a1ca` would reintroduce the thing it replaced.
+    """
+    http, _ = api
+    accepted = _submit(http, _estimate(http), name="")
+    assert accepted.status_code == 202, accepted.text
+    body = accepted.json()
+    # `rushes.mov`, without the extension — see the `ready_asset` fixture.
+    assert body["name"] == "rushes"
+    assert body["id"] not in body["name"]
+
+
+def test_a_name_is_trimmed_to_one_line_and_a_long_one_is_refused(api, ready_asset):
+    """It is rendered in a list row, so it may not be a paragraph."""
+    http, _ = api
+    accepted = _submit(http, _estimate(http), name="  Ep. 3\n  web  cut  ")
+    assert accepted.status_code == 202, accepted.text
+    assert accepted.json()["name"] == "Ep. 3 web cut"
+
+    refused = _submit(http, _estimate(http), name="x" * 121)
+    assert refused.status_code == 422, refused.text

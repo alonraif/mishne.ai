@@ -100,6 +100,21 @@ export type JobMode =
   /** The engine proposes a selection, the user edits it before assembly. */
   | "hybrid";
 
+/**
+ * What each mode is called on screen.
+ *
+ * One map, because the answer has to be the same in the list and in the form
+ * that created the row: a job submitted as "Transcribe only" that appears in
+ * the list as "manual" is two names for one thing, and the customer has to
+ * work out that they match. The submission form adds a sentence of hint next
+ * to these; the label itself is the short form that fits in a badge.
+ */
+export const JOB_MODE_LABEL: Record<JobMode, string> = {
+  ai: "AI",
+  hybrid: "AI Draft",
+  manual: "Transcription",
+};
+
 export type NarrativeShape =
   | "chronological"
   | "thematic"
@@ -133,6 +148,16 @@ export interface JobStep {
 export interface Job {
   id: string;
   projectId: string;
+  /**
+   * What the customer called this cut, chosen at submission.
+   *
+   * Not unique and not an identifier — `id` is, and it is what every link and
+   * every API call uses. This exists to be read: a project holds four cuts of
+   * one interview and `job_8a98a1ca` does not say which is the web version.
+   * Never empty; the API derives one from the first source file when the
+   * client sends none, so nothing here needs a fallback.
+   */
+  name: string;
   /**
    * Every upload this cut draws on, in upload order.
    *

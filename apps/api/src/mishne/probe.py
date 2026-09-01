@@ -29,7 +29,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from .config import Settings, get_settings
+from .config import Settings, get_settings, load_env_file
 from .db import requirements as reqs
 from .db import uploads
 from .db.base import session_for_org
@@ -217,6 +217,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("asset_id")
     parser.add_argument("--org", required=True, help="the asset's organisation")
     args = parser.parse_args(argv)
+    # Like every other entry point: pydantic-settings reads `.env` but does not
+    # export it, and the S3 adapter reads the environment. Without this, a probe
+    # run by hand against MinIO addresses real AWS instead, fails a ClientError,
+    # and marks a perfectly good asset `failed`.
+    load_env_file(Path.cwd() / ".env")
     status = probe_asset(args.org, args.asset_id)
     print(f"{args.asset_id}: {status}")
     return 0 if status in ("ready", "awaiting_media") else 1

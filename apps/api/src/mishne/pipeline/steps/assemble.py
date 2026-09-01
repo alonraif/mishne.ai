@@ -44,7 +44,7 @@ from opentimelineio.opentime import RationalTime, TimeRange
 
 from ...interchange import mobid
 from ...timecode import Rate, tc_to_frames
-from .aaf_ingest import AAFSource, map_to_source
+from .aaf_ingest import AAFSource, basename_of, map_to_source
 from .refine import Cut
 
 
@@ -55,6 +55,18 @@ class AssetRef:
     Either `media_path` (a file the NLE can open) or `aaf` (a sequence whose own
     clips are the real sources) is set. An AAF asset resolves each cut back
     through its source map; a media asset points straight at the file.
+
+    **`media_path` is where the bytes are right now; `display_name` is what the
+    customer calls them, and the artifacts must carry the second.** On a worker
+    those are not the same string: the file has been staged into a scratch
+    directory under a sanitised name (`workspace._safe_name`, which turns
+    `Tia Mowry 'My Next Act,' (360p)` into `Tia Mowry _My Next Act__ _360p_`),
+    and that directory is deleted the moment the job completes. An artifact
+    naming the staged file names a path that never existed on the customer's
+    machine, under a filename their media does not have — which is two
+    independent reasons no NLE can relink it. `display_name` defaults to the
+    path's own name, which is exactly right for `run.py`, where the file the
+    pipeline read *is* the customer's file.
     """
 
     rate: Rate
@@ -64,13 +76,32 @@ class AssetRef:
     media_path: Path | None = None
     aaf: AAFSource | None = None
     audio_tracks: int = 1
+    #: The customer's filename, with its extension. Empty means `media_path`'s.
+    display_name: str = ""
+    #: True when `media_path` is a temporary copy this run made and will delete,
+    #: rather than the customer's own file. Decides whether the artifacts may
+    #: name a location at all — see `media_url`.
+    staged: bool = False
+    #: Frame size, for the AAF essence descriptor and the FCPXML format name.
+    #: Zero means unknown, and the writers keep their own defaults.
+    width: int = 0
+    height: int = 0
     # Filled lazily on first use — one extent per mob ID, see `_extents`.
     _extents: dict = field(default=None, repr=False)
 
     @property
-    def name(self) -> str:
+    def filename(self) -> str:
+        """What the media is called, wherever it now lives."""
+        if self.display_name:
+            return self.display_name
         if self.media_path is not None:
-            return self.media_path.stem
+            return self.media_path.name
+        return ""
+
+    @property
+    def name(self) -> str:
+        if self.media_path is not None or self.display_name:
+            return Path(self.filename).stem
         return self.asset_id or "source"
 
 
@@ -140,7 +171,8 @@ def build_multi(cuts: list[Cut], assets: dict[str, AssetRef],
         emit = _aaf_clips if asset.aaf is not None else _media_clips
         for spec in emit(cut, asset, seq_rate):
             for track in tracks:
-                track.append(_clip(spec, cut, asset, order))
+                track.append(_clip(spec, cut, asset, order,
+                                   picture=track is v_track))
             order += 1
 
     return timeline
@@ -163,22 +195,91 @@ def _media_clips(cut: Cut, asset: AssetRef, seq_rate: Rate):
         start_time=RationalTime(lo, fps),
         duration=RationalTime(hi - lo, fps),
     )
-    path = asset.media_path
-    # Identity is the media itself, not the path it sits at today — the customer
-    # will move it. A content hash would be better; the filename is the workable
-    # approximation.
-    identity = f"mishne/{path.name}/{asset.duration_frames}"
+    filename = asset.filename
+    # Identity is the media itself, not the path it sits at today and not the
+    # name either — the customer will move it, and a worker will have staged it
+    # under a sanitised one. The content hash is `asset_id` on every path that
+    # has one; the filename remains the fallback for a caller that does not.
+    identity = (f"mishne/{asset.asset_id}" if asset.asset_id
+                else f"mishne/{filename}/{asset.duration_frames}")
+    url = media_url(filename, None if asset.staged else asset.media_path)
+    essence = _essence_description(asset)
 
     def make_ref():
         ref = otio.schema.ExternalReference(
-            target_url=path.resolve().as_uri(), available_range=available)
-        ref.name = path.stem
+            target_url=url, available_range=available)
+        ref.name = Path(filename).stem
         mobid.attach(ref, identity)
+        if essence:
+            ref.metadata["AAF"]["EssenceDescription"] = dict(essence)
+        # Read by `interchange/fcpx_patch`, which cannot probe a file it has
+        # deliberately not been given a path to.
+        ref.metadata["mishne"] = {"width": asset.width, "height": asset.height}
         return ref
 
-    yield (path.stem, make_ref,
+    yield (Path(filename).stem, make_ref,
            _conform(cut.src_in, asset.rate, seq_rate),
            _conform(cut.src_out, asset.rate, seq_rate), seq_rate, {})
+
+
+def media_url(filename: str, at: Path | None = None) -> str:
+    """How an artifact names its media.
+
+    `at` is the file's real location **only when that location is the
+    customer's own** — `run.py` reading rushes off a laptop. Then the artifact
+    says so, absolutely, and every NLE relinks with no dialog at all.
+
+    A worker has no such path to offer. It staged a copy into a scratch
+    directory under a sanitised name and deletes the directory when the job
+    ends, so `at` is None and the answer is a bare, percent-encoded basename —
+    a relative URL. Two things follow, and both are wanted:
+
+    * **It resolves for free when the artifact sits beside the media.** FCPXML
+      `src` and the AAF's `NetworkLocator` are both resolved relative to the
+      document, so a customer who drops the export into the folder their rushes
+      are in gets a silent relink.
+    * **When it does not resolve, the NLE asks for a file by the right name.**
+      Premiere's "locate the media", Resolve's relink and Avid's *relink by
+      source file name* all match on the basename, and the basename is now the
+      customer's own — apostrophes, commas and all.
+
+    What a worker must never write is the third option, and it is what it used
+    to write: an absolute `file://` URL to the scratch copy. Off the machine
+    that ran the job that is worse than saying nothing — a confident statement
+    about a path the customer has never had, under a filename their media does
+    not have. Media that genuinely travels with the artifact belongs embedded,
+    not linked.
+    """
+    from urllib.parse import quote
+
+    if at is not None:
+        return at.resolve().as_uri()
+    # RFC 3986 `pchar`, so the result is a valid path segment while an ordinary
+    # filename still reads as one. `quote`'s default safe set encodes every
+    # sub-delimiter, which turns `'My Next Act,' (360p)` into a wall of `%27`
+    # and `%28` in an EDL comment a person is meant to be able to read. Space,
+    # `%`, `#` and `?` are still encoded, which is what actually matters.
+    return quote(filename, safe="!$&'()*+,;=:@-._~")
+
+
+def _essence_description(asset: AssetRef) -> dict:
+    """Frame geometry for the AAF writer, when the probe found any.
+
+    `otio_aaf_adapter` defaults an unknown picture descriptor to 1920x1080 16/9
+    — silently, and for 640x360 media too. Avid believes the descriptor, so the
+    master clip it builds on relink is the wrong shape. The adapter reads these
+    keys out of the media reference if they are there, so give it the truth.
+    """
+    if not (asset.width and asset.height):
+        return {}
+    from math import gcd
+
+    g = gcd(asset.width, asset.height) or 1
+    return {
+        "StoredWidth": asset.width,
+        "StoredHeight": asset.height,
+        "ImageAspectRatio": f"{asset.width // g}/{asset.height // g}",
+    }
 
 
 def _aaf_clips(cut: Cut, asset: AssetRef, seq_rate: Rate):
@@ -220,8 +321,18 @@ def _aaf_clips(cut: Cut, asset: AssetRef, seq_rate: Rate):
 
         def make_ref(clip=clip, ext_lo=ext_lo, ext_hi=ext_hi):
             if clip.media_path is not None:
+                # Same rule as `_media_clips`, and one extra wrinkle. A staged
+                # companion's path is this worker's scratch directory and
+                # belongs in no artifact — but its *basename* on disk has been
+                # through `_safe_name` too, so it is not the customer's name
+                # either. The source AAF's own locator is, and it is the one
+                # record of it we have; `media_path.name` is the fallback for a
+                # clip whose locator was empty and which resolved by some other
+                # route. The mob ID below remains the real relink key here.
                 ref = otio.schema.ExternalReference(
-                    target_url=clip.media_path.resolve().as_uri())
+                    target_url=media_url(
+                        basename_of(clip.target_url) or clip.media_path.name,
+                        None if asset.staged else clip.media_path))
             else:
                 ref = otio.schema.MissingReference()
             ref.name = clip.name
@@ -242,13 +353,20 @@ def _aaf_clips(cut: Cut, asset: AssetRef, seq_rate: Rate):
                {"source_clip": clip.index})
 
 
-def _clip(spec, cut: Cut, asset: AssetRef, order: int) -> otio.schema.Clip:
+def _clip(spec, cut: Cut, asset: AssetRef, order: int,
+          picture: bool = True) -> otio.schema.Clip:
     """The part that is the same however the source was resolved."""
     src_name, make_ref, src_in, src_out, rate, extra = spec
     fps = rate.fps
+    ref = make_ref()
+    if not picture:
+        # Frame geometry describes an image and the AAF writer builds a
+        # PCMDescriptor for an audio track, so handing it StoredWidth means a
+        # KeyError logged once per key per clip and nothing else.
+        ref.metadata.get("AAF", {}).pop("EssenceDescription", None)
     clip = otio.schema.Clip(
         name=f"{src_name}_{order + 1:03d}",
-        media_reference=make_ref(),
+        media_reference=ref,
         source_range=TimeRange(
             start_time=RationalTime(src_in, fps),
             duration=RationalTime(src_out - src_in, fps)),

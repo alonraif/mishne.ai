@@ -70,6 +70,15 @@ class AssetSource:
     path: Path
     #: Defaults to the digest of the file, which is what `run.py` does.
     content_id: str = ""
+    #: What the customer calls this upload. `path` is a staged copy under a
+    #: sanitised name (`workspace._safe_name`) in a directory this job deletes
+    #: on the way out, so it is the wrong thing to put in a deliverable — see
+    #: `assemble.media_url`. Empty means `path` *is* the customer's file.
+    display_name: str = ""
+    #: Frame size from the probe stored at upload. Zero means "ask the ingest",
+    #: which is what `run.py` does and what a fresh ingest answers anyway.
+    width: int = 0
+    height: int = 0
     #: Companion media for a linked AAF, materialised beside it under their own
     #: names — which is the whole of the resolution (ADR-0014).
     companions: list[Path] = field(default_factory=list)
@@ -126,6 +135,37 @@ class JobRequest:
     #: resumed through assembly. See `runner.phases_for`.
     user_cut: list[str] = field(default_factory=list)
 
+    @property
+    def timeline_name(self) -> str:
+        """What the sequence is called in the NLE.
+
+        `stem` names the *files*, and the two callers disagree about whether it
+        already says "roughcut": `run.py` passes the upload's bare name so the
+        deliverable sits beside the source as `interview.aaf`, while the worker
+        passes `interview_roughcut` because that string becomes the download's
+        filename. Appending unconditionally gave a worker's sequences the name
+        `interview_roughcut_roughcut`, in the AAF and in the EDL title.
+        """
+        return self.stem if self.stem.endswith("_roughcut") \
+            else f"{self.stem}_roughcut"
+
+    @property
+    def media_names(self) -> dict[str, str]:
+        """Customer filename by pipeline asset id, for stage 10."""
+        return {a.pipeline_id: a.display_name
+                for a in self.assets if a.display_name}
+
+    @property
+    def media_is_staged(self) -> bool:
+        """True when the assets are copies this job made and will delete."""
+        return any(a.display_name for a in self.assets)
+
+    @property
+    def media_sizes(self) -> dict[str, tuple[int, int]]:
+        """Frame size by pipeline asset id, for the assets that carry one."""
+        return {a.pipeline_id: (a.width, a.height)
+                for a in self.assets if a.width and a.height}
+
 
 @dataclass
 class AssetRun:
@@ -178,8 +218,31 @@ class RunState:
         return self.runs[self.current]
 
     @property
+    def workspace(self):
+        """The run's `Workspace`, or None when `work_dir` is a bare directory.
+
+        `JobRequest.work_dir` is a plain `Path` when `run.py` drives the
+        pipeline and a `Workspace` when a worker does — the two shapes
+        `runner._asset_dir` already handles. Discriminated on a method the
+        protocol defines and `Path` does not: `Path.root` exists and is the
+        string `"/"`, so a `hasattr(work, "root")` test takes the workspace
+        branch for a plain path and fails somewhere less obvious.
+        """
+        work = self.request.work_dir
+        return work if hasattr(work, "publish_asset") else None
+
+    @property
     def job_dir(self) -> Path:
-        d = self.request.work_dir / "jobs" / self.request.job_id
+        """Where the job-phase caches live, under whichever work dir this run has.
+
+        Dividing a `Workspace` by a string is a `TypeError`, and it is raised
+        at the first job-phase step — stage 5. Every per-asset stage passes,
+        including the transcription the job spent its money on, and then the
+        brief fails twice and the job dies.
+        """
+        ws = self.workspace
+        root = ws.root if ws is not None else Path(self.request.work_dir)
+        d = root / "jobs" / self.request.job_id
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -275,7 +338,15 @@ def step_speakers(ctx: StepContext, state: RunState) -> str:
         seams=run.prepared.seams,
         warnings=run.warnings,
     )
-    project.finish_ingest(run.adir, run.ingest)
+    # With the workspace, not without it. `finish_ingest` writes the ingest
+    # cache to `adir` either way — but on a worker `adir` is scratch that
+    # `worker.execute` deletes when the job ends, so a cache that is not
+    # published is a cache that never survives its own run. Passing None here
+    # made ADR-0008 true of `run.py` and false of the product: every
+    # orchestrated job re-transcribed from cold, and re-cutting the same rushes
+    # paid for them again. `publish_asset` is best-effort and keyed on the
+    # content id, which is what `asset_dir` hydrates from.
+    project.finish_ingest(run.adir, run.ingest, state.workspace)
     state.assets.append(run.ingest)
     n = len(run.attribution.speakers)
     return f"{n} speaker(s)" if n else "not separated"
@@ -302,6 +373,37 @@ def _gather(state: RunState) -> None:
     state.names = {s.id: s.display for s in state.speakers}
 
 
+def _brief_has_a_reader(req: JobRequest) -> bool:
+    """Whether any stage that reads the model's brief runs on this pass.
+
+    Stage 5 exists to shape a *machine's* choice of spans. Its judgment fields
+    — tone, narrative shape, must-include, pacing, keep-filler — are read by
+    `propose`, `score` and the solver branch of `select`, and by nothing else.
+
+    A manual job skips all three: `mode="manual"` is transcribe-only
+    (schemas.py), the person marks the cut on the text, and when they submit it
+    `select` takes the `user_cut` branch, which never looks at the brief. So a
+    manual job was paying for a model call whose entire output was discarded —
+    and, on a job submitted with no notes, paying it to invent a tone and a
+    narrative shape for a cut no model will choose.
+
+    What the brief still supplies in that case is `handle_frames`, which stage 9
+    needs in every mode, and the fields the transcript page prints. Both come
+    from the request, so the deterministic compiler is not a fallback here — it
+    is the whole of the answer.
+    """
+    # Local: `runner` imports this module, and `phases_for` is the one place
+    # that says which stages a mode runs. Asking it beats a second copy of the
+    # rule that drifts the first time a mode is added.
+    from .runner import phases_for
+
+    skip, _ = phases_for(req.mode, req.user_cut)
+    # With a submitted cut, `select` runs but takes the user's beats, so the
+    # solver — the only reader of the brief in that stage — does not.
+    readers = {"propose", "score"} if req.user_cut else {"propose", "score", "select"}
+    return bool(readers - skip)
+
+
 def step_brief(ctx: StepContext, state: RunState) -> str:
     """Stage 5. One model call, with a deterministic fallback.
 
@@ -321,7 +423,7 @@ def step_brief(ctx: StepContext, state: RunState) -> str:
     state.brief = brief_step.compile_brief(
         req.notes,
         req.target_duration_s,
-        use_llm=(req.scorer != "heuristic"),
+        use_llm=(req.scorer != "heuristic" and _brief_has_a_reader(req)),
         router=req.router,
         language=state.language,
         handle_frames=req.handle_frames,
@@ -443,9 +545,11 @@ def step_refine(ctx: StepContext, state: RunState) -> str:
 
 
 def step_assemble(ctx: StepContext, state: RunState) -> str:
-    refs = project.asset_refs(state.assets)
+    refs = project.asset_refs(state.assets, names=state.request.media_names,
+                              staged=state.request.media_is_staged,
+                              sizes=state.request.media_sizes)
     state.timeline = assemble.build_multi(
-        state.cuts, refs, name=f"{state.request.stem}_roughcut"
+        state.cuts, refs, name=state.request.timeline_name
     )
     emitted = len(list(state.timeline.tracks[0].find_clips()))
     return f"{emitted} clips"

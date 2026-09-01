@@ -40,6 +40,7 @@ import sqlalchemy as sa
 
 from .. import alerts, telemetry
 from ..config import Settings, get_settings, load_env_file
+from ..db import ids as id_space
 from ..db import jobs as job_writes
 from ..db import models as m
 from ..db import transcripts as transcript_writes
@@ -54,6 +55,17 @@ from .runner import Cancelled, run_job
 from .sink import DatabaseSink
 
 log = get_logger(__name__)
+
+
+def _asset_ids(assets: list[AssetSource]) -> dict[str, str]:
+    """Each asset's pipeline id to the `assets.id` row it was staged from.
+
+    The pipeline works in content digests and every id column in the database is
+    a foreign key into `assets`, so something has to hold both halves. This is
+    it: the worker is the only component that knows which row a set of bytes
+    came from (`db/ids.py`).
+    """
+    return {src.pipeline_id: src.asset_id for src in assets}
 
 
 def _job_row(s, org_id: str, job_id: str):
@@ -145,11 +157,25 @@ def prepare_request(
             AssetSource(
                 asset_id=row.id,
                 path=staged,
+                # `staged` is a scratch copy under a sanitised name; the
+                # artifacts must name the customer's file, not ours.
+                display_name=row.filename,
+                # The probe from upload, so a warm ingest cache written before
+                # frame size was recorded still produces a truthful AAF
+                # descriptor instead of the writer's 1920x1080 default.
+                width=int((row.probe or {}).get("width") or 0),
+                height=int((row.probe or {}).get("height") or 0),
                 # The pipeline's id is the content hash, not the row id: the
                 # same rushes in two projects are two rows and one ingest.
                 content_id=f"a_{row.checksum[:24]}" if row.checksum else "",
             )
         )
+
+    # The stored cut is in the database's id space and stage 8 matches it
+    # against beats the pipeline named after their content, so it is translated
+    # here — the one place that holds both halves (`db/ids.py`).
+    assets = _asset_ids(sources)
+    user_cut = [id_space.pipeline_id(beat_id, assets) for beat_id in user_cut]
 
     request = JobRequest(
         job_id=job_id,
@@ -203,43 +229,33 @@ def execute(org_id: str, job_id: str, settings: Settings | None = None) -> str:
         workspace.cleanup()
         return "cancelled"
     except Exception as exc:  # noqa: BLE001 - every failure releases the hold
+        return _failed(exc, workspace, org_id, job_id, request, cap)
+
+    # Everything past here is also inside the failure handler, because it also
+    # spends the customer's money. `_publish` writing a row it cannot write is
+    # exactly as much a failed job as a stage raising, and for a while it was
+    # not treated as one: the artifact insert used the format's display label
+    # where the column takes its identifier, the exception left `execute`
+    # unhandled, and the only thing downstream — `devrunner._fail` — set the
+    # status and not the ledger. Every manual job ended `failed` with its hold
+    # stranded. A `try` that stops at the last stage protects the pipeline and
+    # not the transaction that bills for it.
+    try:
+        if result.paused:
+            return _pause(result, workspace, org_id, job_id, request, cap)
+
+        published = _publish(result, workspace, org_id, job_id, request)
+        _record_transcript(result, org_id, job_id)
+        actual = _credits_used(result, meta["tier"])
         with session_for_org(org_id) as s:
-            job_writes.release(s, org_id, job_id, cap, reason="job failed")
-            # A failed job costs the customer nothing and costs us whatever it
-            # spent before it died. Recording only successful jobs' costs is
-            # how a retry storm stays invisible in the cost model.
-            _record_cost(s, org_id, job_id, request)
+            charged = job_writes.settle(s, org_id, job_id, actual, cap)
+            cost_cents = _record_cost(s, org_id, job_id, request)
             job_writes.set_status(
-                s, org_id, job_id, "failed",
-                # The type, not the message: an exception can quote a filename.
-                error={"code": type(exc).__name__},
-                finished_at=sa.func.now(),
+                s, org_id, job_id, "complete", finished_at=sa.func.now()
             )
-        log.warning("job.failed", job_id=job_id, reason=type(exc).__name__)
-        # Out of retries, so this is a customer waiting for a deliverable that
-        # is not coming. A step that failed and was retried never reaches here:
-        # the runner raises only once the retries are exhausted.
-        alerts.job_failed(
-            job_id,
-            step=getattr(exc, "step", ""),
-            reason=type(exc).__name__,
-            attempts=getattr(exc, "attempt", 0),
-        ).emit()
-        workspace.cleanup()
-        return "failed"
+    except Exception as exc:  # noqa: BLE001
+        return _failed(exc, workspace, org_id, job_id, request, cap)
 
-    if result.paused:
-        return _pause(result, workspace, org_id, job_id, request)
-
-    published = _publish(result, workspace, org_id, job_id, request)
-    _record_transcript(result, org_id, job_id)
-    actual = _credits_used(result, meta["tier"])
-    with session_for_org(org_id) as s:
-        charged = job_writes.settle(s, org_id, job_id, actual, cap)
-        cost_cents = _record_cost(s, org_id, job_id, request)
-        job_writes.set_status(
-            s, org_id, job_id, "complete", finished_at=sa.func.now()
-        )
     log.info("job.settled", job_id=job_id, charged=charged, artifacts=published,
              model_cost_cents=cost_cents)
     with session_for_org(org_id) as s:
@@ -250,8 +266,42 @@ def execute(org_id: str, job_id: str, settings: Settings | None = None) -> str:
     return "complete"
 
 
+def _failed(exc: Exception, workspace, org_id: str, job_id: str,
+            request: JobRequest, cap: float) -> str:
+    """The one end for a job that will not be delivered: hold released, failed.
+
+    Shared by the stage failures and by everything the completion path does
+    afterwards, so that there is a single answer to "what happens to the money"
+    rather than one per place an exception can appear.
+    """
+    with session_for_org(org_id) as s:
+        job_writes.release(s, org_id, job_id, cap, reason="job failed")
+        # A failed job costs the customer nothing and costs us whatever it
+        # spent before it died. Recording only successful jobs' costs is
+        # how a retry storm stays invisible in the cost model.
+        _record_cost(s, org_id, job_id, request)
+        job_writes.set_status(
+            s, org_id, job_id, "failed",
+            # The type, not the message: an exception can quote a filename.
+            error={"code": type(exc).__name__},
+            finished_at=sa.func.now(),
+        )
+    log.warning("job.failed", job_id=job_id, reason=type(exc).__name__)
+    # Out of retries, so this is a customer waiting for a deliverable that
+    # is not coming. A step that failed and was retried never reaches here:
+    # the runner raises only once the retries are exhausted.
+    alerts.job_failed(
+        job_id,
+        step=getattr(exc, "step", ""),
+        reason=type(exc).__name__,
+        attempts=getattr(exc, "attempt", 0),
+    ).emit()
+    workspace.cleanup()
+    return "failed"
+
+
 def _pause(result, workspace, org_id: str, job_id: str,
-           request: JobRequest) -> str:
+           request: JobRequest, cap: float) -> str:
     """A job that has stopped for a person, rather than finished or failed.
 
     The hold stands and nothing is settled: the customer approved a cap for a
@@ -261,8 +311,30 @@ def _pause(result, workspace, org_id: str, job_id: str,
 
     What IS written is the transcript, the scores and — for a hybrid job — the
     suggested cut, because that is the thing the person is about to edit.
+
+    And if that write does not happen, this is not a pause. `awaiting_edit` is a
+    promise that there is something to edit: the editor opens on the job's
+    transcript, and with no transcript it opens empty, on a job that says it is
+    waiting for the person looking at it. There is no deliverable to weigh
+    against here — unlike the completed path, nothing has been produced — so the
+    honest end is a failed job with the hold released, which the customer can
+    resubmit.
     """
-    _record_transcript(result, org_id, job_id)
+    if not _record_transcript(result, org_id, job_id):
+        with session_for_org(org_id) as s:
+            job_writes.release(s, org_id, job_id, cap,
+                               reason="transcript not recorded")
+            _record_cost(s, org_id, job_id, request)
+            job_writes.set_status(
+                s, org_id, job_id, "failed",
+                error={"code": "TranscriptNotRecorded"},
+                finished_at=sa.func.now(),
+            )
+        alerts.job_failed(job_id, step="transcript",
+                          reason="TranscriptNotRecorded", attempts=1).emit()
+        workspace.cleanup()
+        return "failed"
+
     with session_for_org(org_id) as s:
         _record_cost(s, org_id, job_id, request)
         job_writes.set_status(s, org_id, job_id, "awaiting_edit")
@@ -275,29 +347,36 @@ def _pause(result, workspace, org_id: str, job_id: str,
     return "awaiting_edit"
 
 
-def _record_transcript(result, org_id: str, job_id: str) -> None:
+def _record_transcript(result, org_id: str, job_id: str) -> bool:
     """The beats, the speakers, the scores and the cut, into the read tables.
 
     Outside the settle transaction, and failing softly, because of what each
-    failure costs. The artifacts are already published and validated at this
-    point: the customer has a deliverable that opens in their NLE. Failing the
-    job over the transcript would release the hold and mark a job failed that
-    demonstrably succeeded, and the customer would be looking at an error
-    beside four working files.
+    failure costs *on the completed path*. The artifacts are already published
+    and validated by then: the customer has a deliverable that opens in their
+    NLE. Failing the job over the transcript would release the hold and mark a
+    job failed that demonstrably succeeded, and the customer would be looking at
+    an error beside four working files.
 
     So a failure here is loud in the logs and does not touch the money. What it
     costs is the transcript page for that job, which is recoverable by re-running
     it — the ingest cache makes that free of transcription (ADR-0008).
+
+    Returns whether it succeeded, because a job that pauses for a person has no
+    deliverable on the other side of the scale — see `_pause`.
     """
     state = result.state
+    assets = _asset_ids(state.request.assets)
     try:
         with session_for_org(org_id) as s:
             for ingest in state.assets:
                 transcript_writes.record_asset(
-                    s, org_id, ingest, ingest_version=CACHE_VERSION
+                    s, org_id, ingest,
+                    asset_id=assets[ingest.asset_id],
+                    ingest_version=CACHE_VERSION,
                 )
             transcript_writes.record_job_view(
                 s, org_id, job_id,
+                assets=assets,
                 candidates=state.candidates,
                 scores=state.scores,
                 cuts=state.cuts,
@@ -308,6 +387,8 @@ def _record_transcript(result, org_id: str, job_id: str) -> None:
             job_id=job_id,
             reason=type(exc).__name__,
         )
+        return False
+    return True
 
 
 def _record_cost(s, org_id: str, job_id: str, request: JobRequest) -> int:
@@ -340,10 +421,11 @@ def _publish(result, workspace, org_id: str, job_id: str, request: JobRequest) -
             ref = workspace.publish_artifact(local, job_id, local.name)
             s.execute(
                 sa.insert(m.Artifact.__table__).values(
-                    id=f"art_{job_id}_{artifact.fmt}",
+                    # `kind`, not `fmt`: the identifier, not the label.
+                    id=f"art_{job_id}_{artifact.kind}",
                     org_id=org_id,
                     job_id=job_id,
-                    kind=artifact.fmt,
+                    kind=artifact.kind,
                     # What the download is called. The key is an id and is not
                     # it — a customer receives `interview_roughcut.aaf`.
                     filename=local.name,

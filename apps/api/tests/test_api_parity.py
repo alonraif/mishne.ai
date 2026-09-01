@@ -8,6 +8,18 @@ into different products. When one of these fails, the seed, the query layer and
 The Postgres half re-seeds the development database, which is what the
 development database is for. It does not touch staging or production: the seed
 script refuses to run outside `environment=local`.
+
+## Why `seeded` checks before it truncates
+
+`seed.reset()` is `TRUNCATE` over every table. Called from a fixture it runs on
+whatever database `.env` points at, which on a developer's machine is the one
+they have been using the product with — so `pytest -q`, the command written down
+in CLAUDE.md, silently deleted a real project, its uploads and the account that
+owned them. The objects survived in the bucket; nothing that named them did.
+
+So the fixture skips rather than truncating when the database holds a tenant the
+suite did not create. A clean or freshly seeded database — CI, a new checkout —
+still runs the whole parity check.
 """
 
 from __future__ import annotations
@@ -22,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 pytest.importorskip("sqlalchemy")
 TestClient = pytest.importorskip("fastapi.testclient").TestClient
 
-from conftest import mint_session, requires_schema  # noqa: E402
+from conftest import _real_tenants, mint_session, requires_schema  # noqa: E402
 
 pytestmark = requires_schema
 
@@ -74,9 +86,23 @@ def seeded_token(seeded, owner) -> str:
 
 
 @pytest.fixture
-def seeded(app_login: str, clear_caches):
-    """A database holding exactly the fixtures."""
+def seeded(app_login: str, owner, clear_caches):
+    """A database holding exactly the fixtures.
+
+    `reset()` truncates everything, so this refuses to run at all when there is
+    real work in the way — see the module docstring.
+    """
     import os
+
+    with owner.begin() as conn:
+        real = _real_tenants(conn)
+    if real:
+        pytest.skip(
+            f"{len(real)} organisation(s) here the suite did not create; "
+            "re-seeding would truncate them. Point DATABASE_URL at a scratch "
+            "database, or clear it yourself with "
+            "`python -m mishne.db.seed --reset`."
+        )
 
     os.environ["ENVIRONMENT"] = "local"
     os.environ["APP_DATABASE_URL"] = app_login

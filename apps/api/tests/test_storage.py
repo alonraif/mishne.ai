@@ -20,7 +20,7 @@ boto3 = pytest.importorskip("boto3")
 moto = pytest.importorskip("moto")
 
 from mishne import storage  # noqa: E402
-from mishne.config import Settings  # noqa: E402
+from mishne.config import Settings, get_settings  # noqa: E402
 
 REGION = "eu-west-1"
 
@@ -44,6 +44,12 @@ def aws(monkeypatch):
                  "AWS_SESSION_TOKEN"):
         monkeypatch.setenv(name, "testing")
     monkeypatch.setenv("AWS_DEFAULT_REGION", REGION)
+    # And no endpoint: a developer's `.env` points S3 at local MinIO, and a
+    # client built with an explicit endpoint reaches it rather than moto. The
+    # cache clear is what makes that setenv reach `get_client`, which asks
+    # `get_settings()` — memoised, and quite possibly already holding the file.
+    monkeypatch.setenv("S3_ENDPOINT_URL", "")
+    get_settings.cache_clear()
     with moto.mock_aws():
         yield
 

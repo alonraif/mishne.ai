@@ -86,4 +86,96 @@ def apply() -> bool:
     fcpx_xml.FcpxOtio._framerate_to_frame_duration = staticmethod(
         _framerate_to_frame_duration
     )
+    _patch_format_name(fcpx_xml)
+    _patch_element_lookups(fcpx_xml)
     return True
+
+
+def _patch_element_lookups(fcpx_xml) -> None:
+    """Find elements by comparing attributes, not by interpolating XPath.
+
+    The adapter looks up the elements it has already written like this:
+
+        def _asset_by_path(self, path):
+            return self.resource_element.find(f"./asset[@src='{path}']")
+
+        def _asset_clip_by_name(self, name):
+            return self.event_resource.find(f"./asset-clip[@name='{name}']")
+
+    The value being interpolated is a filename. `RUSHES Tia Mowry talks 'My
+    Next Act,'` closes the predicate's quote halfway through, and ElementTree
+    raises `SyntaxError: invalid predicate` from inside the writer — so the
+    FCPXML is the one deliverable a job produces for an apostrophe in a
+    filename, which is to say it produces none.
+
+    This never fired while the artifacts named the *staged* copy, because
+    `workspace._safe_name` had already replaced the apostrophe with an
+    underscore on the way to disk. Writing the customer's real filename is the
+    fix for relink and it is what walks into this.
+
+    An escaping helper would be the smaller patch and the wrong one: XPath 1.0
+    has no escape for a quote inside a string literal. Comparing the attribute
+    directly is both simpler and total.
+    """
+    if getattr(fcpx_xml.FcpxOtio._asset_by_path, "_mishne", False):
+        return
+
+    def by_attr(root, tag: str, attr: str, value):
+        for element in root.findall(f"./{tag}"):
+            if element.get(attr) == value:
+                return element
+        return None
+
+    def _asset_by_path(self, path):
+        return by_attr(self.resource_element, "asset", "src", path)
+
+    def _asset_clip_by_name(self, name):
+        return by_attr(self.event_resource, "asset-clip", "name", name)
+
+    def _media_by_name(self, name):
+        return by_attr(self.resource_element, "media", "name", name)
+
+    _asset_by_path._mishne = True
+    fcpx_xml.FcpxOtio._asset_by_path = _asset_by_path
+    fcpx_xml.FcpxOtio._asset_clip_by_name = _asset_clip_by_name
+    fcpx_xml.FcpxOtio._media_by_name = _media_by_name
+
+
+def _patch_format_name(fcpx_xml) -> None:
+    """Name the `<format>` from the probe we already ran, not from the path.
+
+    The adapter builds `FFVideoFormat640x360p25.0` by shelling out to ffprobe
+    against `media_reference.target_url`:
+
+        path = path.replace("file://", "")
+        if not os.path.exists(path):
+            return ""
+
+    That worked only for as long as the artifacts named a real local file, and
+    naming a real local file is precisely the bug in `assemble.media_url` — a
+    worker's copy is in a scratch directory nobody else has. With a relative URL
+    the probe misses, the format loses its name, and Premiere and Resolve are
+    handed a sequence with no stated raster.
+
+    Stage 0 already probed the media properly. `_media_clips` puts the frame
+    size on the media reference, so read it from there and fall back to the
+    adapter's own behaviour when it is absent — an AAF-sourced clip, or audio.
+    """
+    original = fcpx_xml.FcpxOtio._clip_format_name
+    # `apply()` is called once per emit, and this one wraps rather than
+    # replaces: without the guard each call would add another layer.
+    if getattr(original, "_mishne", False):
+        return
+
+    def _clip_format_name(self, clip):
+        try:
+            size = clip.media_reference.metadata.get("mishne", {})
+            w, h = int(size.get("width", 0)), int(size.get("height", 0))
+        except Exception:  # noqa: BLE001 — a Stack, a Track, no reference
+            w = h = 0
+        if w and h:
+            return f"FFVideoFormat{w}x{h}p{round(float(clip.duration().rate), 2)}"
+        return original(self, clip)
+
+    _clip_format_name._mishne = True
+    fcpx_xml.FcpxOtio._clip_format_name = _clip_format_name

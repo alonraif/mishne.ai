@@ -22,6 +22,15 @@ rows already there and add nothing.
 **Per job** — beat_scores and selections. These are one job's *opinion* of beats
 it does not own: what it thought of each, and which it cut.
 
+## Row ids, not content ids
+
+The pipeline names an asset after its bytes and a beat after that name (ADR-0008,
+`db/ids.py`). Every column here is a foreign key into `assets`, so the caller
+passes the asset *row* the ingest came from and the ids are translated on the
+way in. Writing the pipeline's own ids here fails the foreign key on every
+insert, which is how the transcript page and the cut editor came to be empty for
+every job the worker had run.
+
 ## Frames, not milliseconds
 
 The pipeline works in milliseconds from the start of the media; every row here
@@ -38,6 +47,7 @@ from sqlalchemy.orm import Session
 
 from ..logging import get_logger
 from ..timecode import Rate, ms_to_frames
+from . import ids as id_space
 from . import models as m
 
 log = get_logger(__name__)
@@ -53,10 +63,16 @@ def record_asset(
     org_id: str,
     ingest,
     *,
+    asset_id: str,
     ingest_version: int,
     raw_s3_key: str = "",
 ) -> str:
     """The transcript, speakers and beats for one upload. Returns its id.
+
+    `asset_id` is the `assets.id` row this ingest was staged from, which is not
+    `ingest.asset_id` — that one is the content digest the pipeline works in
+    (`db/ids.py`). It is required rather than defaulted because a default would
+    be the bug this parameter exists to close.
 
     Idempotent, and it has to be: the ingest cache means a second job over the
     same asset re-runs this with identical content (ADR-0008), and a retried
@@ -69,7 +85,7 @@ def record_asset(
     the referenced ones stay, which leaves the earlier job readable and the new
     one correct.
     """
-    asset_id = ingest.asset_id
+    assets = {ingest.asset_id: asset_id}
     transcript_id = f"trs_{asset_id}"
     rate, start_tc = ingest.rate, ingest.start_tc_frames
 
@@ -158,7 +174,7 @@ def record_asset(
         s.execute(
             pg_insert(m.Beat.__table__)
             .values(
-                id=beat.id,
+                id=id_space.db_id(beat.id, assets),
                 org_id=org_id,
                 transcript_id=transcript_id,
                 asset_id=asset_id,
@@ -212,11 +228,17 @@ def record_job_view(
     org_id: str,
     job_id: str,
     *,
+    assets: id_space.AssetIds,
     candidates: list,
     scores: dict,
     cuts: list,
 ) -> tuple[int, int]:
     """One job's scores and its cut. Returns (scored beats, selected spans).
+
+    `assets` maps each of the job's content ids to the `assets.id` row it was
+    staged from. Candidates and cuts arrive in the pipeline's id space and both
+    `beat_id` and `asset_id` here are foreign keys, so they are translated on
+    the way in (`db/ids.py`).
 
     **Scores are recorded per beat, not per candidate span.** Stage 6 carves a
     long beat into several candidates and stage 7 scores each of them, so there
@@ -243,12 +265,13 @@ def record_job_view(
             best[parent] = (value, candidate)
 
     for parent_id, (value, candidate) in best.items():
+        beat_id = id_space.db_id(parent_id, assets)
         s.execute(
             sa.insert(m.BeatScore.__table__).values(
-                id=f"bsc_{job_id}_{parent_id}",
+                id=f"bsc_{job_id}_{beat_id}",
                 org_id=org_id,
                 job_id=job_id,
-                beat_id=parent_id,
+                beat_id=beat_id,
                 composite=value,
                 scores={"composite": value, "candidates": counts[parent_id]},
                 rationale=getattr(candidate, "rationale", "") or None,
@@ -264,8 +287,10 @@ def record_job_view(
                 job_id=job_id,
                 # The beat, not the candidate span: candidates are per job and
                 # are not rows, and this column is a foreign key into `beats`.
-                beat_id=getattr(cut, "parent_id", "") or cut.beat_id,
-                asset_id=cut.asset_id,
+                beat_id=id_space.db_id(
+                    getattr(cut, "parent_id", "") or cut.beat_id, assets
+                ),
+                asset_id=assets.get(cut.asset_id, cut.asset_id),
                 order_idx=order_idx,
                 # Post-refine frames: where the cut actually is, after silence
                 # snapping and handles. The span stage 8 chose is not what an

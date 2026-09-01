@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 # Bring the whole thing up on one machine, in the right order.
 #
-#   ./dev.sh            # infra, schema, buckets, then API + web + job runner
+#   ./dev.sh            # infra, schema, buckets, then API + web + the runner
 #   ./dev.sh setup      # everything except the three processes
 #   ./dev.sh api        # just one of them, in its own terminal
 #   ./dev.sh web
-#   ./dev.sh worker
+#   ./dev.sh worker     # probes completed uploads, runs queued jobs; reloads
+#                       # on a source change, like the API does
 #
 # Why this file exists: end to end, this is eight steps across three terminals
 # — compose, migrate, the app login role, the buckets, their CORS and
 # lifecycle, uvicorn with USE_MOCKS=false, next, and a job runner. Every one of
 # them is documented somewhere and the order is not, so the first person to try
 # it gets a browser that loads, an upload that fails with what looks like a
-# CORS error, and a job that never leaves `queued`.
+# CORS error, an asset that never leaves `probing`, and a job that never leaves
+# `queued`.
 #
 # Local only. It sets ENVIRONMENT=local and nothing here is a deployment.
 set -euo pipefail
@@ -131,6 +133,9 @@ API_PORT=8000
 # every customer's balance should be one you chose to start.
 ADMIN_WEB_PORT=3001
 ADMIN_API_PORT=8001
+# Who you sign into the back-office as locally. Override in the environment if
+# you would rather it were your own address.
+ADMIN_EMAIL=${ADMIN_EMAIL:-ops@localhost}
 
 port_is_free() {
   ! lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
@@ -157,7 +162,52 @@ admin_api() {
 }
 admin_web() { cd "$ROOT/apps/admin" && exec npm run dev -- --port "$ADMIN_WEB_PORT"; }
 web()    { cd "$WEB" && exec npm run dev -- --port "$WEB_PORT"; }
-worker() { cd "$API" && exec "$PY" -m mishne.orchestration.devrunner; }
+# Both halves of what the cloud does with events: an S3 notification calling
+# `mishne.probe`, and Step Functions running a job. MinIO sends no notification
+# and there is no state machine here, so one poll stands in for both.
+#
+# ## Under a file watcher, for the same reason the API is
+#
+# The API runs with `--reload` and the runner did not, which made a whole class
+# of change invisible: edit a stage, a worker path or the ledger, watch the API
+# pick it up, and the runner goes on executing the modules it imported hours
+# ago. The failure that cost the most was exactly this — a fixed bug reappearing
+# identically on the next job, because the process that ran it predated the fix.
+# Nothing says so; a long-lived Python process has no way to.
+#
+# `watchfiles` comes with `uvicorn[standard]`, so it is the same reloader the
+# API is already using, driving a command instead of an ASGI app.
+#
+# ## Why the SIGINT timeout is minutes and not seconds
+#
+# The runner is not stateless. On SIGINT it finishes the job in its hands and
+# then exits — `devrunner.stop` — which is what makes a restart safe: the new
+# process picks up the next job, and no job is interrupted part-way through a
+# stage. Killing it mid-job would leave a job row in a running status with its
+# hold held and no process coming back for it, which is the same shape as the
+# bug this watcher exists to stop reappearing.
+#
+# So the watcher has to be willing to wait for a job. `watchfiles` sends SIGINT
+# and then SIGKILL after `--sigint-timeout`; that timeout is therefore the
+# longest job we are prepared not to break, not a liveness check. Fifteen
+# minutes is longer than any local job on a laptop's worth of rushes. An idle
+# runner exits in about a poll interval, so in practice the restart is instant.
+WORKER_RELOAD_TIMEOUT=900
+worker() {
+  cd "$API"
+  # Present via uvicorn[standard]; a venv without it still gets a job runner.
+  if ! "$PY" -c "import watchfiles" 2>/dev/null; then
+    echo "   ${Y}watchfiles is not installed — the runner will not pick up code"
+    echo "   changes. Restart it by hand after editing, or re-run setup.sh.${X}"
+    exec "$PY" -m mishne.orchestration.devrunner
+  fi
+  exec "$PY" -m watchfiles \
+    --target-type command \
+    --filter python \
+    --sigint-timeout "$WORKER_RELOAD_TIMEOUT" \
+    "$PY -m mishne.orchestration.devrunner" \
+    src/mishne
+}
 
 case "${1:-all}" in
   setup)  setup ;;
@@ -168,7 +218,22 @@ case "${1:-all}" in
     require_port "$ADMIN_API_PORT" "the back-office API" || exit 1
     require_port "$ADMIN_WEB_PORT" "the back-office" || exit 1
     step "back-office"
-    echo "   ${D}first administrator: cd apps/api && .venv/bin/python -m mishne.admin.bootstrap --email you@example.com${X}"
+    # Idempotent, so the back-office has a login without anyone remembering to
+    # make one. `--ensure` creates the administrator only if there is not one
+    # and takes the password from ADMIN_BOOTSTRAP_PASSWORD, which lives in
+    # apps/api/.env and therefore outlives a reboot. Local only — the flag
+    # refuses to run anywhere else.
+    if [ -n "${ADMIN_BOOTSTRAP_PASSWORD:-}" ] || grep -q '^ADMIN_BOOTSTRAP_PASSWORD=.' "$API/.env" 2>/dev/null; then
+      (cd "$API" && "$PY" -m mishne.admin.bootstrap \
+        --email "$ADMIN_EMAIL" --name "Local" --ensure) | sed 's/^/   /'
+      echo "   ${D}sign in as $ADMIN_EMAIL${X}"
+    else
+      echo "   ${Y}no ADMIN_BOOTSTRAP_PASSWORD in apps/api/.env.${X}"
+      echo "   ${D}Add one and this script keeps the back-office login for you."
+      echo "   Or make it by hand, once:"
+      echo "     cd apps/api && .venv/bin/python -m mishne.admin.bootstrap --email you@example.com"
+      echo "   Forgot the password? Same command with --reset-password.${X}"
+    fi
     pids=()
     ( admin_api ) & pids+=($!)
     ( admin_web ) & pids+=($!)

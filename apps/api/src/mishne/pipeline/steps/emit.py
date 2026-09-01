@@ -25,12 +25,21 @@ FORMATS = [
 
 @dataclass
 class Artifact:
+    #: The label a person reads — "FCPXML". Stage 12 also keys `FORMATS` on it.
     fmt: str
     path: Path | None
     ok: bool
     bytes: int = 0
     target_nle: str = ""
     error: str = ""
+    #: The same format as an identifier — the file extension, lower case. This
+    #: is what `artifacts.kind` and `ArtifactKind` are, and it is a separate
+    #: field from `fmt` on purpose: while the label was also the identifier,
+    #: every artifact row the orchestrator wrote was rejected by
+    #: `ck_artifacts_kind` and every completed job failed after producing its
+    #: deliverables. A display string and a stored key are allowed to diverge —
+    #: they must not share one attribute.
+    kind: str = ""
 
 
 def emit(timeline: otio.schema.Timeline, out_dir: Path,
@@ -44,8 +53,10 @@ def emit(timeline: otio.schema.Timeline, out_dir: Path,
         path = out_dir / f"{stem}.{ext}"
         try:
             otio.adapters.write_to_file(timeline, str(path), adapter_name=adapter)
-            results.append(Artifact(label, path, True, path.stat().st_size, nle))
+            results.append(Artifact(label, path, True, path.stat().st_size, nle,
+                                    kind=ext))
         except Exception as exc:  # noqa: BLE001
             results.append(Artifact(label, None, False, target_nle=nle,
-                                    error=f"{type(exc).__name__}: {exc}"))
+                                    error=f"{type(exc).__name__}: {exc}",
+                                    kind=ext))
     return results

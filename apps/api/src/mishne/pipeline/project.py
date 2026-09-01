@@ -87,6 +87,11 @@ class AssetIngest:
     #: asset in the system to fill in a string.
     asr_provider: str = ""
     asr_model: str = ""
+    #: Frame size from the probe. Zero for an audio-only or AAF source, and for
+    #: a cache written before this was recorded — both of which mean "unknown",
+    #: which is what the interchange writers are told.
+    width: int = 0
+    height: int = 0
 
     @property
     def duration_s(self) -> float:
@@ -370,6 +375,7 @@ def ingest(path: Path, work_dir, language: str | None = None,
         audio_tracks=len(tracks), provenance=prepared.provenance,
         seams=prepared.seams, warnings=warnings,
         asr_provider=asr.provider, asr_model=asr.model,
+        width=info.width, height=info.height,
     )
     return finish_ingest(adir, result, ws)
 
@@ -390,6 +396,8 @@ def _save(a: AssetIngest, path: Path) -> None:
         "provenance": a.provenance,
         "asrProvider": a.asr_provider,
         "asrModel": a.asr_model,
+        "width": a.width,
+        "height": a.height,
         "seams": a.seams,
         "warnings": a.warnings,
         "speakers": [s.to_dict() for s in a.speakers],
@@ -453,6 +461,7 @@ def _load(cached: Path, path: Path, adir: Path) -> AssetIngest | None:
         provenance=d.get("provenance", "rushes"), seams=d.get("seams", []),
         warnings=d.get("warnings", []),
         asr_provider=d.get("asrProvider", ""), asr_model=d.get("asrModel", ""),
+        width=d.get("width", 0), height=d.get("height", 0),
     )
 
 
@@ -473,14 +482,36 @@ def contexts(assets: list[AssetIngest]) -> dict[str, "refine.AssetContext"]:
         speech=a.speech, order=i) for i, a in enumerate(assets)}
 
 
-def asset_refs(assets: list[AssetIngest]) -> dict[str, "assemble.AssetRef"]:
-    """Stage 10's view: where each asset's frames actually live."""
+def asset_refs(assets: list[AssetIngest],
+               names: dict[str, str] | None = None,
+               staged: bool = False,
+               sizes: dict[str, tuple[int, int]] | None = None
+               ) -> dict[str, "assemble.AssetRef"]:
+    """Stage 10's view: where each asset's frames actually live.
+
+    `names` maps asset id to the customer's filename and `staged` says the paths
+    are this run's temporary copies. Both are the worker's to supply: `run.py`
+    read the customer's own file off their own disk, so the defaults — the
+    path's own name, and a path worth writing down — are already right.
+
+    `sizes` is the worker's too, and it exists because of the cache. Frame size
+    is recorded on `AssetIngest` now, but an asset ingested before it was
+    reports zero and re-ingesting to learn a number the `assets` row already
+    holds would re-transcribe the file. The worker passes the probe it stored at
+    upload; a cache old enough to lack the field is then still right.
+    """
     from .steps import assemble
-    return {a.asset_id: assemble.AssetRef(
-        rate=a.rate, start_tc_frames=a.start_tc_frames,
-        duration_frames=a.duration_frames, asset_id=a.asset_id,
-        media_path=None if a.is_aaf else a.path, aaf=a.aaf,
-        audio_tracks=a.audio_tracks) for a in assets}
+    names, sizes = names or {}, sizes or {}
+    refs = {}
+    for a in assets:
+        w, h = sizes.get(a.asset_id, (a.width, a.height))
+        refs[a.asset_id] = assemble.AssetRef(
+            rate=a.rate, start_tc_frames=a.start_tc_frames,
+            duration_frames=a.duration_frames, asset_id=a.asset_id,
+            media_path=None if a.is_aaf else a.path, aaf=a.aaf,
+            audio_tracks=a.audio_tracks, display_name=names.get(a.asset_id, ""),
+            staged=staged, width=w or a.width, height=h or a.height)
+    return refs
 
 
 def unify_speakers(assets: list[AssetIngest],

@@ -47,8 +47,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..logging import get_logger
 from ..pipeline.steps import PAYLOAD_VERSION, STEPS_BY_NAME
 from . import models as m
+
+log = get_logger(__name__)
 
 
 class InsufficientCredits(Exception):
@@ -67,6 +70,7 @@ def create_job(
     *,
     project_id: str,
     asset_ids: list[str],
+    name: str,
     mode: str,
     notes: str,
     brief: dict,
@@ -80,6 +84,7 @@ def create_job(
             id=job_id,
             org_id=org_id,
             project_id=project_id,
+            name=name,
             mode=mode,
             status="queued",
             notes_raw=notes,
@@ -402,6 +407,18 @@ def _project_for_job(s: Session, org_id: str, job_id: str) -> str | None:
     ).scalar()
 
 
+def _job_ledger_kinds(s: Session, org_id: str, job_id: str) -> set[str]:
+    """Which entries this job already has. The ledger is the only record."""
+    ledger = m.CreditLedger.__table__
+    return set(
+        s.execute(
+            sa.select(ledger.c.kind).where(
+                ledger.c.org_id == org_id, ledger.c.job_id == job_id
+            )
+        ).scalars()
+    )
+
+
 def hold(s: Session, org_id: str, job_id: str, project_id: str, cap: float) -> None:
     """Reserve credits at submission.
 
@@ -451,7 +468,35 @@ def settle(s: Session, org_id: str, job_id: str, actual: float, cap: float) -> f
 
 
 def release(s: Session, org_id: str, job_id: str, cap: float, *, reason: str) -> None:
-    """Return the whole hold. A job that failed or was cancelled is never charged."""
+    """Return the whole hold. A job that failed or was cancelled is never charged.
+
+    Refuses on a job that has already settled. The unique index makes a second
+    `release` a no-op, but it says nothing about a `release` landing after a
+    `settle` — those are different kinds, so the row inserts, and the hold comes
+    back on top of a charge that already returned the unused part of it. That is
+    credits created out of nothing, in the one table that is supposed to be the
+    reason we can say what a customer was charged.
+
+    It should not be reachable: nothing settles and then fails. It is checked
+    because the alternative to a guard here is trusting that every future caller
+    knows the ordering, and because a silent wrong balance is the failure this
+    module exists to prevent. The same argument covers a job with no hold at
+    all — see below — which is what makes this safe to call from a backstop like
+    `devrunner._fail`, which knows a job ended badly and not what its ledger
+    says.
+    """
+    kinds = _job_ledger_kinds(s, org_id, job_id)
+    if "settle" in kinds:
+        log.error("ledger.release_after_settle", job_id=job_id, reason=reason)
+        return
+    if "hold" not in kinds:
+        # Nothing was ever taken, so there is nothing to give back, and giving
+        # it back anyway would credit an account for money it never paid. Every
+        # submitted job has a hold; a caller that gets here is releasing
+        # something that was never held.
+        log.warning("ledger.release_without_hold", job_id=job_id, reason=reason)
+        return
+
     available, held = balance(s, org_id)
     try:
         with s.begin_nested():

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 Role = Literal["owner", "member", "viewer"]
 TierId = Literal["starter", "pro", "studio"]
@@ -139,6 +140,10 @@ class CreditEstimate(BaseModel):
 class Job(BaseModel):
     id: str
     project_id: str
+    #: What the customer calls this cut. Not unique, not an identifier, and
+    #: never empty — submission derives one from the first asset's filename
+    #: when the client sends none, so no screen has to fall back to the id.
+    name: str
     # Every upload this cut draws on, in upload order.
     #
     # A project accumulates footage over weeks and one finished piece is cut
@@ -435,16 +440,60 @@ class EstimateJobRequest(BaseModel):
         return self
 
 
+#: Long enough for "Harbour Lights Ep. 3 — web cut, Jonas only", short enough
+#: that a list row is a list row.
+JOB_NAME_MAX = 120
+
+
 class CreateJobRequest(BaseModel):
     #: One or more uploads, in the order they should be treated as sequential.
     asset_ids: list[str]
+    #: What to call the job. Optional on the wire and required in the UI: an
+    #: API client scripting a hundred jobs has nothing useful to say here, and
+    #: `routers/jobs` names those after the source they were cut from.
+    name: str = ""
     mode: JobMode = "ai"
     notes: str = ""
     target_duration_s: int
     narrative_shape: NarrativeShape = "inverted_pyramid"
     tone: list[str] = Field(default_factory=list)
+    #: The language of the material, as the customer declares it. Asked rather
+    #: than detected because it is the transcription routing decision and it
+    #: has to be made *before* a word has been transcribed (ADR-0018,
+    #: asr/routing.py): an unspecified language is treated as unidentified, not
+    #: as English, so every job left silent here went to the engine with
+    #: general coverage — correct for Hebrew and three times the price for the
+    #: English that most jobs are.
+    #:
+    #: Not validated against the engine catalog here. Which engines exist is
+    #: deployment configuration read at transcription time, and a submission
+    #: that 422s because a vendor key is unset would make job creation depend
+    #: on the worker's environment. `asr/routing.py` refuses with a message
+    #: that says which key to set.
+    language: str = "en"
     # The user must approve an estimate before a job is accepted.
     approved_cap: float
+
+    @field_validator("name")
+    @classmethod
+    def _a_short_label(cls, v: str) -> str:
+        """Trimmed, single-line, and bounded. It is rendered in a list row."""
+        v = " ".join(v.split())
+        if len(v) > JOB_NAME_MAX:
+            raise ValueError(f"a job name may be at most {JOB_NAME_MAX} characters")
+        return v
+
+    @field_validator("language")
+    @classmethod
+    def _an_iso_code(cls, v: str) -> str:
+        """`en`, `he`, `pt-BR`. Normalised so `EN` and `en` route identically."""
+        v = v.strip()
+        if not re.fullmatch(r"[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?", v):
+            raise ValueError(
+                "language must be an ISO code such as 'en', 'he' or 'pt-BR'"
+            )
+        base, _, region = v.partition("-")
+        return f"{base.lower()}-{region.upper()}" if region else base.lower()
 
 
 class InviteRequest(BaseModel):

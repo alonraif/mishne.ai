@@ -89,7 +89,8 @@ def seed() -> None:
 
         # ── jobs, their assets and their steps ──────────────────────────────
         _rows(s, "jobs", [
-            {"id": j.id, "org_id": org.id, "project_id": j.project_id, "mode": j.mode,
+            {"id": j.id, "org_id": org.id, "project_id": j.project_id,
+             "name": j.name, "mode": j.mode,
              "status": j.status, "notes_raw": j.notes_raw,
              "brief": j.brief.model_dump(mode="json"),
              "estimate": j.estimate.model_dump(mode="json"),

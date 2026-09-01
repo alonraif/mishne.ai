@@ -216,3 +216,61 @@ def test_cleanup_removes_the_scratch_tree(store, settings, tmp_path):
     ws.cleanup()
 
     assert not (tmp_path / "job_1").exists()
+
+
+# ── the orchestrator has to actually call it ───────────────────────────────
+
+
+def test_the_orchestrator_publishes_the_ingest_cache_it_just_paid_for(
+    store, settings, tmp_path, monkeypatch
+):
+    """Every test above proves the workspace *can* keep the cache. None proved
+    the pipeline asks it to.
+
+    `project.finish_ingest` takes the workspace as an optional third argument
+    and `graph.step_speakers` was not passing it, so on a worker the ingest
+    cache was written to scratch that `worker.execute` deletes at the end of
+    the job. ADR-0008 was true of `run.py` and false of the product: every
+    orchestrated job re-transcribed from cold, and the derived bucket of a
+    system that had run jobs was empty — which is what gave it away.
+    """
+    from mishne.orchestration import graph
+    from mishne.pipeline import project
+    from mishne.timecode import Rate
+
+    ws = _workspace(store, settings, tmp_path / "job_1")
+    request = graph.JobRequest(
+        job_id="job_1", org_id=ORG, project_id=PROJECT,
+        assets=[graph.AssetSource(asset_id="ast_1", path=tmp_path / "a.mov",
+                                  content_id="a_deadbeef")],
+        out_dir=tmp_path / "out", work_dir=ws,
+    )
+    state = graph.RunState(request=request)
+    assert state.workspace is ws          # …and a bare path yields None:
+    bare = graph.RunState(request=graph.JobRequest(
+        job_id="j", org_id=ORG, project_id=PROJECT, assets=[],
+        out_dir=tmp_path, work_dir=tmp_path))
+    assert bare.workspace is None
+
+    run = graph.AssetRun(source=request.assets[0],
+                         adir=ws.asset_dir("a_deadbeef"))
+    run.tracks = [type("T", (), {"path": run.adir / "audio.wav"})()]
+    run.asr = type("A", (), {"language": "en"})()
+    run.prepared = type("P", (), {
+        "info": type("I", (), {"rate": Rate(25, 1, False), "start_tc_frames": 0,
+                               "duration_frames": 250})(),
+        "aaf": None, "provenance": "rushes", "seams": [],
+    })()
+    state.runs["ast_1"] = run
+    state.current = "ast_1"
+
+    monkeypatch.setattr(project, "stage_speakers",
+                        lambda *a, **k: type("Att", (), {"speakers": []})())
+    graph.step_speakers(
+        graph.StepContext(job_id="job_1", org_id=ORG, project_id=PROJECT), state)
+
+    prefix = storage.derived_key(ORG, PROJECT, "a_deadbeef", "")
+    listed = store.client.list_objects_v2(
+        Bucket=storage.bucket_for("derived", settings), Prefix=prefix)
+    names = sorted(o["Key"][len(prefix):] for o in listed.get("Contents", []))
+    assert "ingest.json" in names

@@ -192,6 +192,7 @@ ALL_DONE = len(STEPS)
 JOBS = [
     Job(
         id="job_c41a",
+        name="Ep. 3 — broadcast cut",
         project_id="prj_harbour",
         asset_ids=["ast_9d41"],
         mode="ai",
@@ -221,6 +222,7 @@ JOBS = [
     ),
     Job(
         id="job_8f23",
+        name="Ep. 3 — web cut, Jonas only",
         project_id="prj_harbour",
         # ast_9d41, not ast_2b77: this job is complete with validated artifacts,
         # and the mixdown has never been transcribed.
@@ -248,6 +250,7 @@ JOBS = [
     ),
     Job(
         id="job_1d90",
+        name="Keynote highlights",
         project_id="prj_summit",
         asset_ids=["ast_5e10"],
         mode="ai",
@@ -273,6 +276,7 @@ JOBS = [
     ),
     Job(
         id="job_2e57",
+        name="Ep. 3 — web version, starting point",
         project_id="prj_harbour",
         # Two uploads in one cut, at two different rates. Any screen that renders
         # a job must survive this, not just the single-asset case.
@@ -339,9 +343,93 @@ ARTIFACTS = [
     ),
 ]
 
+# Every job's money, as three rows or two: a `hold` at submission, then either
+# a `settle` returning the unused part of it or a `release` returning all of it.
+#
+# `delta` is the change in AVAILABLE credits, which is why the settlements are
+# positive — see the header of `db/jobs.py`. The fixture used to carry the
+# settlements alone, as `-charged`, with no holds at all: it modelled a
+# convention the ledger has not used since C1, and any aggregate written
+# against the real one read it wrong. A failed job showed *negative* spend.
 LEDGER = [
     LedgerEntry(
+        id="led_4",
+        org_id="org_7fa2",
+        project_id="prj_field",
+        # No job_id: the job this paid for predates the fixture's job list, and
+        # `seed` nulls a reference to a job that is not there rather than
+        # writing a dangling one.
+        kind="hold",
+        delta=-22,
+        balance_after=78.7,
+        description="Hold — Field packages, August",
+        created_at=_dt("2026-08-24T16:40:00"),
+    ),
+    LedgerEntry(
+        id="led_5",
+        org_id="org_7fa2",
+        project_id="prj_field",
+        kind="settle",
+        delta=0.6,
+        balance_after=79.3,
+        description="Settled — 21.40 of 22.00 approved",
+        created_at=_dt("2026-08-24T17:05:00"),
+    ),
+    LedgerEntry(
+        id="led_6",
+        org_id="org_7fa2",
+        kind="purchase",
+        delta=105,
+        balance_after=184.3,
+        description="Credit pack — $100 (5 bonus credits)",
+        created_at=_dt("2026-08-25T09:30:00"),
+    ),
+    LedgerEntry(
+        id="led_7",
+        org_id="org_7fa2",
+        project_id="prj_summit",
+        job_id="job_1d90",
+        kind="hold",
+        delta=-14,
+        balance_after=170.3,
+        description="Hold for job_1d90 · Summit keynote",
+        created_at=_dt("2026-08-26T14:02:00"),
+    ),
+    LedgerEntry(
+        id="led_8",
+        org_id="org_7fa2",
+        project_id="prj_summit",
+        job_id="job_1d90",
+        kind="release",
+        delta=14,
+        balance_after=184.3,
+        description="Refund — job_1d90 failed validation",
+        created_at=_dt("2026-08-26T14:51:00"),
+    ),
+    LedgerEntry(
         id="led_9",
+        org_id="org_7fa2",
+        project_id="prj_harbour",
+        job_id="job_8f23",
+        kind="hold",
+        delta=-16,
+        balance_after=168.3,
+        description="Hold for job_8f23 · Harbour Lights — web cut",
+        created_at=_dt("2026-08-27T11:40:00"),
+    ),
+    LedgerEntry(
+        id="led_10",
+        org_id="org_7fa2",
+        project_id="prj_harbour",
+        job_id="job_8f23",
+        kind="settle",
+        delta=1.2,
+        balance_after=169.5,
+        description="Settled job_8f23 · 14.80 of 16.00 approved",
+        created_at=_dt("2026-08-27T12:14:00"),
+    ),
+    LedgerEntry(
+        id="led_11",
         org_id="org_7fa2",
         project_id="prj_harbour",
         job_id="job_c41a",
@@ -351,50 +439,7 @@ LEDGER = [
         description="Hold for job_c41a · Harbour Lights — Ep. 3",
         created_at=_dt("2026-08-28T15:58:00"),
     ),
-    LedgerEntry(
-        id="led_8",
-        org_id="org_7fa2",
-        project_id="prj_summit",
-        job_id="job_1d90",
-        kind="refund",
-        delta=14,
-        balance_after=169.5,
-        description="Refund — job_1d90 failed validation",
-        created_at=_dt("2026-08-26T14:51:00"),
-    ),
-    LedgerEntry(
-        id="led_7",
-        org_id="org_7fa2",
-        project_id="prj_harbour",
-        job_id="job_8f23",
-        kind="settle",
-        delta=-14.8,
-        balance_after=155.5,
-        description="Settled job_8f23 · 14.80 of 16.00 approved",
-        created_at=_dt("2026-08-27T12:14:00"),
-    ),
-    LedgerEntry(
-        id="led_6",
-        org_id="org_7fa2",
-        kind="purchase",
-        delta=105,
-        balance_after=170.3,
-        description="Credit pack — $100 (5 bonus credits)",
-        created_at=_dt("2026-08-25T09:30:00"),
-    ),
-    LedgerEntry(
-        id="led_5",
-        org_id="org_7fa2",
-        project_id="prj_field",
-        kind="settle",
-        delta=-21.4,
-        balance_after=65.3,
-        description="Settled job_7c02 · Field packages — August",
-        created_at=_dt("2026-08-24T17:05:00"),
-    ),
 ]
-# Most recent first — a ledger is read newest-first, and the API orders it that
-# way.
 LEDGER.sort(key=lambda e: e.created_at, reverse=True)
 
 # ─────────────────────────────────────────────────────── transcript and beats
@@ -632,9 +677,13 @@ TRANSCRIPT = transcript_for("job_2e57")
 
 
 def _credits_used(project_id: str) -> float:
-    return round(
-        sum(-e.delta for e in LEDGER if e.project_id == project_id and e.kind == "settle"), 2
-    )
+    """Every row this project owns, matching `repository.list_projects`.
+
+    Not the settlements alone: `delta` is the change in available credits, so a
+    settle is the positive remainder of a hold and summing those on their own
+    reports `charged - cap`. See the note in the repository.
+    """
+    return round(sum(-e.delta for e in LEDGER if e.project_id == project_id), 2)
 
 
 def _project(id: str, name: str, created_at: str) -> Project:

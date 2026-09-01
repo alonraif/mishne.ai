@@ -252,6 +252,42 @@ def asset_row(owner, asset_id: str):
         ).first()
 
 
+#: Orgs the suite is allowed to create and destroy: the seed's own tenant, and
+#: anything a fixture made for itself. Everything else in a local database is
+#: somebody's actual work.
+def _real_tenants(conn) -> list[str]:
+    from mishne import mock
+
+    return [
+        org_id
+        for (org_id,) in conn.execute(sa.text("SELECT id FROM orgs"))
+        if org_id != mock.ORG.id and not org_id.startswith("org_test")
+    ]
+
+
+def _real_admins(conn) -> list[str]:
+    """Platform administrators this suite did not create.
+
+    The same question `_real_tenants` asks, for the tables it cannot see. The
+    platform tables are global rather than tenant-scoped, so neither
+    `purge_org` nor `seed.reset` touches them — `ALL_TABLES` leaves them out on
+    purpose — and the `admin_api` fixture therefore cleared them with an
+    unqualified DELETE.
+
+    On a developer's machine that deleted their back-office credential. There
+    is no sign-up for the back-office and no password reset, so the only way
+    back in is `python -m mishne.admin.bootstrap` and choosing a password
+    again — every time they ran `pytest -q`, which is the command written down
+    in CLAUDE.md. It presented as "the back-office keeps forgetting me" rather
+    than as anything to do with the tests.
+    """
+    return [
+        email
+        for (email,) in conn.execute(sa.text("SELECT email FROM platform_admins"))
+        if email != ADMIN_EMAIL
+    ]
+
+
 def purge_org(conn, org_id: str) -> None:
     """Delete a tenant's rows, in the order the schema requires.
 
@@ -343,6 +379,12 @@ def api(tenant, owner, app_login, monkeypatch, clear_caches):
     monkeypatch.setenv("AWS_DEFAULT_REGION", REGION)
     for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
         monkeypatch.setenv(name, "testing")
+    # `Settings` reads `.env` from the working directory, and a developer's
+    # `.env` points S3 at local MinIO. moto intercepts botocore, but a client
+    # built with an explicit endpoint talks to that endpoint — so the whole
+    # suite reached MinIO with credentials of "testing" and failed
+    # `InvalidAccessKeyId`, on exactly the machines where MinIO was running.
+    monkeypatch.setenv("S3_ENDPOINT_URL", "")
     monkeypatch.setenv("S3_BUCKET_RAW", "test-raw")
     monkeypatch.setenv("S3_BUCKET_DERIVED", "test-derived")
     monkeypatch.setenv("S3_BUCKET_ARTIFACTS", "test-artifacts")
@@ -442,7 +484,20 @@ def admin_api(tenant, owner, monkeypatch, clear_caches):
     admin_db.get_sessionmaker.cache_clear()
 
     # A clean slate for the platform tables. They are global rather than
-    # tenant-scoped, so `purge_org` does not reach them.
+    # tenant-scoped, so `purge_org` does not reach them — and for the same
+    # reason this refuses to run when somebody else's administrator is here,
+    # exactly as `seeded` refuses to truncate somebody else's tenant. Several
+    # assertions below count rows in `platform_actions`, so the slate has to be
+    # clean rather than merely scoped; skipping is the honest way to get that.
+    with owner.begin() as conn:
+        mine = _real_admins(conn)
+    if mine:
+        pytest.skip(
+            f"{len(mine)} platform administrator(s) here the suite did not "
+            "create; clearing the platform tables would delete the back-office "
+            "login. Point DATABASE_URL at a scratch database to run these."
+        )
+
     with owner.begin() as conn:
         conn.execute(sa.text("DELETE FROM platform_sessions"))
         conn.execute(sa.text("ALTER TABLE platform_actions DISABLE TRIGGER USER"))

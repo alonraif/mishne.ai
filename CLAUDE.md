@@ -136,3 +136,9 @@ cd apps/api && ./setup.sh
 .venv/bin/alembic upgrade head
 .venv/bin/python -m pytest -q
 ```
+
+The suite runs against the local Postgres in `.env`, and the API-parity tests
+re-seed it — `seed.reset()` is `TRUNCATE` over every table. They now skip when
+the database holds an organisation the suite did not create, so real work is
+safe, but that also means those tests are skipped rather than run on a machine
+you have been using the product with. A scratch `DATABASE_URL` gets them back.

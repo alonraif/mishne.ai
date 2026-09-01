@@ -53,7 +53,11 @@ def app(app_login: str, monkeypatch, clear_caches):
 @pytest.fixture
 def fresh_org(owner):
     """Remove anything a signup test creates, before and after."""
-    emails = ["founder@example.test", "second@example.test", "colleague@example.test"]
+    emails = ["founder@example.test", "second@example.test", "colleague@example.test",
+              # The closed-door test's caller. It should never get an org — but
+              # when the door was accidentally open it did, and the org outlived
+              # the run with nothing to clean it up.
+              "stranger@example.test"]
 
     def _clean():
         with owner.begin() as conn:
@@ -76,7 +80,7 @@ def fresh_org(owner):
 # ────────────────────────────────────────────────────────────────────── signup
 
 
-def test_signing_up_is_closed_unless_it_is_opened(app_login, monkeypatch,
+def test_signing_up_is_closed_unless_it_is_opened(app_login, fresh_org, monkeypatch,
                                                   clear_caches):
     """An organisation holds unreleased footage and membership is the whole of
     the access model, so a public sign-up form is a second door beside the one
@@ -85,7 +89,11 @@ def test_signing_up_is_closed_unless_it_is_opened(app_login, monkeypatch,
     monkeypatch.setenv("ENVIRONMENT", "local")
     monkeypatch.setenv("USE_MOCKS", "false")
     monkeypatch.setenv("APP_DATABASE_URL", app_login)
-    monkeypatch.delenv("PUBLIC_SIGNUP", raising=False)
+    # Set, not unset. `Settings` reads `.env` as well as the environment, so
+    # deleting the variable does not restore the default on a machine whose
+    # `.env` opened the door — and this test asserts what a closed door does,
+    # not what the default happens to be where it runs.
+    monkeypatch.setenv("PUBLIC_SIGNUP", "false")
     clear_caches()
     from mishne.main import app as fastapi_app
 

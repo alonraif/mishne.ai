@@ -29,6 +29,7 @@ from ..schemas import (
     CreateJobRequest,
     CreditEstimate,
     EstimateJobRequest,
+    JOB_NAME_MAX,
     Job,
     MergeSpeakersRequest,
     RenameSpeakerRequest,
@@ -40,6 +41,18 @@ from ..store import Store, get_store
 router = APIRouter(prefix="/v1", tags=["jobs"])
 
 log = get_logger(__name__)
+
+def _default_name(filename: str) -> str:
+    """What to call a job whose client did not name it.
+
+    The first upload it draws on, without its extension — a name the customer
+    recognises, unlike the primary key, which is what every screen showed
+    before jobs had names. The browser always sends one; this is for API
+    clients and for the odd asset whose filename is nothing but an extension.
+    """
+    stem = Path(filename).stem.strip()
+    return stem[:JOB_NAME_MAX] if stem else "Untitled job"
+
 
 #: How far the recomputed estimate may differ from the figure the client says
 #: the user approved. Not zero: a price is rounded to two decimals in two
@@ -139,16 +152,25 @@ async def create_job(
             f"{estimate.cap} credits, not {body.approved_cap}",
         )
 
+    # `language` is load-bearing, not decoration: `worker.prepare_request`
+    # reads it back out of here and it is what `asr/routing.py` routes on. Left
+    # out of this dict — which is where it was — the request reaches the
+    # transcriber as None, every job is treated as unidentified audio, and the
+    # cheap engine is never eligible for any of them.
     brief = {
         "target_duration_s": body.target_duration_s,
         "narrative_shape": body.narrative_shape,
         "tone": body.tone,
+        "language": body.language,
         "handle_frames": 0,
     }
     job_id = job_writes.create_job(
         s, org_id,
         project_id=assets[0].project_id,
         asset_ids=body.asset_ids,
+        # Never the id. `jobs.name` is NOT NULL and the whole point of it is
+        # that no screen has to fall back to `job_8a98a1ca`.
+        name=body.name or _default_name(assets[0].filename),
         mode=body.mode,
         notes=body.notes,
         brief=brief,
