@@ -134,6 +134,12 @@ Component primitives in `apps/web/src/components/ui/` follow shadcn/ui conventio
 (copied in, fully editable). App-specific components sit one level up in
 `apps/web/src/components/`.
 
+**The brand mark is settled** — three bars of decreasing width, three hours of
+rushes down to a ten-minute cut. It lives twice: `components/logo.tsx` for the
+screens, where it takes its colour from the `--primary` token, and
+`app/icon.svg` for the tab, where it cannot and so carries resolved hex on a
+filled ground. Changing one without the other is the bug to watch for.
+
 ## Commands
 
 ```bash

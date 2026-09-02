@@ -29,6 +29,7 @@ expensive part of the problem cheap, fast, and — critically — explainable.
 
 | Doc | What's in it |
 |---|---|
+| **[Design instructions](docs/DESIGN.md)** | **The visual language: mark, palette, domain semantics, typography, motion, voice. Read before touching UI.** |
 | [00 — Overview](docs/architecture/00-overview.md) | System context, principles, component map, request flows |
 | [01 — Edit Engine](docs/architecture/01-edit-engine.md) | The core IP: transcript → rough cut, stage by stage |
 | [02 — Media & Interchange](docs/architecture/02-media-and-interchange.md) | Ingest, timecode, AAF/FCPXML/EDL generation, the relink problem |
