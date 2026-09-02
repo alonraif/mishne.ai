@@ -53,6 +53,10 @@ UPLOAD_COMPLETED = "asset.upload_completed"
 UPLOAD_CANCELLED = "asset.upload_cancelled"
 ASSET_PROBED = "asset.probed"
 ARTIFACT_DOWNLOADED = "artifact.downloaded"
+#: A preview URL was minted. Logged for the same reason a download is:
+#: it is a time-limited grant to read the customer's own footage, and
+#: "who could watch this, and when" has to have an answer.
+ASSET_PROXY_ISSUED = "asset.proxy_issued"
 JOB_CREATED = "job.created"
 # A job's name is what everyone in the building calls the cut. Renaming one is
 # harmless to the work and confusing to everyone else, so the row exists to

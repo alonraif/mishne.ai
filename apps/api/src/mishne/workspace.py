@@ -76,7 +76,8 @@ log = get_logger(__name__)
 #: (`_seg_*.wav`, `_sil_*.wav`, `_concat.txt`) or is enormous and reproducible
 #: (extracted AAF essence, which lives in a subdirectory and is skipped because
 #: only top-level files are considered).
-CACHEABLE = ("ingest.json", "*.wav", "*.asr.json", "transcript.json")
+CACHEABLE = ("ingest.json", "*.wav", "*.asr.json", "transcript.json",
+             "proxy.mp4", "proxy.m4a")
 
 #: Never mirrored, even though they match the patterns above.
 #:
@@ -84,6 +85,10 @@ CACHEABLE = ("ingest.json", "*.wav", "*.asr.json", "transcript.json")
 #: (ADR-0019). Four microphones on a 46-minute podcast is four full-length WAVs
 #: — 350 MB per asset — wanted only during the run that produced them, and
 #: rebuildable from the source. Exactly what ADR-0013 says not to mirror.
+#:
+#: `proxy.*` is the opposite case and is mirrored deliberately: it is small, the
+#: browser reads it directly out of this bucket by presigned URL, and rebuilding
+#: it means running ffmpeg over the whole source again (ADR-0020).
 NOT_CACHEABLE = ("_seg_", "_sil_", "_concat", "_track_")
 
 

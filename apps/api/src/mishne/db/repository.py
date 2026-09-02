@@ -557,6 +557,8 @@ def get_transcript(s: Session, org_id: str, job_id: str) -> Transcript | None:
                 start_tc_frames=assets[r.asset_id].start_tc_frames,
                 duration_frames=assets[r.asset_id].duration_frames,
                 language=r.language,
+                proxy_status=assets[r.asset_id].proxy_status,
+                proxy_kind=assets[r.asset_id].proxy_kind,
             )
             for r in sorted(transcripts, key=lambda r: order[r.asset_id])
         ],

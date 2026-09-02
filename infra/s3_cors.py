@@ -42,6 +42,16 @@ import s3_local  # noqa: E402
 UPLOAD_METHODS = ["PUT", "POST", "HEAD", "GET"]
 DOWNLOAD_METHODS = ["GET", "HEAD"]
 
+#: What a media element needs back from a ranged GET.
+#:
+#: A `<video>` seeking into a three-hour preview does not fetch the file; it
+#: asks for the bytes around the point it is seeking to, and reads the answer
+#: out of these headers. A cross-origin response exposes *no* headers to script
+#: unless the bucket says so, and the failure is the same shape as the missing
+#: ETag was: every request succeeds, the player reports a decode error, and
+#: nothing in the network tab looks wrong. See ADR-0020.
+RANGE_HEADERS = ["Content-Range", "Accept-Ranges", "Content-Length"]
+
 #: How long a browser may cache the preflight. An hour keeps a 960-part upload
 #: from preflighting 960 times.
 MAX_AGE_SECONDS = 3600
@@ -56,10 +66,14 @@ def rules_for(which: str, origins: list[str]) -> list[dict]:
             # The browser sends Content-Type and the range headers it likes;
             # allowing the request headers it actually uses rather than "*"
             # keeps the grant readable.
-            "AllowedHeaders": ["content-type", "content-md5", "x-amz-*", "authorization"],
-            # Without this the ETag is invisible to script and the upload cannot
-            # be completed. See the module docstring.
-            "ExposeHeaders": ["ETag"],
+            "AllowedHeaders": [
+                "content-type", "content-md5", "x-amz-*", "authorization",
+                # Seeking is ranged GETs. See RANGE_HEADERS.
+                "range",
+            ],
+            # Without ETag the upload cannot be completed, and without the range
+            # headers a preview cannot be seeked. See the module docstring.
+            "ExposeHeaders": ["ETag", *RANGE_HEADERS],
             "MaxAgeSeconds": MAX_AGE_SECONDS,
         }
     ]

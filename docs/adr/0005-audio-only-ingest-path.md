@@ -52,8 +52,12 @@ in any incident.
   step comparing declared duration against actual audio duration, and clear
   documentation of the export procedure per NLE.
 - The relink burden shifts to the customer, who must have the media locally.
-- No path to a future in-browser review player for these jobs without a separate
-  proxy upload.
+- No path to a future in-browser review *picture* for these jobs without a
+  separate proxy upload. **Amended 2 Sep 2026:** ADR-0020 gives every asset a
+  preview rendition, and for an audio-only ingest that is the sound — which is
+  all there was to begin with, and is enough to judge a take on. What stays true
+  is that there is no picture to show, and no upload of one that would not be
+  the media this path exists to avoid sending.
 - Two ingest paths to build, test, and support.
 
 **Not a replacement.** Full-media and AAF ingest remain, and AAF-with-embedded-essence

@@ -23,7 +23,10 @@ import {
   speakerRoster,
 } from "@mishne/shared";
 import { SpeakerLegend, speakerColor } from "@/components/speaker-legend";
+import { MediaPlayer } from "@/components/media-player";
 import { useTranscript } from "@/lib/use-transcript";
+import { usePlayhead } from "@/lib/use-playhead";
+import { usePreview } from "@/lib/use-proxy";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
@@ -81,6 +84,11 @@ export function CutEditor({
         .map((b) => b.id),
     [transcript.beats]
   );
+
+  // The player, and the transcript's end of the two-way sync. Owned here
+  // rather than by the page because the rows are what it binds to.
+  const playhead = usePlayhead(transcript);
+  const preview = usePreview(playhead.activeAssetId || null);
 
   const [order, setOrder] = useState<string[]>(mode === "manual" ? [] : aiOrder);
   const [speaker, setSpeaker] = useState("all");
@@ -168,6 +176,12 @@ export function CutEditor({
 
   return (
     <div className="space-y-5">
+      <MediaPlayer
+        playhead={playhead}
+        preview={preview}
+        showReel={multiAsset}
+      />
+
       <SpeakerLegend
         speakers={roster}
         attribution={transcript.attribution}
@@ -215,23 +229,34 @@ export function CutEditor({
           {visible.map((b) => {
             const on = selected.has(b.id);
             const pos = order.indexOf(b.id);
+            const speaking = playhead.activeBeatId === b.id;
             return (
-              <button
+              // A div, not a button. The row now has two jobs — the gutter
+              // plays from here, the body puts the line in the cut — and a
+              // button inside a button is invalid HTML that browsers resolve
+              // by dropping the inner one.
+              <div
                 key={b.id}
-                onClick={() => toggle(b.id)}
+                ref={(el) => playhead.registerRow(b.id, el)}
                 className={cn(
-                  // `text-start`, not `text-left`: a Hebrew transcript sets
-                  // `dir="rtl"` on the list and the lines have to align with
-                  // the edge a Hebrew reader starts from. `text-left` pinned
-                  // every line to the far side of the row from its timecode.
-                  "flex w-full items-start gap-3 rounded-md border p-3 text-start transition-colors",
+                  "flex w-full items-start gap-3 rounded-md border transition-colors",
                   on
                     ? "border-used/40 bg-used-surface/30"
-                    : "border-transparent hover:border-border hover:bg-accent/20"
+                    : "border-transparent hover:border-border hover:bg-accent/20",
+                  // Being spoken is a third state on top of the other two, so
+                  // it is a ring rather than a border or a background — both of
+                  // those already mean something on this row.
+                  speaking && "ring-1 ring-waveform/60"
                 )}
               >
-                <div className="w-[86px] shrink-0 pt-0.5">
-                  <div className="tc text-[11px] text-timecode">
+                {/* Play from here. The gutter was already its own column, so
+                    the reader gets a second target without a new control. */}
+                <button
+                  onClick={() => playhead.seekToBeat(b)}
+                  title="Play from here"
+                  className="w-[86px] shrink-0 rounded-s-md p-3 pe-0 text-start transition-colors hover:bg-accent/30"
+                >
+                  <div className={cn("tc text-[11px]", speaking ? "text-waveform" : "text-timecode")}>
                     {formatTimecode(b.startFrames, assetOf(transcript, b).rate, assetOf(transcript, b).dropFrame)}
                   </div>
                   <div className="text-[11px] text-muted-foreground/70">
@@ -242,7 +267,15 @@ export function CutEditor({
                       {assetOf(transcript, b).filename}
                     </div>
                   )}
-                </div>
+                </button>
+                {/* `text-start`, not `text-left`: a Hebrew transcript sets
+                    `dir="rtl"` on the list and the lines have to align with
+                    the edge a Hebrew reader starts from. `text-left` pinned
+                    every line to the far side of the row from its timecode. */}
+                <button
+                  onClick={() => toggle(b.id)}
+                  className="flex min-w-0 flex-1 items-start gap-3 p-3 ps-0 text-start"
+                >
                 <span
                   className={cn(
                     "mt-0.5 grid size-4 shrink-0 place-items-center rounded-[4px] border text-[9px] font-semibold",
@@ -301,7 +334,8 @@ export function CutEditor({
                     {b.text}
                   </p>
                 </div>
-              </button>
+                </button>
+              </div>
             );
           })}
         </div>

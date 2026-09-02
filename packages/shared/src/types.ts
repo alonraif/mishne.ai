@@ -1,6 +1,6 @@
 /** Shared domain types. Mirrors apps/api/src/mishne/schemas.py — keep in step. */
 
-import type { Rate } from "./timecode";
+import { framesToSeconds, secondsToFrames, type Rate } from "./timecode";
 
 /* ---------------------------------------------------------------- tenancy */
 
@@ -39,6 +39,25 @@ export interface Project {
 /* ------------------------------------------------------------------ assets */
 
 export type AssetKind = "video" | "aaf" | "audio";
+/**
+ * How far an asset's preview rendition has got.
+ *
+ * A separate axis from `AssetStatus`, and deliberately: an asset is ingestable
+ * long before it is playable, and a transcode that fails must not make the
+ * upload itself failed. `none` is an asset nobody has asked for a preview of —
+ * everything uploaded before previews existed. `unsupported` is a decided
+ * answer rather than a pending one: there is nothing decodable behind it, and
+ * asking again will not change that.
+ */
+export type ProxyStatus =
+  | "none"
+  | "pending"
+  | "running"
+  | "ready"
+  | "failed"
+  | "unsupported";
+/** A sequence has no picture to show, so its preview is sound only. */
+export type ProxyKind = "" | "video" | "audio";
 export type IngestMode = "full_media" | "aaf_embedded" | "audio_only" | "aaf_linked";
 export type AssetStatus =
   | "uploading"
@@ -238,6 +257,32 @@ export interface Artifact {
   targetNle: string;
 }
 
+/**
+ * What `GET /v1/assets/{id}/proxy` answers.
+ *
+ * It answers in every state rather than erroring in most of them: the editor
+ * polls this while the transcode runs, and making "not finished yet" an HTTP
+ * error would put this client in the business of reading exception bodies to
+ * discover that nothing is wrong.
+ */
+export interface AssetProxy {
+  /**
+   * Which asset this answer is about.
+   *
+   * Not redundant with the request. The reader keeps the previous answer while
+   * the next one is in flight, so on a job drawing on several reels there is a
+   * moment where the response in hand belongs to the reel that *was* showing —
+   * and playing that one, seeked to a position from this one, is worse than
+   * showing nothing.
+   */
+  assetId: string;
+  status: ProxyStatus;
+  kind: ProxyKind;
+  /** A presigned GET, and only when `status` is "ready". Never persisted. */
+  url: string | null;
+  expiresInS: number;
+}
+
 /* -------------------------------------------------------------- transcript */
 
 export interface Word {
@@ -332,6 +377,16 @@ export interface TranscriptAsset {
   durationFrames: number;
   /** ISO code. A project can mix languages; direction is decided per asset. */
   language: string;
+  /**
+   * Whether this reel can be played, and as what.
+   *
+   * Carried here rather than fetched separately because it has to be read
+   * *with* `rate` and `startTcFrames` — those three together are what turn a
+   * beat into a position in a media file, and splitting them across two
+   * payloads invites using one without the others.
+   */
+  proxyStatus: ProxyStatus;
+  proxyKind: ProxyKind;
 }
 
 export interface Transcript {
@@ -438,6 +493,31 @@ export function assetOf(
   );
 }
 
+
+/**
+ * Where a source frame sits in the asset's own media, in seconds.
+ *
+ * **`Beat.startFrames` is absolute source timecode, not an offset into the
+ * file.** A beat carries `startTcFrames + elapsed`, because that is what a
+ * timecode means to an editor. A player's `currentTime` is an offset into the
+ * file. Every seek and every highlight crosses between the two, so the
+ * subtraction lives here and is written once — the same reason `assetOf`
+ * exists.
+ *
+ * Getting it wrong is silent. A reel starting at 10:00:00:00 seeks ten hours
+ * past the end, the element clamps, and the player just sits there.
+ */
+export function mediaSecondsOf(asset: TranscriptAsset, frames: number): number {
+  return framesToSeconds(frames - asset.startTcFrames, asset.rate);
+}
+
+/** The absolute source frame a player at `seconds` is sitting on. */
+export function framesAtMediaSeconds(
+  asset: TranscriptAsset,
+  seconds: number
+): number {
+  return asset.startTcFrames + secondsToFrames(seconds, asset.rate);
+}
 
 /** Shown where a beat's voice is not one of the transcript's speakers. */
 export const UNATTRIBUTED_SPEAKER = "unattributed";

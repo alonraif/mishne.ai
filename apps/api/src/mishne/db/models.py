@@ -208,11 +208,34 @@ class Asset(Base):
     # that knows nothing about it keeps inserting happily (ADR-0012).
     error = sa.Column(JSONB)
     probed_at = sa.Column(TS)
+    # ── the preview rendition (ADR-0020) ──────────────────────────────────
+    # Keyed here rather than on the job, and derived rather than delivered: a
+    # proxy belongs to the upload the way the transcript does (ADR-0008), so a
+    # second job over the same asset finds it already made. It lives in the
+    # derived bucket and shares the raw media's expiry; these columns are the
+    # record of where, not the file.
+    proxy_status = sa.Column(sa.Text, nullable=False, server_default=sa.text("'none'"))
+    proxy_s3_key = sa.Column(sa.Text)
+    #: "video" or "audio". Empty until there is a preview to describe.
+    proxy_kind = sa.Column(sa.Text, nullable=False, server_default=sa.text("''"))
+    proxy_bytes = sa.Column(sa.BigInteger, nullable=False, server_default=sa.text("0"))
+    #: Why the transcode failed. The error TYPE and ffmpeg's exit status, never
+    #: its stderr — that carries the customer's filename (docs/architecture/04).
+    proxy_error = sa.Column(JSONB)
+    #: The lease. A worker takes it at `claim`, and a lease older than
+    #: `preview_lease_seconds` is evidence the worker died — the row goes back
+    #: in the queue rather than sitting `running` for ever. NULL when nothing
+    #: holds it. See migration 0013.
+    proxy_claimed_at = sa.Column(TS)
+    #: Bounds the retry of media that will never encode.
+    proxy_attempts = sa.Column(sa.Integer, nullable=False, server_default=sa.text("0"))
     created_at = sa.Column(TS, nullable=False, server_default=NOW)
     __table_args__ = (
         _ck("ck_assets_kind", "kind", vocab.ASSET_KINDS),
         _ck("ck_assets_ingest_mode", "ingest_mode", vocab.INGEST_MODES),
         _ck("ck_assets_status", "status", vocab.ASSET_STATUSES),
+        _ck("ck_assets_proxy_status", "proxy_status", vocab.PROXY_STATUSES),
+        _ck("ck_assets_proxy_kind", "proxy_kind", vocab.PROXY_KINDS),
         sa.CheckConstraint("edit_rate_num > 0", name="ck_assets_rate_num_positive"),
         sa.CheckConstraint("edit_rate_den > 0", name="ck_assets_rate_den_positive"),
         # Drop-frame is only defined for the 30/60-family NTSC rates. A

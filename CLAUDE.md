@@ -66,6 +66,23 @@ requirements panel, which uploads only the files the sequence asks for; a job
 may be submitted with media still missing, on an explicit acknowledgement, and
 what was absent is recorded on the job. `use_mocks` still exists and is refused outside `environment=local`.
 
+**The editor has a player, welded to the text** (ADR-0020). Every asset gets a
+720p H.264 preview — AAC alone where there is no picture — in the derived
+bucket, keyed on the asset so a second job finds it already made. A flat
+upload's is transcoded off the pipeline entirely, queued at probe time; a
+sequence's is the flattened sound mix, encoded by `stage_prepare` because that
+render is the only thing there is to preview. Clicking a beat's timecode seeks
+there; playing scrolls the transcript, until the reader scrolls for themselves.
+
+**The transcode is built to run on a machine that is not the API** (ADR-0021).
+`orchestration/proxyworker` builds one preview for one asset in any
+environment — that is the entry point of a preview fleet.
+`orchestration/proxyrunner` is the part that differs: it polls the table
+locally, and long-polls SQS with `--serve`. **The asset row is the queue of
+record and a message is only a wake-up**, so a lost message costs one sweep
+interval rather than a preview that never arrives. A claim is a lease, and one
+that expires is evidence of a dead worker.
+
 **A platform back-office exists**, outside the tenant model: its own process on
 :8001 bound to loopback, its own BYPASSRLS role, its own credential table, its
 own append-only action log with a mandatory reason. It is how credits are
@@ -78,9 +95,15 @@ Moving to AWS + S3 is the next infrastructure step — see
 
 **Still open:** the browser-to-AAF path has never been clicked through end to
 end against MinIO — including the folder upload, which has only been exercised
-by the CLI; the Buy buttons are inert; a multi-track cut still emits one audio
-track (ADR-0019); A1 (selection corpus) and A2 (Avid acceptance) are the two
-risks that can still end the product.
+by the CLI; the player's two-way sync has been proved server-side and by
+typecheck but never clicked through in a browser either (follow-scroll, the
+reel switch on a mixed-rate job, and re-minting an expired URL are the parts a
+test suite does not reach); the Buy buttons are inert; a multi-track cut still
+emits one audio track (ADR-0019); previews are unpriced (ADR-0020); the preview fleet's queue and task
+definition are Terraform that does not exist yet, so today it is still a fourth
+process on one machine (ADR-0021); A1
+(selection corpus) and A2 (Avid acceptance) are the two risks that can still end
+the product.
 
 ## Rules that matter
 
@@ -114,6 +137,22 @@ a model. The output references `primary_clips`, the first sound track, and
 widening that to N parallel tracks is a new decision, not a tidy-up. See
 [ADR-0019](docs/adr/0019-mix-sound-tracks-for-transcription.md).
 
+**ffmpeg never runs where requests are answered.** A three-hour master is about
+ten minutes of every core the machine has, which is correct for a transcoder and
+an outage for an API. Previews are dispatched to their own fleet and the code
+does not change to put them there; if you find yourself adding CPU-bound media
+work to the API or the light worker, it belongs behind the same seam. See
+[ADR-0021](docs/adr/0021-previews-are-built-by-a-separate-fleet.md).
+
+**A preview's clock is the source's clock.** The player maps `currentTime` to a
+beat's timecode as `start_tc + elapsed`, with no correction term, so the
+transcode never resamples the frame rate — and `proxy.verify` re-probes the
+result and refuses it if the duration moved by more than a frame. A resampled
+rate does not fail; it drifts, and surfaces an hour later as a player that looks
+broken. `Beat.startFrames` is absolute source timecode, so the conversion is
+`mediaSecondsOf` / `framesAtMediaSeconds` in `packages/shared` and nowhere else.
+See [ADR-0020](docs/adr/0020-a-preview-rendition-per-asset.md).
+
 **Stage 9 runs in every mode.** A hand-marked cut still gets silence snapping,
 handles and frame quantization. The user picks *what*; stage 9 decides *where*.
 
@@ -144,11 +183,12 @@ filled ground. Changing one without the other is the bug to watch for.
 
 ```bash
 npm install            # once, from the repo root (apps/admin is a workspace)
-./dev.sh               # everything: Postgres, MinIO, schema, buckets, API, web, worker
+./dev.sh               # everything: Postgres, MinIO, schema, buckets, API, web,
+                       # the job runner and the preview builder
 ./dev.sh restart       # the same, from any state: stops whatever is already
                        # running, clears apps/web/.next, then starts
 ./dev.sh setup         # stop before the processes
-./dev.sh api|web|worker|admin      # one of them, in its own terminal
+./dev.sh api|web|worker|proxy|admin  # one of them, in its own terminal
 npm run typecheck
 npm run build
 ```

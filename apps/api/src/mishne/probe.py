@@ -135,7 +135,17 @@ def _probe_media(session, org_id: str, row, path: Path) -> str:
             "sample_rates": [track.sample_rate for track in info.audio],
         },
         status="ready",
+        # The preview starts here, not in the pipeline. The bytes are on S3 and
+        # have just been shown to be readable, which is everything the transcode
+        # needs — so it runs alongside whatever job comes next instead of inside
+        # it, and a second job over this asset finds it already made (ADR-0020).
+        queue_proxy=True,
     )
+    # Only now, and only as a wake-up. The row above is the durable record that
+    # a preview is owed; this tells the fleet not to wait for its next sweep.
+    # Notifying first would be the dual-write bug — a message for a row that a
+    # crash means never existed (ADR-0021).
+    _notify_preview_fleet(org_id, row.id)
     return "ready"
 
 
@@ -232,3 +242,19 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())
+
+
+def _notify_preview_fleet(org_id: str, asset_id: str) -> None:
+    """Best effort, and it has to be.
+
+    A failure here is a preview that starts at the fleet's next sweep instead of
+    now. Raising would fail an upload that succeeded, over a notification —
+    which is the wrong way round by a wide margin.
+    """
+    from .orchestration import preview_dispatch
+
+    try:
+        preview_dispatch.get_dispatch().notify(org_id, asset_id)
+    except Exception as exc:  # noqa: BLE001 — see the docstring
+        log.warning("probe.preview_not_notified", asset_id=asset_id,
+                    reason=type(exc).__name__)

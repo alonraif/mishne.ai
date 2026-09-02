@@ -623,6 +623,11 @@ def _transcript_asset(asset_id: str) -> TranscriptAsset:
         start_tc_frames=a.start_tc_frames,
         duration_frames=a.duration_frames,
         language="en",
+        # A fixture reel is playable, so the editor's player renders against
+        # mocks the way it does against the database. An AAF has no picture, so
+        # its preview is sound only (ADR-0019, ADR-0020).
+        proxy_status="ready",
+        proxy_kind="audio" if a.kind == "aaf" else "video",
     )
 
 

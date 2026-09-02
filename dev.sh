@@ -9,6 +9,7 @@
 #   ./dev.sh api        # just one of them, in its own terminal
 #   ./dev.sh web
 #   ./dev.sh worker     # probes completed uploads, runs queued jobs; reloads
+#   ./dev.sh proxy      # builds the preview renditions, alongside the above
 #                       # on a source change, like the API does
 #
 # Why this file exists: end to end, this is eight steps across three terminals
@@ -271,11 +272,39 @@ worker() {
     src/mishne
 }
 
+# The preview builder. Its own process rather than a branch inside the job
+# runner, because that loop probes and runs one job at a time — folding a
+# ten-minute transcode into it would make previews wait for jobs and jobs wait
+# for previews, which is the opposite of what this is for.
+#
+# On a laptop it is a process; in production it is a different machine, because
+# ffmpeg at 100% of the API box is not a thing that may happen. Same code either
+# way — only how it finds work differs. See orchestration/proxyrunner.py,
+# ADR-0020 and ADR-0021.
+#
+# A shorter SIGINT timeout than the job runner's: the unit of work here is one
+# ffmpeg over one asset, and the worst case of killing it mid-encode is that the
+# row goes back in the queue. Nobody's credits are held.
+PROXY_RELOAD_TIMEOUT=120
+proxy() {
+  cd "$API"
+  if ! "$PY" -c "import watchfiles" 2>/dev/null; then
+    exec "$PY" -m mishne.orchestration.proxyrunner
+  fi
+  exec "$PY" -m watchfiles \
+    --target-type command \
+    --filter python \
+    --sigint-timeout "$PROXY_RELOAD_TIMEOUT" \
+    "$PY -m mishne.orchestration.proxyrunner" \
+    src/mishne
+}
+
 case "${1:-all}" in
   setup)  setup ;;
   api)    require_port "$API_PORT" "the API" || exit 1; api ;;
   web)    require_port "$WEB_PORT" "the app" || exit 1; web ;;
   worker) worker ;;
+  proxy)  proxy ;;
   admin)
     require_port "$ADMIN_API_PORT" "the back-office API" || exit 1
     require_port "$ADMIN_WEB_PORT" "the back-office" || exit 1
@@ -316,13 +345,14 @@ case "${1:-all}" in
     require_port "$WEB_PORT" "the app" || exit 1
     require_port "$API_PORT" "the API" || exit 1
     setup
-    step "starting api, web and the job runner"
-    # One terminal, three processes, and a trap so ctrl-c takes all of them
+    step "starting api, web, the job runner and the preview builder"
+    # One terminal, four processes, and a trap so ctrl-c takes all of them
     # down together rather than leaving a job runner holding a job.
     pids=()
     ( api ) & pids+=($!)
     ( web ) & pids+=($!)
     ( worker ) & pids+=($!)
+    ( proxy ) & pids+=($!)
     trap 'echo; echo "stopping…"; kill "${pids[@]}" 2>/dev/null || true' INT TERM
     echo
     echo "   api    http://localhost:$API_PORT/docs"
@@ -332,7 +362,7 @@ case "${1:-all}" in
     wait
     ;;
   *)
-    echo "usage: ./dev.sh [all|restart|setup|api|web|worker|admin]"
+    echo "usage: ./dev.sh [all|restart|setup|api|web|worker|proxy|admin]"
     echo "  one word at a time — 'api|web|worker' is a shell pipeline, not a choice"
     exit 2 ;;
 esac

@@ -29,6 +29,24 @@ INGEST_MODES = ("full_media", "aaf_embedded", "audio_only", "aaf_linked")
 # files it references. It is not `failed` — nothing is wrong — and it is not
 # `ready`, because a job started against it would transcribe silence.
 ASSET_STATUSES = ("uploading", "probing", "ready", "failed", "awaiting_media")
+# Where the asset's preview rendition has got to. A separate axis from
+# `ASSET_STATUSES` on purpose: an asset is ingestable long before it is
+# playable, and a transcode that fails must not make the asset itself failed.
+# `none` is an asset nobody has asked for a preview of — every row that existed
+# before previews did, which is why it is the column default and `pending` is
+# not. `unsupported` is a decided answer, not a pending one: there is nothing
+# decodable behind this row and asking again will not change that.
+PROXY_STATUSES = (
+    "none",
+    "pending",
+    "running",
+    "ready",
+    "failed",
+    "unsupported",
+)
+#: What the preview actually is. A sequence has no video to show, so an AAF's
+#: preview is its flattened sound mix and nothing else (ADR-0019, ADR-0020).
+PROXY_KINDS = ("", "video", "audio")
 
 JOB_MODES = ("ai", "manual", "hybrid")
 JOB_STATUSES = (

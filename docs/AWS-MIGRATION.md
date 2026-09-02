@@ -176,6 +176,7 @@ already builds the worker: ffmpeg, the models, non-root.
 | API | Fargate, 1 vCPU / 2 GB, behind an ALB | Stateless, scales on request count |
 | Light worker | Fargate | Structure, score, solve, assemble, emit, validate — mostly waiting on vendor APIs |
 | Heavy worker | ECS on EC2 spot, compute-optimised, EBS | ffmpeg extract, AAF demux, probe |
+| Preview fleet | ECS on EC2 spot, compute-optimised | The proxy transcode, and nothing else (ADR-0021) |
 
 The heavy tier is not a preference. Fargate's ephemeral storage caps at 200 GB
 and a worker's disk must hold the largest asset it may be handed, plus its
@@ -188,6 +189,49 @@ air-gapped customer runs.
 Spot interruption is handled by the idempotency rule: a step interrupted mid-run
 is re-run. That is the same property that makes resume work (ADR-0016), so it is
 already true and already tested.
+
+**The preview fleet is separate from the heavy worker on purpose.** They have the
+same shape — CPU-bound ffmpeg on spot — and merging them would put the transcode
+back on a machine that jobs are waiting for, which is the whole point of
+ADR-0021. It is also the tier that can be scaled to zero, throttled, or drained
+without a customer noticing anything except a preview arriving later, and that
+is worth having as its own dial.
+
+Its entry point is `python -m mishne.orchestration.proxyrunner --serve`; the unit
+of work it invokes is `mishne.orchestration.proxyworker`, which takes one org and
+one asset id. Same image as the workers — it needs ffmpeg and nothing else.
+
+## Phase 6a — the preview queue
+
+The only piece of infrastructure the preview fleet needs beyond a task
+definition.
+
+* **One SQS queue**, `mishne-<env>-previews`, plus a dead-letter queue at
+  `maxReceiveCount` matching `preview_max_attempts`.
+* **Visibility timeout longer than the longest encode.** A three-hour master is
+  around ten minutes at `-preset superfast`; 30 minutes is the safe setting.
+  Too short and the same asset is handed to a second worker while the first is
+  still going — the DB claim catches that and makes it a wasted receive rather
+  than duplicated work, but the receive is still wasted.
+* **`preview_lease_seconds` is the backstop, not the timeout.** The queue's
+  visibility timeout protects against slow work; the lease protects against a
+  worker that will never come back at all, which the queue cannot see. Set the
+  lease comfortably above the visibility timeout.
+* Producer permission (`sqs:SendMessage`) goes to the API task role — `probe`
+  publishes. Consumer permission (`ReceiveMessage`, `DeleteMessage`) goes to the
+  preview fleet's role, and to nothing else.
+* Config: `PREVIEW_DISPATCH=sqs`, `PREVIEW_QUEUE_URL=...`. `Settings` refuses to
+  boot with the first and not the second.
+
+**Do not put previews in the state machine.** Phase 7's machine is generated from
+the step registry and a preview is deliberately not a step (ADR-0020). Adding one
+re-couples the transcript's latency to the transcode's.
+
+**Scale on queue depth, not CPU.** The fleet is at 100% CPU whenever it is doing
+anything at all, so CPU is not a signal — it is the steady state.
+`ApproximateNumberOfMessagesVisible` is the signal, and scale-in must respect the
+in-flight encode: ECS task protection, or a drain that lets `proxyrunner` finish
+the preview it is on. It handles SIGTERM that way already.
 
 ## Phase 7 — orchestration
 

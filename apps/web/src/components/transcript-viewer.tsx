@@ -14,7 +14,10 @@ import {
   speakerRoster,
 } from "@mishne/shared";
 import { SpeakerLegend, speakerColor } from "@/components/speaker-legend";
+import { MediaPlayer } from "@/components/media-player";
 import { useTranscript } from "@/lib/use-transcript";
+import { usePlayhead, type Playhead } from "@/lib/use-playhead";
+import { usePreview } from "@/lib/use-proxy";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -53,6 +56,10 @@ export function TranscriptViewer({
   const [openId, setOpenId] = useState<string | null>(null);
   const { transcript, rename, merge, error } = useTranscript(initial, jobId);
   const roster = transcript.speakers;
+  // Read-only, but the same two-way sync: click a timecode to hear the line,
+  // play and watch the text follow.
+  const playhead = usePlayhead(transcript);
+  const preview = usePreview(playhead.activeAssetId || null);
 
   // Named voices, and their colours. A beat whose speaker is not in the roster
   // reads as unattributed rather than as a raw id — see `speakerRoster`.
@@ -83,6 +90,8 @@ export function TranscriptViewer({
 
   return (
     <div className="space-y-4">
+      <MediaPlayer playhead={playhead} preview={preview} showReel={multiAsset} />
+
       <SpeakerLegend
         speakers={roster}
         attribution={transcript.attribution}
@@ -143,6 +152,7 @@ export function TranscriptViewer({
             speakerIndex={voices.indexOf(b.speaker)}
             open={openId === b.id}
             onToggle={() => setOpenId(openId === b.id ? null : b.id)}
+            playhead={playhead}
           />
         ))}
       </div>
@@ -158,6 +168,7 @@ function BeatRow({
   speakerIndex,
   open,
   onToggle,
+  playhead,
 }: {
   beat: Beat;
   asset: TranscriptAsset;
@@ -166,27 +177,34 @@ function BeatRow({
   speakerIndex: number;
   open: boolean;
   onToggle: () => void;
+  playhead: Playhead;
 }) {
   const dur = framesToSeconds(beat.endFrames - beat.startFrames, asset.rate);
+  const speaking = playhead.activeBeatId === beat.id;
   return (
     <div
+      ref={(el) => playhead.registerRow(beat.id, el)}
       className={cn(
         "group rounded-md border transition-colors",
         beat.used
           ? "border-used/25 bg-used-surface/25"
-          : "border-transparent hover:border-border"
+          : "border-transparent hover:border-border",
+        // A third state on top of used/unused, so a ring rather than a border.
+        speaking && "ring-1 ring-waveform/60"
       )}
     >
       {/* `text-start`, not `text-left`: a Hebrew transcript sets `dir="rtl"` on
           the list, and a line has to align with the edge a Hebrew reader starts
           from rather than the far side of the row from its timecode. */}
-      <button
-        onClick={onToggle}
-        className="flex w-full items-start gap-3 p-3 text-start"
-      >
-        {/* Gutter */}
-        <div className="flex w-[92px] shrink-0 flex-col items-start gap-1 pt-0.5">
-          <span className="tc text-[11px] text-timecode">
+      {/* A row, not a button: the gutter plays from here and the body opens
+          the rationale, and a button inside a button is invalid HTML. */}
+      <div className="flex w-full items-start">
+        <button
+          onClick={() => playhead.seekToBeat(beat)}
+          title="Play from here"
+          className="flex w-[92px] shrink-0 flex-col items-start gap-1 rounded-s-md p-3 text-start transition-colors hover:bg-accent/30"
+        >
+          <span className={cn("tc text-[11px]", speaking ? "text-waveform" : "text-timecode")}>
             {formatTimecode(beat.startFrames, asset.rate, asset.dropFrame)}
           </span>
           <span className="text-[11px] text-muted-foreground/70">
@@ -204,8 +222,12 @@ function BeatRow({
               {asset.filename}
             </span>
           )}
-        </div>
+        </button>
 
+        <button
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-start gap-3 p-3 ps-0 text-start"
+        >
         {/* Used marker */}
         <div className="w-5 shrink-0 pt-0.5">
           {beat.used ? (
@@ -284,7 +306,8 @@ function BeatRow({
             {beat.score}
           </span>
         </div>
-      </button>
+        </button>
+      </div>
 
       {open && beat.rationale && (
         <div className="border-t border-border/60 px-3 py-3 ps-[132px]">

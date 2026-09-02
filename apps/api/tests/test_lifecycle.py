@@ -144,7 +144,24 @@ def test_the_etag_is_exposed_or_no_upload_can_ever_be_completed(client):
     # difference.
     cors.apply(client, "test-raw", "raw", ["https://app.example.tv"])
     rules = cors.current(client, "test-raw")
-    assert rules[0]["ExposeHeaders"] == ["ETag"]
+    assert "ETag" in rules[0]["ExposeHeaders"]
+
+
+def test_a_preview_cannot_be_seeked_without_the_range_headers(client):
+    """The same failure as the ETag, one feature along.
+
+    A `<video>` seeking into a three-hour preview issues a ranged GET and reads
+    the answer out of these headers. Cross-origin, script sees no header the
+    bucket has not exposed: every request succeeds, the player reports a decode
+    error, and nothing in the network tab looks wrong. See ADR-0020.
+    """
+    cors.apply(client, "test-derived", "derived", ["https://app.example.tv"])
+    rule = cors.current(client, "test-derived")[0]
+    assert {"Content-Range", "Accept-Ranges", "Content-Length"} <= set(
+        rule["ExposeHeaders"]
+    )
+    # And the request header the element sends has to be allowed through.
+    assert "range" in rule["AllowedHeaders"]
 
 
 def test_the_upload_bucket_takes_puts_and_the_others_do_not(client):

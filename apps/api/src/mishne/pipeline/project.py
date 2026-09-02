@@ -38,9 +38,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..asr import ASRResult
+from ..logging import get_logger
 from ..asr.base import Word
 from ..timecode import Rate
-from .steps import aaf_ingest, audio as audio_step, prepare, speakers as spk
+from .steps import aaf_ingest, audio as audio_step, prepare, proxy as proxy_step, speakers as spk
 from ..asr.base import DEFAULT_PROVIDER
 from .steps import structure, transcribe, vad
 from .steps.structure import Beat
@@ -63,6 +64,8 @@ from .steps.vad import SpeechMap
 #: runaway `end_ms` need rebuilding. Both are free to redo: transcription is
 #: keyed separately and is not repaid by a bump here.
 CACHE_VERSION = 4
+
+log = get_logger(__name__)
 
 
 @dataclass
@@ -100,6 +103,16 @@ class AssetIngest:
     #: which is what the interchange writers are told.
     width: int = 0
     height: int = 0
+    #: The preview rendition's filename in the asset's directory, and what kind
+    #: it is — "proxy.m4a"/"audio" for a sequence, empty for everything else
+    #: (ADR-0020). Defaulted for the same reason `asr_provider` is: a cache
+    #: written before previews existed loads with them empty, and empty is the
+    #: honest answer. Bumping CACHE_VERSION to acquire them would re-transcribe
+    #: every asset in the system to gain a preview, which costs orders of
+    #: magnitude more than the preview is worth.
+    preview_name: str = ""
+    preview_kind: str = ""
+    preview_bytes: int = 0
 
     @property
     def duration_s(self) -> float:
@@ -196,6 +209,10 @@ class Prepared:
     #: which is arithmetic rather than a model. Empty for a single-track
     #: sequence and for flat media.
     mic_tracks: dict = field(default_factory=dict)
+    #: The sequence's preview rendition (ADR-0020), or None where there is not
+    #: one. Only ever set on the AAF branch: flat media is previewed off the
+    #: pipeline by `orchestration.proxyrunner`, from the upload itself.
+    preview: object | None = None       # steps.proxy.Proxy
 
 
 def stage_prepare(path: Path, adir: Path, assume_rate: Rate | None = None,
@@ -219,6 +236,18 @@ def stage_prepare(path: Path, adir: Path, assume_rate: Rate | None = None,
         f"{'embedded' if aaf.embedded else 'linked'}")
     flat = aaf_ingest.flatten_audio(aaf, adir)
     info = prepare.probe(flat, assume_rate=aaf.rate)
+    # The preview, built here and nowhere else, because here is the only place
+    # it can be built. A sequence has no playable programme: `flatten_audio`'s
+    # render *is* the thing to preview (ADR-0019, ADR-0020), and it does not
+    # exist until this line. Flat media never reaches this branch — its preview
+    # is transcoded from the upload by `orchestration.proxyrunner`, off the
+    # pipeline entirely and in parallel with it.
+    #
+    # Built against the probe of the flattened file, deliberately before the
+    # overrides below: `verify` compares the encode against the duration of the
+    # file it encoded, and the sequence's own coordinates are a statement about
+    # the timeline rather than about these bytes.
+    preview = _preview(info, adir, say)
     # The sequence's own coordinates, not the flattened file's.
     info.start_tc_frames = aaf.start_tc_frames
     info.duration_frames = aaf.duration_frames
@@ -237,7 +266,25 @@ def stage_prepare(path: Path, adir: Path, assume_rate: Rate | None = None,
         provenance="sequence" if seams else "rushes", seams=seams,
         notes=list(aaf.notes),
         mic_tracks=aaf_ingest.track_renders(aaf, adir),
+        preview=preview,
     )
+
+
+def _preview(info, adir: Path, say) -> proxy_step.Proxy | None:
+    """The sequence's preview, or None if it could not be made.
+
+    Soft-failing on purpose, and it is the one place in stage 0 that is. Every
+    other product of this stage is something the cut cannot be built without; a
+    preview is something the *person* would like to have. A codec ffmpeg cannot
+    put in an MP4 must not cost somebody their transcript, so this records that
+    there is no preview and the editor says so.
+    """
+    try:
+        return proxy_step.build(info, adir)
+    except Exception as exc:  # noqa: BLE001 — see the docstring
+        say(f"no preview: {type(exc).__name__}")
+        log.warning("proxy.sequence_failed", reason=type(exc).__name__)
+        return None
 
 
 def stage_audio(prepared: Prepared, adir: Path):
@@ -420,6 +467,9 @@ def ingest(path: Path, work_dir, language: str | None = None,
         seams=prepared.seams, warnings=warnings,
         asr_provider=asr.provider, asr_model=asr.model,
         width=info.width, height=info.height,
+        preview_name=prepared.preview.name if prepared.preview else "",
+        preview_kind=prepared.preview.kind if prepared.preview else "",
+        preview_bytes=prepared.preview.bytes if prepared.preview else 0,
     )
     return finish_ingest(adir, result, ws)
 
@@ -442,6 +492,11 @@ def _save(a: AssetIngest, path: Path) -> None:
         "asrModel": a.asr_model,
         "width": a.width,
         "height": a.height,
+        # Read with `.get` on the way back in, so a cache written before
+        # previews existed loads as "no preview" rather than not loading.
+        "previewName": a.preview_name,
+        "previewKind": a.preview_kind,
+        "previewBytes": a.preview_bytes,
         "seams": a.seams,
         "warnings": a.warnings,
         "speakers": [s.to_dict() for s in a.speakers],
@@ -506,6 +561,9 @@ def _load(cached: Path, path: Path, adir: Path) -> AssetIngest | None:
         warnings=d.get("warnings", []),
         asr_provider=d.get("asrProvider", ""), asr_model=d.get("asrModel", ""),
         width=d.get("width", 0), height=d.get("height", 0),
+        preview_name=d.get("previewName", ""),
+        preview_kind=d.get("previewKind", ""),
+        preview_bytes=d.get("previewBytes", 0),
     )
 
 

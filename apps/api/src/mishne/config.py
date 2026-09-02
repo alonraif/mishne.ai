@@ -200,6 +200,40 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
 
     presign_ttl_seconds: int = 900
+    #: How long a preview URL is good for. Much longer than an upload part's,
+    #: because it is held by a `<video>` element rather than spent immediately:
+    #: an editor with the page open works through a three-hour interview over an
+    #: afternoon, and at 900 seconds the next seek after the first quarter hour
+    #: is a 403 the player reports as a decode error. Six hours covers a working
+    #: session; the client re-mints on error for the ones it does not.
+    proxy_presign_ttl_seconds: int = 21600
+
+    # ── where the transcode runs ──────────────────────────────────────────
+    # ffmpeg over a three-hour master saturates whatever it is given, and it
+    # must not be given a box that is answering requests. These decide how the
+    # work reaches a machine that exists to be saturated (ADR-0021).
+    #
+    # "local"  — the row is the queue and a loop on this machine polls it.
+    # "sqs"    — a message wakes a worker in the preview fleet.
+    #
+    # In both cases the asset row is the queue of *record*: a notification is a
+    # wake-up, never the only copy of the work.
+    preview_dispatch: Literal["local", "sqs"] = "local"
+    preview_queue_url: str = ""
+    #: How long a worker may hold a preview before it is presumed dead. Ten
+    #: minutes of encode for a three-hour rush, so an hour is generous without
+    #: leaving a genuinely stuck row parked all day.
+    preview_lease_seconds: int = 3600
+    #: Media that will never encode must stop costing CPU. See
+    #: `uploads.reclaim_stale_proxies`.
+    preview_max_attempts: int = 3
+    #: How often the fleet sweeps for expired leases and for rows whose
+    #: notification was lost. The sweep is what makes a dropped message a
+    #: latency problem rather than a preview that never arrives.
+    preview_sweep_seconds: int = 300
+    #: Cores ffmpeg may use. 0 lets it decide, which is right on a machine whose
+    #: job is this and wrong on one sharing with anything else.
+    proxy_ffmpeg_threads: int = 0
 
     # ── email (invitations) ────────────────────────────────────────────────
     #
@@ -304,6 +338,12 @@ class Settings(BaseSettings):
                 f"s3_kms_key_id is required in environment={self.environment!r}. "
                 "Customer media is under embargo often enough that "
                 "unencrypted-at-rest is not a state this system may reach."
+            )
+        if self.preview_dispatch == "sqs" and not self.preview_queue_url:
+            raise ValueError(
+                "preview_queue_url is required when preview_dispatch='sqs'. "
+                "Without it nothing is told to build a preview and the only "
+                "symptom is previews that never arrive."
             )
         return self
 

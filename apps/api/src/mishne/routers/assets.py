@@ -21,17 +21,20 @@ until stage 0 has read it.
 
 from __future__ import annotations
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from .. import audit, storage
 from ..config import Settings, get_settings
+from ..db import models as m
 from ..db import repository, requirements as reqs, uploads
 from ..auth.sessions import Principal
 from ..deps import current_principal, require_write, writable_db
 from ..logging import get_logger
 from ..schemas import (
     Asset,
+    AssetProxy,
     AssetRequirements,
     CompleteUploadRequest,
     CreateAssetRequest,
@@ -423,3 +426,76 @@ async def get_asset(asset_id: str, store: Store = Depends(get_store)) -> Asset:
     if asset is None:
         raise HTTPException(404, "asset not found")
     return asset
+
+
+@router.get("/assets/{asset_id}/proxy", response_model=AssetProxy)
+async def asset_proxy(
+    asset_id: str,
+    request: Request,
+    principal: Principal = Depends(current_principal),
+    s: Session = Depends(writable_db),
+    settings: Settings = Depends(get_settings),
+) -> AssetProxy:
+    """A time-limited URL for one asset's preview, and a row saying who asked.
+
+    The same shape as an artifact download and for the same reasons: a URL
+    rather than a redirect, because the caller is a credentialed `fetch` and a
+    redirect either drops the session or carries it to S3; and audit-logged,
+    because the URL works for anyone holding it until it expires and this is
+    the customer's own footage.
+
+    **Two differences from `download_artifact`, both deliberate.**
+
+    It answers 200 in every state. The editor polls this while the transcode
+    runs, and making the ordinary "not finished yet" case an HTTP error would
+    put the client in the business of reading exception bodies to find out that
+    nothing is wrong.
+
+    And it mints the URL *without* a filename, so no `Content-Disposition` is
+    set. Passing one — which the artifact path does, so the browser saves
+    `interview.aaf` rather than the key — marks the response as an attachment,
+    and a `<video>` pointed at an attachment downloads the file instead of
+    playing it.
+    """
+    assets = m.Asset.__table__
+    row = s.execute(
+        sa.select(assets).where(
+            assets.c.org_id == principal.org_id, assets.c.id == asset_id
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(404, "asset not found")
+
+    # Everything that is not a playable preview is reported as itself. `none`
+    # reaches here for an asset uploaded before previews existed and for one
+    # whose ingest came from a warm cache — neither is an error, and both mean
+    # the editor shows the transcript without a player.
+    if row.proxy_status != "ready" or not row.proxy_s3_key:
+        status = row.proxy_status
+        if status == "ready":
+            # Ready with nothing behind it: the row outlived its object, most
+            # likely the derived bucket's 30-day expiry. Saying `ready` here
+            # would hand back a URL that 404s inside the player.
+            status = "unsupported"
+        return AssetProxy(asset_id=asset_id, status=status,
+                          kind=row.proxy_kind or "")
+
+    url = storage.Storage(settings).presigned_get(
+        storage.ObjectRef(
+            bucket=storage.bucket_for("derived", settings), key=row.proxy_s3_key
+        ),
+        ttl_seconds=settings.proxy_presign_ttl_seconds,
+    )
+    audit.record(
+        s, principal.org_id, audit.ASSET_PROXY_ISSUED, resource_type="asset",
+        resource_id=asset_id, actor_user_id=principal.user_id,
+        ip=audit.client_ip(request), user_agent=request.headers.get("user-agent"),
+    )
+    log.info("asset.proxy_issued", asset_id=asset_id, kind=row.proxy_kind)
+    return AssetProxy(
+        asset_id=asset_id,
+        status="ready",
+        kind=row.proxy_kind,
+        url=url,
+        expires_in_s=settings.proxy_presign_ttl_seconds,
+    )

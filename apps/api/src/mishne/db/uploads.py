@@ -28,7 +28,10 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
+from ..logging import get_logger
 from . import models as m
+
+log = get_logger(__name__)
 
 #: Extensions that mean "no picture" — the ADR-0005 path, where the edit rate
 #: cannot be probed from the file and has to be supplied.
@@ -210,12 +213,21 @@ def record_probe(
     probe: dict,
     ingest_mode: str | None = None,
     status: str = "ready",
+    queue_proxy: bool = False,
 ) -> None:
     """Stage 0's findings, and the end of the placeholder rate.
 
     Called by the probe-on-arrival path. Kept here rather than in the worker so
     that the one place an asset stops being provisional is the one place its
     invariants are written down.
+
+    `queue_proxy` puts the row in the preview queue `proxyrunner` polls. Set
+    for flat media, whose preview is transcoded from the upload itself and can
+    therefore start the moment the bytes are known to be readable — before any
+    job exists, and in parallel with every job that follows (ADR-0020). Not set
+    for a sequence: an AAF has no playable programme, and its preview is a
+    by-product of the flattening in stage 0 rather than something that can be
+    made from the upload.
     """
     a = m.Asset.__table__
     values: dict = {
@@ -231,6 +243,8 @@ def record_probe(
     }
     if ingest_mode is not None:
         values["ingest_mode"] = ingest_mode
+    if queue_proxy:
+        values["proxy_status"] = "pending"
     s.execute(sa.update(a).where(a.c.org_id == org_id, a.c.id == asset_id).values(**values))
 
 
@@ -244,4 +258,142 @@ def delete_asset(s: Session, org_id: str, asset_id: str) -> None:
     a = m.Asset.__table__
     s.execute(
         sa.delete(a).where(a.c.org_id == org_id, a.c.id == asset_id, a.c.status == "uploading")
+    )
+
+
+# ── the preview rendition (ADR-0020) ─────────────────────────────────────────
+
+
+def claim_proxy(s: Session, org_id: str, asset_id: str) -> bool:
+    """Take the lease on one preview. False if somebody else already has it.
+
+    The guard is the `WHERE proxy_status = 'pending'`, not a prior read: two
+    workers draining the same queue see the same oldest row, and a
+    check-then-set across two statements lets both of them spend ten minutes
+    encoding the same three hours of footage. `rowcount` is the answer to "was
+    it mine?", and it is atomic because it is one statement.
+
+    This is what makes the queue safe to drain from more than one machine, which
+    is the whole reason the transcode can live somewhere other than the API box.
+
+    `proxy_claimed_at` is the lease and `proxy_attempts` is what bounds it —
+    see `reclaim_stale_proxies` and migration 0013.
+    """
+    a = m.Asset.__table__
+    result = s.execute(
+        sa.update(a)
+        .where(
+            a.c.org_id == org_id,
+            a.c.id == asset_id,
+            a.c.proxy_status == "pending",
+        )
+        .values(
+            proxy_status="running",
+            proxy_error=None,
+            proxy_claimed_at=sa.func.now(),
+            proxy_attempts=a.c.proxy_attempts + 1,
+        )
+    )
+    return bool(result.rowcount)
+
+
+def reclaim_stale_proxies(
+    engine, *, lease_seconds: int, max_attempts: int
+) -> tuple[int, int]:
+    """Put previews whose worker died back in the queue. (requeued, abandoned).
+
+    `running` is a state nothing leaves on its own. A worker killed mid-encode —
+    a spot instance reclaimed, a task scaled in, a container OOM-killed — leaves
+    a row that will never become `ready` and will never say why. A lease older
+    than `lease_seconds` is the evidence that happened.
+
+    Rows that have already used their attempts are abandoned instead of
+    requeued. Without that, media ffmpeg cannot read becomes a worker burning
+    CPU on the same file every few minutes for ever, which is precisely the bill
+    that moving the transcode off the API box was supposed to make visible.
+
+    **A NULL lease is left alone.** A release that predates 0013 claims without
+    stamping one, so NULL means "cannot judge this", not "expired" — treating it
+    as expired would steal work from a running older worker during a deploy
+    (ADR-0012).
+
+    Takes the engine rather than a session: this is a cross-tenant sweep, the
+    same shape as the privileged read the local runner already does, and it is
+    not something a tenant-scoped session can ask.
+    """
+    cutoff = sa.text(f"now() - interval '{int(lease_seconds)} seconds'")
+    with engine.begin() as conn:
+        abandoned = conn.execute(
+            sa.text(
+                "UPDATE assets SET proxy_status = 'failed', "
+                "       proxy_claimed_at = NULL, "
+                "       proxy_error = jsonb_build_object('code', 'lease_expired') "
+                " WHERE proxy_status = 'running' "
+                "   AND proxy_claimed_at IS NOT NULL "
+                f"  AND proxy_claimed_at < {cutoff.text} "
+                "   AND proxy_attempts >= :max"
+            ),
+            {"max": max_attempts},
+        ).rowcount
+        requeued = conn.execute(
+            sa.text(
+                "UPDATE assets SET proxy_status = 'pending', proxy_claimed_at = NULL "
+                " WHERE proxy_status = 'running' "
+                "   AND proxy_claimed_at IS NOT NULL "
+                f"  AND proxy_claimed_at < {cutoff.text}"
+            )
+        ).rowcount
+    if requeued or abandoned:
+        log.info("proxy.leases_reclaimed", requeued=requeued, abandoned=abandoned)
+    return requeued, abandoned
+
+
+def record_proxy(
+    s: Session,
+    org_id: str,
+    asset_id: str,
+    *,
+    s3_key: str,
+    kind: str,
+    size_bytes: int,
+) -> None:
+    """A preview that exists, and where it is."""
+    a = m.Asset.__table__
+    s.execute(
+        sa.update(a)
+        .where(a.c.org_id == org_id, a.c.id == asset_id)
+        .values(
+            proxy_status="ready",
+            proxy_s3_key=s3_key,
+            proxy_kind=kind,
+            proxy_bytes=size_bytes,
+            proxy_error=None,
+            proxy_claimed_at=None,
+        )
+    )
+
+
+def fail_proxy(
+    s: Session, org_id: str, asset_id: str, *, reason: str, permanent: bool = False
+) -> None:
+    """A preview that could not be built.
+
+    `permanent` distinguishes "there is nothing decodable behind this row" from
+    "this attempt did not work". The first is an answer and the editor says so;
+    the second is a state somebody may retry. Neither touches `assets.status` —
+    an asset with no preview is still perfectly ingestable, and failing the
+    upload over a transcode would be a catastrophe out of an inconvenience.
+
+    `reason` is an exception type or a short code. Never ffmpeg's stderr, which
+    carries the customer's filename in almost every message it writes.
+    """
+    a = m.Asset.__table__
+    s.execute(
+        sa.update(a)
+        .where(a.c.org_id == org_id, a.c.id == asset_id)
+        .values(
+            proxy_status="unsupported" if permanent else "failed",
+            proxy_error={"code": reason},
+            proxy_claimed_at=None,
+        )
     )

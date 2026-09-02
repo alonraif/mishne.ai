@@ -44,11 +44,12 @@ from ..db import ids as id_space
 from ..db import jobs as job_writes
 from ..db import models as m
 from ..db import transcripts as transcript_writes
+from ..db import uploads
 from ..db.base import session_for_org
 from ..llm import Router
 from ..pipeline.project import CACHE_VERSION
 from ..logging import get_logger
-from ..storage import ObjectRef
+from ..storage import ObjectRef, derived_key
 from ..workspace import S3Workspace, SourceFile
 from .graph import AssetSource, JobRequest
 from .runner import Cancelled, run_job
@@ -393,6 +394,8 @@ def _record_transcript(result, org_id: str, job_id: str) -> bool:
                     asset_id=assets[ingest.asset_id],
                     ingest_version=CACHE_VERSION,
                 )
+                _record_preview(s, org_id, ingest, assets[ingest.asset_id],
+                                state.request.project_id)
             transcript_writes.record_job_view(
                 s, org_id, job_id,
                 assets=assets,
@@ -494,3 +497,33 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())
+
+
+def _record_preview(s, org_id: str, ingest, asset_id: str, project_id: str) -> None:
+    """Point a sequence's asset row at the preview stage 0 rendered.
+
+    Only sequences reach this with anything to record. A flat upload's preview
+    is built and recorded by `proxyrunner`, off the pipeline entirely, and its
+    row is already `ready` long before a job gets here — hence the guard rather
+    than an unconditional write, which would take a finished preview and
+    overwrite it with the empty string on every subsequent job over that asset.
+
+    The object itself was mirrored to the derived bucket by
+    `S3Workspace.publish_asset`, which is why this only has to name it: the file
+    is in `CACHEABLE` and travels with the rest of the asset's derived files.
+
+    Failing softly for the reason `_record_transcript` does — this runs on the
+    completed path, where the artifacts are already published and validated, and
+    a preview is not worth failing a job that demonstrably succeeded.
+    """
+    if not getattr(ingest, "preview_name", ""):
+        return
+    try:
+        uploads.record_proxy(
+            s, org_id, asset_id,
+            s3_key=derived_key(org_id, project_id, asset_id, ingest.preview_name),
+            kind=ingest.preview_kind,
+            size_bytes=ingest.preview_bytes,
+        )
+    except Exception as exc:  # noqa: BLE001 — see the docstring
+        log.warning("job.preview_not_recorded", reason=type(exc).__name__)

@@ -343,6 +343,8 @@ why the current shape is what it is.
 | [0017](adr/0017-log-and-trace-retention.md) | Logs and traces are retained on a different clock from the audit log |
 | [0018](adr/0018-two-asr-engines-routed-by-language.md) | Two ASR engines, routed by language |
 | [0019](adr/0019-mix-sound-tracks-for-transcription.md) | A sequence's sound tracks are mixed for transcription, kept separate for the cut |
+| [0020](adr/0020-a-preview-rendition-per-asset.md) | A preview rendition per asset, built beside the pipeline rather than in it |
+| [0021](adr/0021-previews-are-built-by-a-separate-fleet.md) | Previews are built by a separate fleet, fed by a queue; the row is the record |
 
 ## Things that will bite you
 

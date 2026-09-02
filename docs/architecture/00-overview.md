@@ -248,5 +248,4 @@ Named here so they don't get built by accident:
 - Self-hosted ASR. Interface makes it a swap; see [ADR-0003](../adr/0003-managed-asr-behind-an-interface.md).
 - Real-time collaboration on the transcript page.
 - Any model fine-tuning.
-- Video proxy generation — only needed once there is an in-browser review player,
-  and the MVP deliverable is a downloadable timeline, not a preview.
+

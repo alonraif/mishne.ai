@@ -365,13 +365,29 @@ class Storage:
 
     # ── reading and writing ────────────────────────────────────────────────
 
-    def presigned_get(self, ref: ObjectRef, *, filename: str | None = None) -> str:
+    def presigned_get(
+        self,
+        ref: ObjectRef,
+        *,
+        filename: str | None = None,
+        ttl_seconds: int | None = None,
+    ) -> str:
         """A time-limited download URL.
 
         `filename` sets Content-Disposition so the browser saves
         `interview_rough_cut.aaf` rather than the opaque key. That is the only
         place a customer's filename enters a URL, it is response metadata rather
         than the path, and it is why artifact downloads are audit-logged.
+
+        **Omit it for anything the browser is meant to play rather than save.**
+        `attachment` is what makes a download a download, and a `<video>`
+        pointed at one downloads the file instead of playing it.
+
+        `ttl_seconds` overrides `presign_ttl_seconds` for the grants that are
+        held rather than spent. A download URL is followed within seconds of
+        being minted; a preview URL sits inside a media element for as long as
+        somebody has the editor open, and expiring under them surfaces as a
+        decode error rather than as anything about credentials (ADR-0020).
         """
         params: dict[str, str] = {"Bucket": ref.bucket, "Key": ref.key}
         if filename:
@@ -379,7 +395,9 @@ class Storage:
                 f'attachment; filename="{filename}"'
             )
         return self.client.generate_presigned_url(
-            "get_object", Params=params, ExpiresIn=self.settings.presign_ttl_seconds
+            "get_object",
+            Params=params,
+            ExpiresIn=ttl_seconds or self.settings.presign_ttl_seconds,
         )
 
     def head(self, ref: ObjectRef) -> dict | None:

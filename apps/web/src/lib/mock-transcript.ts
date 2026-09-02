@@ -54,12 +54,13 @@ const ASSETS: TranscriptAsset[] = [
     assetId: "ast_9d41", filename: "harbour_interview_A.mxf",
     rate: RATE_25, dropFrame: false,
     startTcFrames: tc(10, 0, 0), durationFrames: 267_750, language: "en",
+    proxyStatus: "ready", proxyKind: "video",
   },
   {
     assetId: "ast_2b77", filename: "harbour_pickup_B.mov",
     rate: { num: 24_000, den: 1001 }, dropFrame: false,
     startTcFrames: Math.round(14.5 * 3600 * 23.976), durationFrames: 43_200,
-    language: "en",
+    language: "en", proxyStatus: "ready", proxyKind: "video",
   },
 ];
 

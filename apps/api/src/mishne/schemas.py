@@ -13,6 +13,14 @@ TierId = Literal["starter", "pro", "studio"]
 AssetKind = Literal["video", "aaf", "audio"]
 IngestMode = Literal["full_media", "aaf_embedded", "audio_only", "aaf_linked"]
 AssetStatus = Literal["uploading", "probing", "ready", "failed", "awaiting_media"]
+# How far the preview rendition has got (ADR-0020). A separate axis from
+# AssetStatus: an asset is ingestable long before it is playable, and a
+# transcode that fails does not make the asset failed.
+ProxyStatus = Literal[
+    "none", "pending", "running", "ready", "failed", "unsupported"
+]
+#: A sequence has no picture to show, so its preview is sound only.
+ProxyKind = Literal["", "video", "audio"]
 ArtifactKind = Literal["aaf", "fcpxml", "edl", "otio", "json"]
 NarrativeShape = Literal["chronological", "thematic", "inverted_pyramid", "q_and_a"]
 
@@ -258,6 +266,13 @@ class TranscriptAsset(BaseModel):
     duration_frames: int
     #: ISO code. A project can mix languages; direction is decided per asset.
     language: str
+    #: Whether this reel can be played, and as what. Here rather than fetched
+    #: separately because it has to be read together with `rate` and
+    #: `start_tc_frames` — those three are what turn a beat into a position in
+    #: a media file, and splitting them across two payloads invites using one
+    #: without the others.
+    proxy_status: ProxyStatus = "none"
+    proxy_kind: ProxyKind = ""
 
 
 class Transcript(BaseModel):
@@ -627,6 +642,33 @@ class ArtifactDownload(BaseModel):
     url: str
     filename: str
     expires_in_s: int
+
+
+class AssetProxy(BaseModel):
+    """Where an asset's preview has got to, and how to play it.
+
+    **Answers in every state rather than erroring in most of them.** The editor
+    polls this while the transcode runs, and a 404 or a 409 for "not yet" would
+    make the ordinary case an exception the client has to unpick to discover
+    that nothing is wrong. `status` is the answer; `url` is set only when there
+    is something to play.
+    """
+
+    #: Which asset this answer is about.
+    #:
+    #: Not redundant with the path. The client keeps the previous answer on
+    #: screen while it fetches the next one, so on a job that draws on several
+    #: reels there is a moment where the response in hand belongs to the reel
+    #: that *was* showing. Without this the player cannot tell, and it hands a
+    #: `<video>` the wrong URL and seeks it to a position from another reel.
+    asset_id: str
+    status: ProxyStatus
+    kind: ProxyKind = ""
+    #: A presigned GET, or None. Never logged, never stored — it is a credential
+    #: (see `storage`), and it is deliberately minted without a filename so the
+    #: browser plays the preview instead of downloading it.
+    url: str | None = None
+    expires_in_s: int = 0
 
 
 class SubmitCutRequest(BaseModel):
