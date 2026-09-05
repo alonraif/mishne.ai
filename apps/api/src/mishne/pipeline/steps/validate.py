@@ -21,23 +21,29 @@ import opentimelineio as otio
 from ...interchange import fcpxml_check
 from ...interchange.validate import RoundTrip, verify
 from ...timecode import Rate
-from .emit import Artifact, FORMATS
+from .emit import Artifact, FORMATS, has_video, with_synthetic_video
 
 
 def validate(timeline: otio.schema.Timeline, artifacts: list[Artifact],
              rate: Rate) -> list[RoundTrip]:
-    by_fmt = {f[0]: (f[1], f[4]) for f in FORMATS}
+    by_fmt = {f[0]: (f[1], f[4], f[5]) for f in FORMATS}
     results: list[RoundTrip] = []
+    # The timeline the picture-requiring writers were actually given. Comparing
+    # their output against the audio-only original would report every event as
+    # missing and fail an artifact that is correct.
+    audio_only = not has_video(timeline)
+    synthetic = with_synthetic_video(timeline) if audio_only else timeline
 
     for art in artifacts:
         if not art.ok or art.path is None:
             continue
+        adapter, flattens, needs_video = by_fmt[art.fmt]
+        against = synthetic if (needs_video and audio_only) else timeline
         if art.fmt == "FCPXML":
-            results.append(fcpxml_check.verify(timeline, art.path, rate))
+            results.append(fcpxml_check.verify(against, art.path, rate))
             continue
-        adapter, flattens = by_fmt[art.fmt]
         # EDL has no embedded frame rate; the reader defaults to 24 without this.
         kwargs = {"rate": rate.fps} if art.fmt == "EDL" else {}
-        results.append(verify(timeline, art.path, art.fmt, adapter,
+        results.append(verify(against, art.path, art.fmt, adapter,
                               kwargs, flattens))
     return results

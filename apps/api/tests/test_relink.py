@@ -24,6 +24,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 
 import aaf2
+import opentimelineio as otio
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -332,3 +333,89 @@ def test_an_aaf_upload_names_its_companions_as_the_editor_does(aaf_artifacts,
     root = ET.parse(aaf_artifacts["fcpxml"]).getroot()
     srcs = {unquote(a.get("src")) for a in root.findall(".//asset")}
     assert srcs == {AAF_COMPANION}
+
+
+# ── audio-only material, and the track Avid refuses ─────────────────────────
+
+
+def _audio_only_aaf_asset(tmp_path: Path) -> assemble.AssetRef:
+    """A sound-only sequence, as a podcast or radio export really arrives.
+
+    `has_video=False` is what `aaf_ingest.parse` records for an AAF whose slots
+    are all sound, and no frame geometry, which is what a probe finds in a WAV.
+    """
+    scratch = tmp_path / "sources" / "audio"
+    scratch.mkdir(parents=True)
+    wav = scratch / "mic1.wav"
+    wav.write_bytes(b"not really a wav")
+    # `cuts()` is expressed at 01:00:00:00 and `_aaf_clips` maps them into the
+    # sequence's own timeline as `cut.src_in - start_tc_frames`. So the AAF
+    # starts at the hour and its clip sits at timeline zero — the arrangement a
+    # real export has. Getting this wrong resolves no clips at all and the
+    # timeline comes out empty, which would let the assertions below pass
+    # without the code under test having done anything.
+    start = tc_to_frames(1, 0, 0, 0, PAL)
+    clip = aaf_ingest.SourceClip(
+        index=0, name="mic1.wav", mob_id=AVID_MOB_ID,
+        source_mob_id=AVID_MOB_ID, media_path=wav,
+        embedded_mob_id=None, src_in=0, src_out=25 * 600,
+        src_rate=25.0, origin=0, tl_in=0, tl_out=25 * 600,
+        target_url="file:///Volumes/SAN/Rushes/mic1.wav")
+    source = aaf_ingest.AAFSource(
+        path=scratch / "sequence.aaf", rate=PAL, duration_frames=25 * 600,
+        start_tc_frames=start, clips=[clip], has_video=False)
+    return assemble.AssetRef(
+        rate=PAL, start_tc_frames=start, duration_frames=25 * 600,
+        asset_id="a_deadbeef", aaf=source, display_name="sequence.aaf")
+
+
+def test_an_audio_only_cut_has_no_video_track(tmp_path: Path):
+    """Media Composer rejects the whole sequence, not just the track.
+
+        Exception: Sequence refers to non-existent track in clip.
+        ..., clip:0bf16051-....wav, missingTrack:V1
+
+    Stage 10 built a V1 track unconditionally and appended every clip to it, so
+    a sound-only AAF — a podcast, a radio piece, any export with no picture in
+    it — produced a deliverable Avid would not open at all. The error names the
+    clip rather than the sequence, which reads as a problem with the media.
+    """
+    timeline = assemble.build_multi(
+        cuts(), {"a_deadbeef": _audio_only_aaf_asset(tmp_path)}, name="audio_cut")
+
+    kinds = [t.kind for t in timeline.tracks]
+    assert otio.schema.TrackKind.Video not in kinds, (
+        "an audio-only source produced a video track; Media Composer will "
+        "refuse the sequence"
+    )
+    assert otio.schema.TrackKind.Audio in kinds
+
+
+def test_a_source_with_picture_still_gets_one(staged_asset):
+    """The other half of the rule: this must not turn into "never emit video"."""
+    timeline = assemble.build_multi(cuts(), {"a_deadbeef": staged_asset},
+                                    name="video_cut")
+    assert otio.schema.TrackKind.Video in [t.kind for t in timeline.tracks]
+
+
+def test_every_format_is_still_written_for_an_audio_only_cut(tmp_path: Path):
+    """EDL and FCPXML cannot express a cut with no picture track.
+
+    `cmx_3600` refuses outright ("Only a single video track is supported, got:
+    0") and `fcpx_xml` dies reaching into a track it assumes exists — so
+    removing V1 for Avid's sake silently cost two of the four deliverables. They
+    get a synthesised picture track at write time; the AAF must not.
+    """
+    timeline = assemble.build_multi(
+        cuts(), {"a_deadbeef": _audio_only_aaf_asset(tmp_path)}, name="audio_cut")
+    written = emit.emit(timeline, tmp_path / "out", "audio_cut")
+
+    failed = [f"{a.fmt}: {a.error}" for a in written if not a.ok]
+    assert not failed, failed
+    assert {a.fmt for a in written} == {"AAF", "FCPXML", "EDL", "OTIO"}
+
+    # And the AAF on disk still has no picture track — the synthetic one must
+    # not have leaked into the timeline the other writers share.
+    aaf = next(a for a in written if a.fmt == "AAF")
+    back = otio.adapters.read_from_file(str(aaf.path), adapter_name="AAF")
+    assert otio.schema.TrackKind.Video not in [t.kind for t in back.tracks]

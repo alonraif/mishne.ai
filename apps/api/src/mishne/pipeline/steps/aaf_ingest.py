@@ -157,6 +157,16 @@ class AAFSource:
     #: track, because that is what the output document can say (ADR-0019).
     primary_track: int = 0
 
+    #: Whether the sequence has a picture track at all.
+    #:
+    #: Recorded here because the parse already knows — it looks for video in
+    #: order to prefer audio over it — and nothing downstream can recover it:
+    #: `clips` holds only the chosen tracks, and `width`/`height` describe a
+    #: file rather than a sequence. Stage 10 needs the answer to decide whether
+    #: to build a V1 track, and Media Composer refuses an entire sequence whose
+    #: V1 clip resolves to a source with no picture.
+    has_video: bool = False
+
     @property
     def duration_s(self) -> float:
         return self.duration_frames / self.rate.fps
@@ -430,6 +440,7 @@ def parse(path: Path, search_dirs: list[Path] | None = None) -> AAFSource:
         path=path, rate=rate, duration_frames=duration_frames,
         start_tc_frames=start_tc, clips=clips, embedded=bool(embedded_ids),
         missing=missing, notes=notes, primary_track=0,
+        has_video=bool(video),
     )
 
 

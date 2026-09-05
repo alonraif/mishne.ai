@@ -62,10 +62,13 @@ class FakeResult:
 
 def _artifacts(tmp_path: Path) -> list[Artifact]:
     """What stage 11 returns on a run where every writer succeeded."""
+    # Indexed rather than unpacked: `FORMATS` gained a column (whether the
+    # writer needs a video track) and a positional unpack here broke three
+    # tests that have nothing to do with track kinds.
     return [
-        Artifact(label, tmp_path / f"interview_roughcut.{ext}", True, 1024, nle,
-                 kind=ext)
-        for label, _adapter, ext, nle, _flat in FORMATS
+        Artifact(f[0], tmp_path / f"interview_roughcut.{f[2]}", True, 1024, f[3],
+                 kind=f[2])
+        for f in FORMATS
     ]
 
 

@@ -104,6 +104,22 @@ class AssetRef:
             return Path(self.filename).stem
         return self.asset_id or "source"
 
+    @property
+    def has_picture(self) -> bool:
+        """Whether this asset has a picture track to cut.
+
+        Frame geometry is the probe's answer for a flat upload: an audio file
+        has none, and a video file has both dimensions (ADR-0005).
+
+        A sequence is asked its own tracks instead, because `width`/`height`
+        describe a file and an AAF is not one — a sound-only export from Media
+        Composer would otherwise look identical to a video whose probe had not
+        run, and both would be given a V1 track the sequence cannot support.
+        """
+        if self.aaf is not None:
+            return self.aaf.has_video
+        return bool(self.width and self.height)
+
 
 def warnings_for(assets: dict[str, AssetRef]) -> list[str]:
     """Things about this combination of assets the editor should be told.
@@ -144,14 +160,38 @@ def build_multi(cuts: list[Cut], assets: dict[str, AssetRef],
     timeline.global_start_time = RationalTime(
         tc_to_frames(record_start_hours, 0, 0, 0, seq_rate), fps)
 
-    v_track = otio.schema.Track(name="V1", kind=otio.schema.TrackKind.Video)
-    timeline.tracks.append(v_track)
+    # A video track only where there is video to put on it.
+    #
+    # Media Composer follows a V1 clip back to its source and refuses the
+    # sequence outright if that source has no picture track:
+    #
+    #     Exception: Sequence refers to non-existent track in clip.
+    #     ..., clip:0bf16051-....wav, missingTrack:V1
+    #
+    # The whole sequence is rejected, so this is not a cosmetic empty track —
+    # it is the difference between a deliverable and a dialog. An audio-only
+    # ingest is a first-class path (ADR-0005) and a sound-only AAF export is
+    # ordinary for a podcast or a radio piece, so this is the common case for
+    # that material rather than an edge one.
+    #
+    # `has_picture` is the probe's answer, not a guess: an asset whose frame
+    # geometry is unknown is audio, and an AAF built entirely from sound slots
+    # reports no picture for the same reason. Where any asset in the job does
+    # carry picture the track is built as before, because a mixed job still
+    # needs somewhere to cut the picture.
+    picture = any(r.has_picture for r in refs)
+    tracks: list[otio.schema.Track] = []
+    v_track = None
+    if picture:
+        v_track = otio.schema.Track(name="V1", kind=otio.schema.TrackKind.Video)
+        timeline.tracks.append(v_track)
+        tracks.append(v_track)
     a_tracks = []
     for i in range(max(1, max(r.audio_tracks for r in refs))):
         t = otio.schema.Track(name=f"A{i + 1}", kind=otio.schema.TrackKind.Audio)
         timeline.tracks.append(t)
         a_tracks.append(t)
-    tracks = [v_track, *a_tracks]
+    tracks.extend(a_tracks)
 
     warnings = warnings_for(assets)
     timeline.metadata["mishne"] = {
