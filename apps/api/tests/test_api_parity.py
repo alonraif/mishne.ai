@@ -156,19 +156,26 @@ def test_an_unauthenticated_request_gets_nothing_at_all(
         assert live.get("/v1/jobs/job_2e57/transcript").status_code == 401
 
 
-def test_mocks_are_refused_outside_local(clear_caches) -> None:
+def test_mocks_are_refused_outside_local(clear_caches, monkeypatch) -> None:
     """`use_mocks=True` must be unreachable where there is real data.
 
     An API answering from fixtures in staging reports a balance nobody has and a
     job nobody ran, convincingly. Failing to boot is the cheaper failure.
     """
-    import os
-
     from pydantic import ValidationError
 
     from mishne.config import Settings
 
-    os.environ["ENVIRONMENT"] = "local"
+    # `monkeypatch`, not `os.environ` directly: this test used to set
+    # ENVIRONMENT=local and leave it set for the rest of the session, so a test
+    # ordered after it read a value it never asked for.
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    # A developer's `.env` points S3 at local MinIO, and `Settings` reads it.
+    # The staging construction below is then refused for the endpoint override
+    # rather than for anything this test is about — which is the guard working
+    # correctly and the test asking the wrong question. Clear it, the same way
+    # the `api` fixture does, so what is asserted is the mocks rule.
+    monkeypatch.setenv("S3_ENDPOINT_URL", "")
     clear_caches()
     with pytest.raises(ValidationError):
         Settings(environment="staging", use_mocks=True)
@@ -184,3 +191,26 @@ def test_mocks_are_refused_outside_local(clear_caches) -> None:
         app_origin="https://staging.mishne.ai",
     )
     assert ok.use_mocks is False
+
+
+def test_an_endpoint_override_is_refused_outside_local(clear_caches, monkeypatch) -> None:
+    """The guard the test above has to clear, asserted on its own.
+
+    Silencing an environment variable to test something else is how a rule stops
+    being covered: without this, `S3_ENDPOINT_URL` could be dropped from
+    `Settings` entirely and the suite would stay green.
+    """
+    from pydantic import ValidationError
+
+    from mishne.config import Settings
+
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    clear_caches()
+    with pytest.raises(ValidationError, match="s3_endpoint_url"):
+        Settings(
+            environment="staging",
+            use_mocks=False,
+            s3_kms_key_id="alias/mishne-staging",
+            app_origin="https://staging.mishne.ai",
+            s3_endpoint_url="http://localhost:9000",
+        )

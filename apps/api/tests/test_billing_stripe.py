@@ -24,6 +24,7 @@ real handler.
 from __future__ import annotations
 
 import json
+import secrets
 import sys
 from pathlib import Path
 
@@ -40,6 +41,20 @@ from mishne.billing.payments import FakeProvider, PaymentError  # noqa: E402
 pytestmark = requires_schema
 
 SECRET = "whsec_test"
+
+
+def _fresh(label: str) -> str:
+    """An event id no previous run has used.
+
+    `stripe_events` is the idempotency record and it is deliberately not
+    truncated between runs — `purge_org` leaves it alone because an append-only
+    financial record is not a teardown's to clear. So a hardcoded `evt_a` is
+    granted on the first run of the suite and correctly refused as a replay on
+    every run after, and these tests failed on exactly the machines the suite
+    had been run on before. The dedupe was right; the fixture was wrong.
+    """
+    return f"evt_{label}_{secrets.token_hex(4)}"
+
 
 
 def _event(
@@ -92,7 +107,7 @@ def _balance(owner) -> float:
 def test_a_purchase_moves_the_balance_through_the_webhook(api, owner):
     http, _ = api
     before = _balance(owner)
-    resp = _post(http, _event())
+    resp = _post(http, _event(_fresh("buy")))
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["credits"] == CREDIT_PACKS["pack_100"]["credits"]
@@ -107,8 +122,11 @@ def test_the_same_event_twice_grants_credits_once(api, owner):
     ordinary Tuesday, and it must not be a second $100 of credits."""
     http, _ = api
     before = _balance(owner)
-    first = _post(http, _event("evt_replay"))
-    second = _post(http, _event("evt_replay"))
+    # One id, sent twice — the whole point of the test, so it is bound here
+    # rather than generated at each call.
+    replayed = _fresh("replay")
+    first = _post(http, _event(replayed))
+    second = _post(http, _event(replayed))
 
     assert first.json()["status"] == "granted"
     # Still a 200: a non-2xx teaches Stripe to retry an event we handled
@@ -121,9 +139,9 @@ def test_the_same_event_twice_grants_credits_once(api, owner):
         rows = conn.execute(
             sa.text(
                 "SELECT count(*) FROM credit_ledger "
-                "WHERE org_id = :o AND stripe_event_id = 'evt_replay'"
+                "WHERE org_id = :o AND stripe_event_id = :e"
             ),
-            {"o": ORG},
+            {"o": ORG, "e": replayed},
         ).scalar_one()
     assert rows == 1
 
@@ -134,8 +152,8 @@ def test_two_different_purchases_both_land(api, owner):
     is a customer buying two packs."""
     http, _ = api
     before = _balance(owner)
-    _post(http, _event("evt_a"))
-    _post(http, _event("evt_b"))
+    _post(http, _event(_fresh("pack_one")))
+    _post(http, _event(_fresh("pack_two")))
     assert _balance(owner) == before + 210
 
 
@@ -146,7 +164,7 @@ def test_two_different_purchases_both_land(api, owner):
 def test_an_unsigned_body_grants_nothing(api, owner):
     http, _ = api
     before = _balance(owner)
-    resp = _post(http, _event("evt_forged"), signature="not-a-signature")
+    resp = _post(http, _event(_fresh("forged")), signature="not-a-signature")
 
     assert resp.status_code == 400
     assert _balance(owner) == before
@@ -159,7 +177,7 @@ def test_a_forged_org_in_an_unsigned_body_grants_nothing(api, owner):
     org means resigning the body, which requires the secret."""
     http, _ = api
     before = _balance(owner)
-    resp = _post(http, _event("evt_x", org_id="org_someone_else"),
+    resp = _post(http, _event(_fresh("forged_org"), org_id="org_someone_else"),
                  signature="whatever")
     assert resp.status_code == 400
     assert _balance(owner) == before
@@ -170,7 +188,7 @@ def test_an_event_with_no_metadata_is_refused(api, owner):
     """A session we did not create. Nothing to credit, nobody to credit."""
     http, _ = api
     before = _balance(owner)
-    resp = _post(http, _event("evt_nometa", pack_id=""))
+    resp = _post(http, _event(_fresh("nometa"), pack_id=""))
     assert resp.status_code == 400
     assert _balance(owner) == before
 
@@ -180,7 +198,7 @@ def test_an_event_we_do_not_care_about_is_acknowledged(api):
     """Stripe sends far more than one event type. 500ing on the rest teaches it
     to retry them forever."""
     http, _ = api
-    resp = _post(http, _event("evt_other", type="payment_intent.created"))
+    resp = _post(http, _event(_fresh("other"), type="payment_intent.created"))
     assert resp.status_code == 200
     assert resp.json()["ignored"] == "payment_intent.created"
 

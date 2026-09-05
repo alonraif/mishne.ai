@@ -82,6 +82,15 @@ def seed() -> None:
              "edit_rate_num": a.rate.num, "edit_rate_den": a.rate.den,
              "drop_frame": a.drop_frame, "start_tc_frames": a.start_tc_frames,
              "duration_frames": a.duration_frames,
+             # A seeded reel is playable, exactly as the fixture says it is
+             # (`mock._transcript_asset`). Without these the columns fall to
+             # their defaults — 'none' and '' — and the seeded database serves a
+             # transcript whose player has nothing to play, while the fixtures
+             # serve one that does. That is the drift `test_api_parity` exists
+             # to catch, and it caught it. An AAF has no picture, so its preview
+             # is sound only (ADR-0019, ADR-0020).
+             "proxy_status": "ready",
+             "proxy_kind": "audio" if a.kind == "aaf" else "video",
              "probe": {"codec": a.codec, "audio_tracks": a.audio_tracks},
              "created_at": a.uploaded_at}
             for a in mock.ASSETS

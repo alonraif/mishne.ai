@@ -301,11 +301,25 @@ def purge_org(conn, org_id: str) -> None:
       from cannot vanish while the job still refers to it, or the job's
       provenance is a lie. So jobs go before assets.
 
-    `credit_ledger` and `audit_log` are deliberately NOT deleted: both are
-    append-only at the database, and a trigger refuses. What "delete this
-    tenant" means for a financial record and a security log is a real question
-    with a real answer — anonymise, or retain under the policy the customer
-    agreed to — and it is C4's to answer, not a teardown's to assume.
+    `audit_log` is deliberately NOT deleted: it is append-only at the database
+    and a trigger refuses. What "delete this tenant" means for a security log is
+    a real question with a real answer — anonymise, or retain under the policy
+    the customer agreed to — and it is C4's to answer, not a teardown's to
+    assume.
+
+    `credit_ledger` IS deleted here, and the distinction is worth stating
+    because the two tables look alike. Both are append-only for the same reason
+    and the same trigger refuses both. But this function only ever runs against
+    an org the suite created, and a ledger that outlives its org is not a
+    financial record — it is a row nobody can reach, still counting toward
+    `sum(delta)` for an org id the next test is about to reuse. Leaving them
+    made the seeded balance and the ledger disagree by however many times the
+    suite had been run, so the one invariant the ledger exists to provide —
+    that the balance is a projection of it (ADR-0006) — could not be asserted
+    at all. C4's question is about a real customer's records; this is not that.
+
+    The trigger is disabled for the statement and enabled again immediately,
+    the same way `admin_api` clears `platform_actions`.
 
     C4's retention and deletion work needs this same order against real
     customer data; it is written down here because a single `DELETE FROM
@@ -322,6 +336,10 @@ def purge_org(conn, org_id: str) -> None:
         "DELETE FROM orgs WHERE id = :o",
     ):
         conn.execute(sa.text(statement), {"o": org_id})
+
+    conn.execute(sa.text("ALTER TABLE credit_ledger DISABLE TRIGGER credit_ledger_append_only"))
+    conn.execute(sa.text("DELETE FROM credit_ledger WHERE org_id = :o"), {"o": org_id})
+    conn.execute(sa.text("ALTER TABLE credit_ledger ENABLE TRIGGER credit_ledger_append_only"))
 
 
 @pytest.fixture
@@ -342,12 +360,29 @@ def tenant(owner):
         )
         # A balance to hold against. The projection is written alongside the
         # ledger in normal operation; here it is the starting point.
+        #
+        # The matching ledger row is not decoration. `available` is a
+        # *projection* of the ledger (ADR-0006) — the balance is never an
+        # independent number — so a fixture that writes 500 into `org_balances`
+        # and nothing into `credit_ledger` creates a tenant whose ledger does
+        # not reconstruct its balance, and any test asserting that invariant
+        # fails against the fixture rather than against the code. That is
+        # exactly what `test_a_grant_moves_the_balance_and_the_ledger_together`
+        # found the first time it was ever able to run.
         conn.execute(
             sa.text(
                 "INSERT INTO org_balances (org_id, available, held) "
                 "VALUES (:o, 500, 0)"
             ),
             {"o": ORG},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO credit_ledger "
+                "(id, org_id, kind, delta, balance_after, description) "
+                "VALUES (:i, :o, 'grant', 500, 500, 'opening balance for the tests')"
+            ),
+            {"i": "led_test_opening", "o": ORG},
         )
         conn.execute(
             sa.text(
