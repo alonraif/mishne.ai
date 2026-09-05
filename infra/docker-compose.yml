@@ -32,11 +32,18 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      # 9000 is the S3 API the app and the browser talk to; 9001 is a web
-      # console for looking at what actually landed, which is the fastest way
-      # to tell a broken upload from a broken database row.
+      # 9000 is the S3 API the app and the browser talk to; the console is a web
+      # UI for looking at what actually landed, which is the fastest way to tell
+      # a broken upload from a broken database row.
+      #
+      # The console is published on 9101 rather than 9001 because Avid Media
+      # Composer's EditorTranscode service runs an HSQLDB server on 9001, as
+      # root, from launch. A machine with Media Composer installed — which is
+      # every machine that can answer A2 — cannot start this container on the
+      # old port, and the error names only the port, not what holds it. The
+      # container still listens on 9001 internally; only the host mapping moved.
       - "9000:9000"
-      - "9001:9001"
+      - "9101:9001"
     volumes:
       - miniodata:/data
     healthcheck:

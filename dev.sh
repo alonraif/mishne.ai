@@ -357,7 +357,7 @@ case "${1:-all}" in
     echo
     echo "   api    http://localhost:$API_PORT/docs"
     echo "   web    http://localhost:$WEB_PORT"
-    echo "   minio  http://localhost:9001  ${D}(minioadmin / minioadmin)${X}"
+    echo "   minio  http://localhost:9101  ${D}(minioadmin / minioadmin)${X}"
     echo
     wait
     ;;
