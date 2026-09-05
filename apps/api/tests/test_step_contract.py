@@ -130,3 +130,98 @@ def test_every_step_maps_to_a_job_status_the_schema_allows():
 def test_every_step_has_a_label_a_person_can_read(spec):
     assert spec.label and spec.label[0].isupper()
     assert spec.name.islower()
+
+
+# ── the two drivers, and the fields one of them used to drop ────────────────
+
+
+def test_only_one_place_constructs_an_asset_ingest():
+    """`AssetIngest(...)` is called in exactly one place, and it is the shared one.
+
+    There are two drivers over the same stages — `project.ingest` runs them
+    straight through for `run.py`, and `orchestration/graph.py` runs them one at
+    a time so a worker can record progress and resume. CLAUDE.md's rule is that
+    where the two could drift they share the implementation instead, and this
+    constructor is why the rule is written down.
+
+    They drifted anyway. `graph.py` built its own `AssetIngest` and left out
+    `asr_provider`, `width` and all three `preview_*` fields. Every field it
+    omitted has a default — deliberately, so an old cache still loads — so
+    nothing raised, nothing logged, and the ingest cache simply recorded
+    `previewName: ""`. The preview had been rendered and uploaded; only the
+    record of it was lost, and the editor showed no player for any sequence
+    that went through the orchestrator, which is every sequence except the ones
+    `run.py` cuts by hand.
+
+    A test that checked `preview_name` on one driver's output would not have
+    caught this — `project.ingest` was always right. What was wrong is that
+    there were two constructors, so that is what is asserted.
+    """
+    import re
+
+    src = Path(__file__).parent.parent / "src" / "mishne"
+    # Both the bare `AssetIngest(` and the qualified `project.AssetIngest(`.
+    # Excluding the qualified form is the obvious way to write this and it is
+    # wrong: `project.AssetIngest(...)` is precisely the shape the drift took,
+    # so a pattern that skips it passes against the very code it exists to
+    # reject. `AssetIngest` in a comment or an annotation is not a call and the
+    # trailing `(` is what separates them.
+    calls = re.compile(r"\bAssetIngest\s*\(")
+    callers = {
+        path.relative_to(src).as_posix()
+        for path in src.rglob("*.py")
+        if calls.search(path.read_text())
+    }
+    assert callers == {"pipeline/project.py"}, (
+        f"AssetIngest is constructed in {sorted(callers)}. Build it with "
+        "`project.build_ingest` instead — a second constructor silently drops "
+        "whichever defaulted fields it forgets."
+    )
+
+
+def test_the_shared_constructor_carries_the_preview_through():
+    """The fields the drift dropped, asserted end to end on the shared path.
+
+    `build_ingest` takes the preview from `Prepared` rather than from its own
+    arguments, so a caller cannot forget to pass it — this is the test that the
+    wiring inside it is right, and it fails if the preview is ever detached
+    from stage 0's result again.
+    """
+    from mishne.pipeline import project
+    from mishne.pipeline.steps.proxy import Proxy
+
+    class _Rate:
+        num, den, fps, drop_frame = 25, 1, 25.0, False
+
+    class _Info:
+        rate = _Rate()
+        start_tc_frames, duration_frames = 0, 250
+        width, height = 1920, 1080
+
+    class _Asr:
+        language, provider, model = "en", "xai", "grok-stt"
+
+    class _Attribution:
+        speakers: list = []
+
+    class _Track:
+        path = Path("/tmp/a0.wav")
+
+    prepared = project.Prepared(
+        info=_Info(),
+        source=Path("/tmp/source.aaf"),
+        preview=Proxy(path=Path("/tmp/proxy.m4a"), kind="audio", bytes=4242),
+    )
+
+    got = project.build_ingest(
+        asset_id="a_1", path=Path("/tmp/source.aaf"), prepared=prepared,
+        asr=_Asr(), attribution=_Attribution(), speech=object(),
+        tracks=[_Track()], beats=[], warnings=[],
+    )
+
+    assert got.preview_name == "proxy.m4a"
+    assert got.preview_kind == "audio"
+    assert got.preview_bytes == 4242
+    # The other two the orchestrator was dropping.
+    assert got.asr_provider == "xai"
+    assert got.width == 1920

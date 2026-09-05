@@ -407,6 +407,52 @@ def finish_ingest(adir: Path, result: AssetIngest, ws=None) -> AssetIngest:
     return result
 
 
+def build_ingest(
+    *,
+    asset_id: str,
+    path: Path,
+    prepared: Prepared,
+    asr,
+    attribution,
+    speech,
+    tracks,
+    beats,
+    warnings,
+) -> AssetIngest:
+    """The one place an `AssetIngest` is constructed from a finished run.
+
+    Shared because there are two drivers and they must not have separate ideas
+    of what an ingest contains. `ingest()` below runs the stages straight
+    through; `orchestration/graph.py` runs the same functions one at a time so
+    it can record progress and resume between them. CLAUDE.md's rule — where
+    the two could drift, they share the implementation — exists because of
+    exactly this constructor.
+
+    They had already drifted. `graph.py` assembled its own `AssetIngest` and
+    omitted five fields: `asr_provider`, `width`, and all three `preview_*`.
+    Every one of them is defaulted, so the omission raised nothing, wrote a
+    cache that said `previewName: ""`, and the editor showed no player for any
+    sequence that went through the orchestrator — which is every sequence the
+    product runs, `run.py` being the only caller of the other path. The preview
+    itself had been built and uploaded; only the sentence saying so was lost.
+    """
+    info = prepared.info
+    return AssetIngest(
+        asset_id=asset_id, path=path, rate=info.rate,
+        start_tc_frames=info.start_tc_frames,
+        duration_frames=info.duration_frames, language=asr.language,
+        beats=beats, speakers=attribution.speakers, attribution=attribution,
+        speech=speech, audio_path=tracks[0].path, aaf=prepared.aaf,
+        audio_tracks=len(tracks), provenance=prepared.provenance,
+        seams=prepared.seams, warnings=warnings,
+        asr_provider=asr.provider, asr_model=asr.model,
+        width=info.width, height=info.height,
+        preview_name=prepared.preview.name if prepared.preview else "",
+        preview_kind=prepared.preview.kind if prepared.preview else "",
+        preview_bytes=prepared.preview.bytes if prepared.preview else 0,
+    )
+
+
 def ingest(path: Path, work_dir, language: str | None = None,
            provider: str = DEFAULT_PROVIDER, replay: Path | None = None,
            model: str = "base", model_path: str | None = None,
@@ -456,20 +502,10 @@ def ingest(path: Path, work_dir, language: str | None = None,
     warnings = list(prepared.notes) + warnings
     say(f"{len(beats)} beats")
 
-    info = prepared.info
-    result = AssetIngest(
-        asset_id=aid, path=path, rate=info.rate,
-        start_tc_frames=info.start_tc_frames,
-        duration_frames=info.duration_frames, language=asr.language,
-        beats=beats, speakers=attribution.speakers, attribution=attribution,
-        speech=speech, audio_path=tracks[0].path, aaf=prepared.aaf,
-        audio_tracks=len(tracks), provenance=prepared.provenance,
-        seams=prepared.seams, warnings=warnings,
-        asr_provider=asr.provider, asr_model=asr.model,
-        width=info.width, height=info.height,
-        preview_name=prepared.preview.name if prepared.preview else "",
-        preview_kind=prepared.preview.kind if prepared.preview else "",
-        preview_bytes=prepared.preview.bytes if prepared.preview else 0,
+    result = build_ingest(
+        asset_id=aid, path=path, prepared=prepared, asr=asr,
+        attribution=attribution, speech=speech, tracks=tracks,
+        beats=beats, warnings=warnings,
     )
     return finish_ingest(adir, result, ws)
 

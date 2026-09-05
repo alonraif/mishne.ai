@@ -344,23 +344,20 @@ def step_structure(ctx: StepContext, state: RunState) -> str:
     # What the AAF said about itself belongs with the warnings the job page
     # already shows — an unresolved sequence must not read as an ordinary run.
     run.warnings = list(run.prepared.notes) + run.warnings
-    info = run.prepared.info
-    run.ingest = project.AssetIngest(
+    # Built by `project.build_ingest`, not assembled here. The two drivers ran
+    # the same stages and then disagreed about what to do with the results:
+    # this call site omitted `asr_provider`, `width` and all three `preview_*`,
+    # every one of them defaulted, so nothing raised and the cache simply said
+    # there was no preview. See that function.
+    run.ingest = project.build_ingest(
         asset_id=run.source.pipeline_id,
         path=run.source.path,
-        rate=info.rate,
-        start_tc_frames=info.start_tc_frames,
-        duration_frames=info.duration_frames,
-        language=run.asr.language,
-        beats=run.beats,
-        speakers=run.attribution.speakers,
+        prepared=run.prepared,
+        asr=run.asr,
         attribution=run.attribution,
         speech=run.speech,
-        audio_path=run.tracks[0].path,
-        aaf=run.prepared.aaf,
-        audio_tracks=len(run.tracks),
-        provenance=run.prepared.provenance,
-        seams=run.prepared.seams,
+        tracks=run.tracks,
+        beats=run.beats,
         warnings=run.warnings,
     )
     # With the workspace, not without it. `finish_ingest` writes the ingest

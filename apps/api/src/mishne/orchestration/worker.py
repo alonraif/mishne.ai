@@ -508,9 +508,17 @@ def _record_preview(s, org_id: str, ingest, asset_id: str, project_id: str) -> N
     than an unconditional write, which would take a finished preview and
     overwrite it with the empty string on every subsequent job over that asset.
 
-    The object itself was mirrored to the derived bucket by
-    `S3Workspace.publish_asset`, which is why this only has to name it: the file
-    is in `CACHEABLE` and travels with the rest of the asset's derived files.
+    **The key names the content id, not the row id**, because that is where
+    `S3Workspace.publish_asset` put the object: the derived cache is
+    content-addressed so that the same rushes uploaded to two projects are
+    ingested once (ADR-0008), and `ingest.asset_id` is the pipeline's content
+    digest rather than `assets.id`.
+
+    Composing the key from the row id instead produces a row that says `ready`,
+    a `proxy_s3_key` nothing has ever been written to, and a presigned URL that
+    404s — with the real preview sitting in the same bucket under the other
+    name. The player reports that as a decode error, so the symptom is an empty
+    player rather than anything that mentions a missing object.
 
     Failing softly for the reason `_record_transcript` does — this runs on the
     completed path, where the artifacts are already published and validated, and
@@ -521,7 +529,8 @@ def _record_preview(s, org_id: str, ingest, asset_id: str, project_id: str) -> N
     try:
         uploads.record_proxy(
             s, org_id, asset_id,
-            s3_key=derived_key(org_id, project_id, asset_id, ingest.preview_name),
+            s3_key=derived_key(org_id, project_id, ingest.asset_id,
+                               ingest.preview_name),
             kind=ingest.preview_kind,
             size_bytes=ingest.preview_bytes,
         )

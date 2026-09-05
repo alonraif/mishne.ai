@@ -255,11 +255,19 @@ def test_the_orchestrator_publishes_the_ingest_cache_it_just_paid_for(
     run = graph.AssetRun(source=request.assets[0],
                          adir=ws.asset_dir("a_deadbeef"))
     run.tracks = [type("T", (), {"path": run.adir / "audio.wav"})()]
-    run.asr = type("A", (), {"language": "en"})()
+    # The stubs carry what `project.build_ingest` reads, which is more than the
+    # orchestrator used to: `asr.provider`/`asr.model`, the probe's frame size,
+    # and stage 0's preview. That is the point of the shared constructor — a
+    # field it needs is a field both drivers must supply — so a stub missing one
+    # is this test telling the truth about the contract.
+    run.asr = type("A", (), {"language": "en", "provider": "xai",
+                             "model": "grok-stt"})()
     run.prepared = type("P", (), {
         "info": type("I", (), {"rate": Rate(25, 1, False), "start_tc_frames": 0,
-                               "duration_frames": 250})(),
+                               "duration_frames": 250, "width": 0,
+                               "height": 0})(),
         "aaf": None, "provenance": "rushes", "seams": [], "notes": [],
+        "preview": None,
     })()
     state.runs["ast_1"] = run
     state.current = "ast_1"
