@@ -351,3 +351,43 @@ def test_a_gap_and_an_unresolved_clip_get_different_silence_files(tmp_path):
     assert gap != clip
     assert len(_samples(gap)) == aaf_ingest.SAMPLE_RATE
     assert len(_samples(clip)) == 2 * aaf_ingest.SAMPLE_RATE
+
+
+# ── the relink key ──────────────────────────────────────────────────────────
+
+
+def test_every_clip_inherits_the_master_mob_id_avid_relinks_by(tmp_path):
+    """The MobID on an ingested clip is the sequence's own MasterMob id.
+
+    This is the whole of A2. Avid matches a clip in an AAF to media in a bin by
+    MasterMob id, so an output carrying anything else opens correctly — right
+    duration, right timecodes, right clip names — and relinks to nothing. There
+    is no error to read: the sequence is simply offline.
+
+    It was reading `media_reference.metadata["AAF"]["MobID"]` first. That is a
+    different id: where it is present at all it is the SourceMob behind the
+    master, and it matches no MasterMob in the file. A Media Composer export
+    does not populate it, so those sequences fell through to a synthesised id
+    instead; a 775-clip multitrack sync does populate it, so those inherited the
+    wrong one. Both relinked to nothing, by different routes.
+
+    Asserted against the MasterMobs actually in the file rather than against a
+    recorded constant, so it cannot pass by agreeing with itself.
+    """
+    aaf = _linked_aaf(tmp_path / "proj", (440, 880))
+
+    with aaf2.open(str(aaf), "r") as f:
+        masters = {
+            str(m.mob_id) for m in f.content.mobs
+            if type(m).__name__ == "MasterMob"
+        }
+
+    source = aaf_ingest.parse(aaf)
+
+    assert source.clips, "the sequence parsed to no clips at all"
+    for clip in source.clips:
+        assert clip.mob_id, f"clip {clip.name!r} carries no mob id to relink by"
+        assert clip.mob_id in masters, (
+            f"clip {clip.name!r} carries {clip.mob_id!r}, which is not a "
+            "MasterMob in the source. Avid will not relink it."
+        )

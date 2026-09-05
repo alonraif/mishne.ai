@@ -265,7 +265,8 @@ def aaf_source(scratch: Path, companion: str) -> aaf_ingest.AAFSource:
     staged = scratch / companion
     staged.write_bytes(b"not really an mxf")
     clip = aaf_ingest.SourceClip(
-        index=0, name="A001 shot 3", mob_id=AVID_MOB_ID, media_path=staged,
+        index=0, name="A001 shot 3", mob_id=AVID_MOB_ID,
+        source_mob_id=AVID_MOB_ID, media_path=staged,
         embedded_mob_id=None, src_in=0, src_out=25 * 600, src_rate=25.0,
         origin=0, tl_in=0, tl_out=25 * 600,
         target_url=f"file:///Volumes/SAN/Rushes/{quote(AAF_COMPANION)}")

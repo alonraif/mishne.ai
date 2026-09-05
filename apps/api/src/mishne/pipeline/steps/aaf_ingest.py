@@ -86,7 +86,19 @@ class SourceClip:
 
     index: int
     name: str
+    #: The **MasterMob** id. This is the relink key: what Avid matches a clip
+    #: in an AAF to media in a bin by, and what `assemble` writes into the
+    #: output so a cut opens against the customer's own rushes (Spike A).
     mob_id: str
+    #: The **SourceMob** id behind that master, which is a different id and is
+    #: not interchangeable with it. It is the key `_mob_origins` is built on,
+    #: because `StartTime` is a property of the source mob rather than the
+    #: master. Kept as its own field because the two were one field for a
+    #: while: whichever id was stored, one of the two jobs silently got the
+    #: wrong one — either the output relinked to nothing, or every clip lost
+    #: its timecode origin and the flattened mix came out short by the total of
+    #: the consolidation handles.
+    source_mob_id: str
     media_path: Path | None
     embedded_mob_id: str | None
     # Source position in the SOURCE's own units — samples for production audio,
@@ -329,11 +341,45 @@ def parse(path: Path, search_dirs: list[Path] | None = None) -> AAFSource:
                 continue
 
             mr = child.media_reference
-            mob_id = str(mr.metadata.get("AAF", {}).get("MobID", "")) or \
-                     str(child.metadata.get("AAF", {}).get("SourceID", ""))
+            # The relink key, and the order matters as much as the lookup.
+            #
+            # Avid matches a clip to media in a bin by the **MasterMob** id
+            # (Spike A). Getting this wrong does not fail: it produces an AAF
+            # that opens, shows the right timecodes and clip names, and cannot
+            # find a single frame of media — which is exactly what a real Media
+            # Composer export did.
+            #
+            # `clip.metadata["AAF"]["MobID"]` is the MasterMob. Measured over
+            # two real sequences — a Media Composer export and a 775-clip
+            # multitrack sync — it is the MasterMob for every clip in both.
+            #
+            # `media_reference.metadata["AAF"]["MobID"]` is *not* the same id.
+            # Where it is populated it is the SourceMob behind the master, and
+            # it matched no MasterMob in either file. It was being read first,
+            # so a sequence that had one relinked to nothing, and a sequence
+            # that did not — the export above — fell through to a synthesised
+            # id and also relinked to nothing. It is kept only as a fallback for
+            # a sequence that carries no clip-level id at all.
+            #
+            # `SourceID` is not a key the OTIO adapter writes; it stays last and
+            # costs nothing.
+            aaf_meta = child.metadata.get("AAF", {})
+            master_id = str(aaf_meta.get("MobID", ""))
+            source_id = str(mr.metadata.get("AAF", {}).get("MobID", ""))
+            # The relink key. Falls back to the source mob only when there is no
+            # master to name, which is better than naming nothing.
+            mob_id = master_id or source_id or str(aaf_meta.get("SourceID", ""))
             url = getattr(mr, "target_url", None)
             media = _url_to_path(url, dirs)
-            emb = mob_id if mob_id in embedded_ids else None
+            # Embedded essence is stored against the SOURCE mob, like the
+            # origins above and unlike the relink key. Matching the master here
+            # finds nothing in a self-contained AAF, and every clip in it then
+            # looks unresolved — the sequence flattens to silence and the
+            # transcript comes back empty, with no error anywhere.
+            emb = next(
+                (i for i in (source_id, mob_id) if i and i in embedded_ids),
+                None,
+            )
 
             if media is None and emb is None:
                 missing.append(f"{child.name}: {url or 'no locator'}")
@@ -350,9 +396,16 @@ def parse(path: Path, search_dirs: list[Path] | None = None) -> AAFSource:
 
             clips.append(SourceClip(
                 index=idx, name=child.name or f"clip_{idx}", mob_id=mob_id,
+                source_mob_id=source_id,
                 media_path=media, embedded_mob_id=emb,
                 src_in=src_start, src_out=src_start + src_len,
-                src_rate=src_rate, origin=origins.get(mob_id, 0),
+                # Keyed on the SOURCE mob: `StartTime` belongs to the source
+                # mob, not the master, so looking this up by the relink key
+                # finds nothing and every clip silently gets an origin of 0 —
+                # which reads the essence from the wrong offset and shortens the
+                # flattened mix by the consolidation handle on every clip.
+                src_rate=src_rate,
+                origin=origins.get(source_id, origins.get(mob_id, 0)),
                 tl_in=tl_pos, tl_out=tl_pos + dur, target_url=url,
                 track_index=track_index, track_name=track.name or None,
             ))
