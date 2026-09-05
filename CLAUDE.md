@@ -88,8 +88,10 @@ that expires is evidence of a dead worker.
 own append-only action log with a mandatory reason. It is how credits are
 granted by hand until the Buy buttons are wired.
 
-**Nothing is deployed.** No Terraform, no AWS account, no CI, no environments.
-Moving to AWS + S3 is the next infrastructure step — see
+**Nothing is deployed.** No Terraform, no AWS account, no environments — but
+there is CI: `.github/workflows/ci.yml` runs the suite, the typecheck, the build
+and a state-machine drift check on every push. Moving to AWS + S3 is the next
+infrastructure step — see
 [docs/AWS-MIGRATION.md](docs/AWS-MIGRATION.md), which runs after the QA pass in
 [docs/HANDOFF-CLAUDE-CODE.md](docs/HANDOFF-CLAUDE-CODE.md).
 
@@ -214,8 +216,31 @@ cd apps/api && ./setup.sh
 .venv/bin/python -m pytest -q
 ```
 
-The suite runs against the local Postgres in `.env`, and the API-parity tests
-re-seed it — `seed.reset()` is `TRUNCATE` over every table. They now skip when
-the database holds an organisation the suite did not create, so real work is
-safe, but that also means those tests are skipped rather than run on a machine
-you have been using the product with. A scratch `DATABASE_URL` gets them back.
+**`pytest -q` on a machine you have used the product with skips about fifty
+tests, and they are the ones most worth running** — the whole back-office suite,
+the API-parity checks, the reference run and the linked-AAF sample. Every one of
+those guards is correct: `seed.reset()` is `TRUNCATE` over every table, and
+clearing the platform tables would delete your back-office login. But the effect
+is that "all green" can mean "the new code never ran". **Read the skip count,
+not the colour.**
+
+**`./test-all.sh` is how to actually run everything.** It creates a scratch
+database, migrates it, creates the app login role, points the sample-gated tests
+at `samples/`, runs the suite and drops the database afterwards. Nothing it does
+can reach the database you work in, so the guards have nothing to protect and
+all 681 tests execute.
+
+```bash
+cd apps/api && ./test-all.sh          # 681 tests, no skips
+./test-all.sh -k billing              # arguments pass through to pytest
+```
+
+The first time those guarded tests ran they found two real defects — the seeder
+not writing the proxy columns `mock.py` reports, and a test tenant whose balance
+had no ledger row behind it. Tests that skip everywhere are tests that do not
+exist.
+
+**CI runs on every push** (`.github/workflows/ci.yml`): pytest against a
+Postgres service container where nothing skips, `npm run typecheck` and
+`npm run build`, and a check that `infra/statemachine.json` has not drifted from
+the step registry.

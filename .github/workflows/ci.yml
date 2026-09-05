@@ -1,0 +1,173 @@
+# What runs on every push, so that "green" stops meaning "green on one Mac".
+#
+# Three jobs, deliberately separate: the Python suite needs Postgres and ffmpeg
+# and takes minutes; the TypeScript checks need neither and fail in seconds; the
+# state-machine drift check needs nothing at all. A failure should say which of
+# the three broke without anyone reading a log.
+#
+# What this does NOT do: deploy anything, hold any AWS credential, or run
+# against a real bucket. There is no deployment yet (docs/AWS-MIGRATION.md), and
+# when there is, it gets an OIDC role and no long-lived keys — phase 9.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A second push to the same branch cancels the first: the answer for the older
+  # commit is not interesting once it has been superseded.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        # pgvector, not plain postgres:16 — migration 0001 creates the
+        # extension and will not apply without it.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mishne
+          POSTGRES_PASSWORD: mishne
+          POSTGRES_DB: mishne
+        ports:
+          - 5432:5432
+        # Without this the first step races the database and fails on connect.
+        options: >-
+          --health-cmd "pg_isready -U mishne"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # OpenTimelineIO ships wheels for 3.10-3.13 and Python 3.14 breaks it
+          # (setup.sh picks an interpreter for the same reason). Pinned rather
+          # than 3.x so a new release cannot break CI on a day nobody changed
+          # anything.
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ffmpeg
+        # Every stage that touches audio shells out to it, and the runner image
+        # does not have it.
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Install the API and its dependencies
+        working-directory: apps/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          # The telemetry SDK. `telemetry.py` degrades to no-op spans without
+          # it, deliberately — but that means its test skips, and a test that
+          # skips everywhere is a test that does not exist. CI is the right
+          # place to pay the install and actually run it.
+          pip install -e ".[telemetry]"
+          # Deliberately not in pyproject.toml - large, and the API image does
+          # not need them. faster-whisper is omitted on purpose: transcription
+          # is a vendor call (ADR-0018) and no test in the suite runs a local
+          # model, so pulling ~2 GB of torch would double the CI time to test
+          # nothing.
+          pip install \
+            opentimelineio otio-aaf-adapter otio-cmx3600-adapter \
+            otio-fcpx-xml-adapter ortools numpy
+
+      - name: Migrate and create the application role
+        working-directory: apps/api
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: postgresql+psycopg://mishne:mishne@localhost:5432/mishne
+        run: |
+          alembic upgrade head
+          # The role RLS actually applies to. Connecting as the superuser would
+          # leave every policy in the schema present, correct and doing nothing
+          # - which is the failure mode test_rls_isolation exists to catch, and
+          # it cannot catch it as a superuser.
+          python -m mishne.db.bootstrap
+
+      - name: pytest
+        working-directory: apps/api
+        env:
+          ENVIRONMENT: local
+          DATABASE_URL: postgresql+psycopg://mishne:mishne@localhost:5432/mishne
+          APP_DATABASE_URL: postgresql+psycopg://mishne_local:mishne_local@localhost:5432/mishne
+          USE_MOCKS: "false"
+        # A CI database is empty, so the guards that skip on a developer's
+        # machine - a tenant or a platform admin the suite did not create - have
+        # nothing to protect and everything runs. That is the whole point of
+        # running here: apps/api/test-all.sh reproduces it locally.
+        #
+        # The sample-gated tests (MISHNE_SAMPLE_*) still skip: samples/ is 443 MB
+        # and deliberately uncommitted. They are the reference run and the linked
+        # AAF, and they are the reason test-all.sh exists on a machine that has
+        # the media.
+        run: pytest -q -rs
+
+  web:
+    name: typecheck and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      # Root install: apps/admin is a workspace and nothing else pulls its
+      # dependencies.
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      # Safe here in a way it is not on a developer's machine, where it shares
+      # apps/web/.next with a running dev server and prunes chunks that server
+      # still has in memory (see CLAUDE.md).
+      - run: npm run build
+
+  statemachine:
+    name: state machine is not stale
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install the API
+        working-directory: apps/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # infra/statemachine.json is generated from the step registry, and a
+      # checked-in file that has drifted is a deploy that lies about which steps
+      # run. test_statemachine.py already asserts this; this job is what makes
+      # the pipeline fail on it, per AWS-MIGRATION phase 9.
+      - name: Regenerate and diff
+        working-directory: apps/api
+        run: |
+          python -m mishne.orchestration.statemachine > /tmp/statemachine.json
+          if ! diff -u ../../infra/statemachine.json /tmp/statemachine.json; then
+            echo
+            echo "infra/statemachine.json is stale. Regenerate it with:"
+            echo "  cd apps/api && .venv/bin/python -m mishne.orchestration.statemachine > ../../infra/statemachine.json"
+            exit 1
+          fi
