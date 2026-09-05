@@ -17,16 +17,23 @@ neither needs any infrastructure and both are cheap.
 
 ### Phase A — retire the two risks that can end the project
 
-| | Workstream | Why it is first |
+| | Workstream | State |
 |---|---|---|
-| [A1](A1-selection-corpus.md) | Selection corpus and the quality number | Answers "is this worth paying for", and unblocks three open questions at once. No infra needed. |
-| [A2](A2-nle-acceptance.md) | NLE acceptance, Avid above all | The highest technical risk in the project, still unmeasured. One day of work with the right machine. |
+| [A1](A1-selection-corpus.md) | Selection corpus and the quality number | **Open, and now the only risk that can end the product.** Answers "is this worth paying for", and unblocks three open questions at once. No infra needed. |
+| [A2](A2-nle-acceptance.md) | NLE acceptance, Avid above all | **Passed.** A sequence exported from Media Composer, cut by the product and imported back, opens and relinks. |
 
-**Next up: A2.** A ready-to-paste session prompt is in
-[A2-SESSION-PROMPT.md](A2-SESSION-PROMPT.md).
+**A2 is done.** Three bugs stood in the way and every one was silent: the MobID
+was read from the media reference rather than the clip, so nothing relinked; a
+V1 track was named on a sound-only source, so Avid refused the whole sequence;
+and removing that track then broke the EDL and FCPXML writers, which cannot
+express a cut without one. Two of the three only appeared when the browser's own
+path was driven end to end — `apps/api/e2e_check.py` is that harness, and the
+pipeline alone did not show them.
 
-**Do not build the platform until A2 passes.** Every deliverable is an AAF. If
-Media Composer will not take it, the platform has nothing to deliver.
+**A1 is what is left of Phase A**, and it is a data-gathering problem rather
+than an engineering one: it needs three to five pieces of real material paired
+with the editor's own finished cut list. Nothing else in the roadmap unblocks
+more.
 
 ### Phase B — make it a service instead of a script
 
@@ -75,15 +82,16 @@ already written in [../architecture/03-platform-and-data.md](../architecture/03-
 They are not where the project succeeds or fails.
 
 Phase A is. A perfect platform delivering mediocre cuts is a dead product, and
-a rough script delivering cuts an editor keeps is a business. If time is short,
-A1 and A2 are the ones that matter.
+a rough script delivering cuts an editor keeps is a business. A2 is answered, so
+**A1 is the one that matters** — and it is the one item here that cannot be
+finished by writing code, because it needs real material from a real editor.
 
 ## Status, honestly
 
 | Area | State |
 |---|---|
 | Interchange (AAF/FCPXML/EDL/OTIO) | **Works.** Automated round-trip, 4 formats × 4 rates. Resolve confirmed by hand. |
-| Avid Media Composer | **Untested.** The open risk. |
+| Avid Media Composer | **Passed.** Opens and relinks against the project it was exported from. |
 | Transcription incl. Hebrew, RTL | **Works** on real material. |
 | Beat structure, provenance-aware | **Works.** Verified on rushes and on an already-cut sequence. |
 | Span proposal + silence gate | **Works.** Thresholds unvalidated. |
@@ -100,4 +108,4 @@ A1 and A2 are the ones that matter.
 | The ten screens on real data | **Done.** Upload, progress, browser cut, speaker edits, artifact download. C2. |
 | Cost per job, traces, alerting | **Schema and spans done**, C3's log retention still open. |
 | Platform back-office | **Built.** Separate process, BYPASSRLS role, append-only action log. |
-| Deployment | **None.** No Terraform, no AWS account, no CI. See [../AWS-MIGRATION.md](../AWS-MIGRATION.md). |
+| Deployment | **None.** No Terraform, no AWS account. CI runs the suite, typecheck, build and a state-machine drift check on every push. See [../AWS-MIGRATION.md](../AWS-MIGRATION.md). |

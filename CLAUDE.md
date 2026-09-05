@@ -33,7 +33,7 @@ infra/          docker-compose for local Postgres + MinIO; Terraform later
 
 ## Current state
 
-*Accurate as of 31 Aug 2026. If this section and the code disagree, the code
+*Accurate as of 5 Sep 2026. If this section and the code disagree, the code
 wins — and fix this section.*
 
 **The whole thing runs on one machine with one command: `./dev.sh`.** Postgres
@@ -95,17 +95,26 @@ infrastructure step — see
 [docs/AWS-MIGRATION.md](docs/AWS-MIGRATION.md), which runs after the QA pass in
 [docs/HANDOFF-CLAUDE-CODE.md](docs/HANDOFF-CLAUDE-CODE.md).
 
-**Still open:** the browser-to-AAF path has never been clicked through end to
-end against MinIO — including the folder upload, which has only been exercised
-by the CLI; the player's two-way sync has been proved server-side and by
-typecheck but never clicked through in a browser either (follow-scroll, the
-reel switch on a mixed-rate job, and re-minting an expired URL are the parts a
-test suite does not reach); the Buy buttons are inert; a multi-track cut still
-emits one audio track (ADR-0019); previews are unpriced (ADR-0020); the preview fleet's queue and task
-definition are Terraform that does not exist yet, so today it is still a fourth
-process on one machine (ADR-0021); A1
-(selection corpus) and A2 (Avid acceptance) are the two risks that can still end
-the product.
+**A2 is answered: Media Composer opens what this produces.** A sequence
+exported from Avid, cut by the product and imported back, opens and relinks to
+the media already in the project. Three bugs stood between those two sentences
+and all three were silent — the MobID read from the wrong place so nothing
+relinked, a V1 track named on a sound-only source so Avid refused the sequence
+entirely, and then the two writers that cannot express a cut without a picture
+track. The browser-to-AAF path has now been through end to end against MinIO
+(`apps/api/e2e_check.py` drives it), which is where the second and third were
+found; the pipeline alone did not show them.
+
+**Still open:** the folder upload for a linked AAF has only been exercised by
+the CLI; the player's two-way sync has been proved server-side and by typecheck
+but never clicked through in a browser (follow-scroll, the reel switch on a
+mixed-rate job, and re-minting an expired URL are the parts a test suite does
+not reach); the Buy buttons are inert; a multi-track cut still emits one audio
+track (ADR-0019); previews are unpriced (ADR-0020); the preview fleet's queue
+and task definition are Terraform that does not exist yet, so today it is still
+a fourth process on one machine (ADR-0021). **A1 (selection corpus) is now the
+one risk that can still end the product** — whether an editor keeps the cut is
+still unmeasured, and there is no corpus to measure it against.
 
 ## Rules that matter
 
@@ -228,10 +237,10 @@ not the colour.**
 database, migrates it, creates the app login role, points the sample-gated tests
 at `samples/`, runs the suite and drops the database afterwards. Nothing it does
 can reach the database you work in, so the guards have nothing to protect and
-all 681 tests execute.
+all 687 tests execute.
 
 ```bash
-cd apps/api && ./test-all.sh          # 681 tests, no skips
+cd apps/api && ./test-all.sh          # 687 tests, no skips
 ./test-all.sh -k billing              # arguments pass through to pytest
 ```
 
