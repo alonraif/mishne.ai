@@ -159,12 +159,24 @@ def serve_queue(engine, settings: Settings, *, once: bool, client=None) -> int:
         client = boto3.client("sqs")
     sqs = client
     running, _ = _stopper()
-    last_sweep = 0.0
+    # `None` means "never swept", not "swept at time zero". `time.monotonic()`
+    # counts from an arbitrary origin — machine boot on Linux — so a starting
+    # value of 0.0 turned the gate below into `monotonic() > sweep_seconds`,
+    # which is a statement about how long the *machine* has been up. On a
+    # developer's laptop that is days and the first sweep runs immediately; on a
+    # freshly booted host it is seconds and the first sweep is skipped.
+    #
+    # That matters here more than most places: this fleet runs on spot (ADR-0021)
+    # and is expected to be interrupted and restarted. A worker that never lives
+    # longer than the sweep interval would never sweep at all, and the sweep is
+    # the thing that makes a lost message cost latency rather than a preview
+    # that never arrives.
+    last_sweep: float | None = None
     print(f"draining {settings.preview_queue_url} (ctrl-c to stop)")
 
     while running():
         now = time.monotonic()
-        if now - last_sweep > settings.preview_sweep_seconds:
+        if last_sweep is None or now - last_sweep > settings.preview_sweep_seconds:
             sweep(engine, settings)
             # Rows nothing is going to mention again — a notification that was
             # never sent, or was lost. The queue cannot know about these; the

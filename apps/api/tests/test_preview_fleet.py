@@ -299,3 +299,41 @@ def test_the_sweep_picks_up_what_no_message_ever_mentioned(monkeypatch):
 
 
 pytestmark = requires_schema
+
+
+def test_the_first_sweep_runs_on_a_machine_that_just_booted(monkeypatch):
+    """The sweep must not wait for the machine's uptime to exceed the interval.
+
+    `last_sweep` started at 0.0 and the gate was `monotonic() - last_sweep >
+    sweep_seconds`, which on a fresh boot reads `uptime > 300` — so the first
+    sweep was skipped for five minutes on a new host and ran immediately on a
+    laptop that had been up for hours. The test above passed on a developer's
+    machine and failed on a CI runner for exactly that reason, which is the
+    cheap version of the production failure.
+
+    The expensive version: this fleet runs on spot and is expected to be
+    interrupted (ADR-0021). A worker whose life is shorter than the sweep
+    interval would never sweep at all, and the sweep is what turns a lost
+    message into latency rather than a preview that never arrives.
+
+    `monotonic` is pinned low here — the state a machine is in for the first
+    few minutes after boot, and the one a CI runner is always in.
+    """
+    built: list[str] = []
+    monkeypatch.setattr(
+        proxyrunner, "build_proxy",
+        lambda org, asset, settings=None: built.append(asset) or "ready")
+    monkeypatch.setattr(proxyrunner, "sweep", lambda *a, **k: (0, 0))
+    monkeypatch.setattr(proxyrunner, "_pending",
+                        lambda engine, limit=1: [("org_x", "ast_orphan")])
+    monkeypatch.setattr(proxyrunner.time, "monotonic", lambda: 3.0)
+
+    with moto.mock_aws():
+        sqs = boto3.client("sqs", region_name=REGION)
+        url = sqs.create_queue(QueueName="q")["QueueUrl"]
+        proxyrunner.serve_queue(None, _settings(url), once=True, client=sqs)
+
+    assert built == ["ast_orphan"], (
+        "a worker on a freshly booted machine never swept; a preview whose "
+        "message was lost would never be built"
+    )
