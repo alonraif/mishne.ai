@@ -172,6 +172,35 @@ async def org_audit(
     return service.org_audit(s, org_id, limit)
 
 
+@router.get("/jobs")
+async def list_jobs(
+    org_id: str | None = None,
+    status: str | None = None,
+    failed: bool = False,
+    limit: int = 100,
+    _: Admin = Depends(current_admin),
+    s: Session = Depends(db),
+) -> list[dict]:
+    """Every tenant's jobs, newest first. The support screen.
+
+    `failed=true` is the query an operator runs first and is worth a flag of its
+    own rather than making them remember the status name.
+    """
+    return service.list_jobs(
+        s, org_id=org_id, status=status, failed_only=failed, limit=limit
+    )
+
+
+@router.get("/jobs/{job_id}")
+async def get_job(
+    job_id: str, _: Admin = Depends(current_admin), s: Session = Depends(db)
+) -> dict:
+    try:
+        return service.job_detail(s, job_id)
+    except service.NotFound as exc:
+        raise HTTPException(404, "no such job") from exc
+
+
 @router.get("/actions")
 async def platform_actions(
     org_id: str | None = None,

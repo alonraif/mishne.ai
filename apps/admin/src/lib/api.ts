@@ -162,4 +162,68 @@ export type Overview = {
   credits_outstanding: number;
   credits_held: number;
   jobs_running: number;
+  jobs_failed_24h: number;
+};
+
+/**
+ * A job as the back-office sees it.
+ *
+ * No `name`: a job's name defaults to the first upload it draws on, so it is a
+ * filename by another route, and filenames are customer content
+ * (`admin/service.py`). The org, the project and the timestamp identify a job
+ * for support without describing what the customer shot.
+ */
+export type AdminJob = {
+  id: string;
+  org_id: string;
+  org_name: string | null;
+  project_id: string | null;
+  project_name: string | null;
+  mode: string;
+  status: string;
+  error: Record<string, unknown> | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  approved_cap: number;
+  credits_settled: number;
+  cost_cents: number;
+  media_gaps: Record<string, unknown> | null;
+  seconds: number | null;
+};
+
+export type JobStep = {
+  idx: number;
+  name: string;
+  status: "pending" | "active" | "done" | "failed";
+  attempt: number;
+  detail: string | null;
+  error: Record<string, unknown> | null;
+  asset_id: string | null;
+  seconds: number;
+  from_cache: boolean;
+  model_cost_micros: number;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+export type AdminJobDetail = AdminJob & {
+  model_versions: Record<string, unknown> | null;
+  failed_step: string | null;
+  steps: JobStep[];
+  artifacts: Array<{
+    id: string;
+    kind: string;
+    bytes: number;
+    validated: boolean;
+  }>;
+  assets: Array<{
+    id: string;
+    kind: string;
+    status: string;
+    bytes: number;
+    duration_frames: number | null;
+    proxy_status: string;
+    error: string | null;
+  }>;
 };

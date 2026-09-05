@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from ..db import jobs as job_writes, models as m
+from ..db import jobs as job_writes, models as m, vocab
 
 
 class NotFound(Exception):
@@ -205,6 +205,188 @@ def org_audit(s: Session, org_id: str, limit: int = 100) -> list[dict]:
     ]
 
 
+def list_jobs(
+    s: Session,
+    *,
+    org_id: str | None = None,
+    status: str | None = None,
+    failed_only: bool = False,
+    limit: int = 100,
+) -> list[dict]:
+    """Jobs across every tenant, newest first.
+
+    The screen an operator opens when somebody says "it didn't work". Until now
+    the only cross-tenant view was per-organisation, so answering that question
+    meant knowing which organisation to look in first — which is the thing the
+    person reporting it usually cannot tell you.
+
+    Carries the org and project names because an id is not something an operator
+    can hold in their head, and `error` because a failed job whose reason needs
+    a second request is a failed job nobody looks at.
+
+    **No `name`, no `notes_raw`, no `brief`.** The first is the surprising one:
+    a job's name defaults to the first upload it draws on, minus the extension
+    (migration 0010), so showing it shows a filename by another route — and
+    filenames are named in this module's rule alongside transcript text.
+    `org_detail`'s job list already left it out. The org, the project, the
+    timestamp and the mode identify a job for support without describing what
+    the customer shot.
+    """
+    j = m.Job.__table__
+    o = m.Org.__table__
+    p = m.Project.__table__
+
+    stmt = (
+        sa.select(
+            j.c.id, j.c.org_id, j.c.project_id, j.c.mode, j.c.status,
+            j.c.error, j.c.created_at, j.c.started_at, j.c.finished_at,
+            j.c.approved_cap, j.c.credits_settled, j.c.cost_cents,
+            j.c.media_gaps,
+            o.c.name.label("org_name"),
+            p.c.name.label("project_name"),
+        )
+        .select_from(
+            j.outerjoin(o, o.c.id == j.c.org_id)
+             .outerjoin(p, p.c.id == j.c.project_id)
+        )
+        .order_by(j.c.created_at.desc())
+        .limit(min(limit, 500))
+    )
+    if org_id:
+        stmt = stmt.where(j.c.org_id == org_id)
+    if status:
+        stmt = stmt.where(j.c.status == status)
+    if failed_only:
+        stmt = stmt.where(j.c.status == "failed")
+
+    return [
+        {
+            "id": r.id, "org_id": r.org_id, "org_name": r.org_name,
+            "project_id": r.project_id, "project_name": r.project_name,
+            "mode": r.mode, "status": r.status,
+            "error": r.error,
+            "created_at": r.created_at, "started_at": r.started_at,
+            "finished_at": r.finished_at,
+            "approved_cap": float(r.approved_cap or 0),
+            "credits_settled": float(r.credits_settled or 0),
+            "cost_cents": r.cost_cents or 0,
+            "media_gaps": r.media_gaps,
+            "seconds": (
+                (r.finished_at - r.started_at).total_seconds()
+                if r.started_at and r.finished_at else None
+            ),
+        }
+        for r in s.execute(stmt)
+    ]
+
+
+def job_detail(s: Session, job_id: str) -> dict:
+    """One job, stage by stage — which step failed, and what it said.
+
+    This is the whole point of the slice. `job_steps` has held the per-step
+    status, error, timing, cache hit and model cost since B3, and nothing has
+    ever shown them: the customer's own progress panel shows a label per stage
+    and the back-office showed the job's status and no more. Diagnosing a
+    failure meant a database session.
+
+    `detail` is the step's own one-line summary — "6 clips", "cached", "4 of 4
+    formats" — written by the pipeline for a person to read. It is about the
+    shape of the work rather than its content, which is why it is safe here.
+    """
+    j = m.Job.__table__
+    st = m.JobStep.__table__
+    o = m.Org.__table__
+    p = m.Project.__table__
+    a = m.Artifact.__table__
+    asset = m.Asset.__table__
+    ja = m.JobAsset.__table__
+
+    row = s.execute(
+        sa.select(
+            j, o.c.name.label("org_name"), p.c.name.label("project_name")
+        )
+        .select_from(
+            j.outerjoin(o, o.c.id == j.c.org_id)
+             .outerjoin(p, p.c.id == j.c.project_id)
+        )
+        .where(j.c.id == job_id)
+    ).first()
+    if row is None:
+        raise NotFound(job_id)
+
+    steps = [
+        {
+            "idx": r.idx, "name": r.name, "status": r.status,
+            "attempt": r.attempt, "detail": r.detail, "error": r.error,
+            "asset_id": r.asset_id, "seconds": float(r.seconds or 0),
+            "from_cache": r.from_cache,
+            "model_cost_micros": r.model_cost_micros or 0,
+            "started_at": r.started_at, "finished_at": r.finished_at,
+        }
+        for r in s.execute(
+            sa.select(st).where(st.c.job_id == job_id).order_by(st.c.idx)
+        )
+    ]
+
+    artifacts = [
+        {"id": r.id, "kind": r.kind, "bytes": r.bytes, "validated": r.validated}
+        for r in s.execute(sa.select(a).where(a.c.job_id == job_id).order_by(a.c.kind))
+    ]
+
+    # No filenames, here or in the artifacts above. The module's rule names them
+    # explicitly alongside transcript and brief text, and it is right to: a
+    # customer's rushes are called things like `EP3_MARGRET_INTERVIEW_TAKE2` and
+    # an operator diagnosing a stuck transcode needs the kind, the size and the
+    # status, not the name of what is in the shot. `logging.py` redacts the same
+    # key for the same reason.
+    assets = [
+        {
+            "id": r.id, "kind": r.kind,
+            "status": r.status, "bytes": r.bytes,
+            "duration_frames": r.duration_frames,
+            "proxy_status": r.proxy_status,
+            "error": r.error,
+        }
+        for r in s.execute(
+            sa.select(asset)
+            .select_from(asset.join(ja, ja.c.asset_id == asset.c.id))
+            .where(ja.c.job_id == job_id)
+            .order_by(ja.c.order_idx)
+        )
+    ]
+
+    # The step that stopped it, named rather than left to be found by eye. A
+    # job's own `error` is the exception that reached the runner; the step's is
+    # where it happened.
+    failed_step = next((x for x in steps if x["status"] == "failed"), None)
+
+    return {
+        "id": row.id, "org_id": row.org_id, "org_name": row.org_name,
+        "project_id": row.project_id, "project_name": row.project_name,
+        "mode": row.mode, "status": row.status,
+        "error": row.error,
+        "created_at": row.created_at, "started_at": row.started_at,
+        "finished_at": row.finished_at,
+        "approved_cap": float(row.approved_cap or 0),
+        "credits_settled": float(row.credits_settled or 0),
+        "cost_cents": row.cost_cents or 0,
+        "media_gaps": row.media_gaps,
+        "model_versions": row.model_versions,
+        "failed_step": failed_step["name"] if failed_step else None,
+        # Same derived field the list carries. A detail response that is missing
+        # a key its own list promises is a shape the client cannot rely on, and
+        # TypeScript will not catch it: the type describes what we said we send,
+        # not what we send.
+        "seconds": (
+            (row.finished_at - row.started_at).total_seconds()
+            if row.started_at and row.finished_at else None
+        ),
+        "steps": steps,
+        "artifacts": artifacts,
+        "assets": assets,
+    }
+
+
 def actions(s: Session, org_id: str | None = None, limit: int = 100) -> list[dict]:
     """What the back-office has done. Its own log, not a customer's."""
     t = m.PlatformAction.__table__
@@ -244,10 +426,27 @@ def totals(s: Session) -> dict:
         "credits_held": float(
             s.execute(sa.select(sa.func.coalesce(sa.func.sum(b.c.held), 0))).scalar() or 0
         ),
+        # Anything not finished, expressed as "not terminal" rather than as a
+        # list of active statuses. The list was `("queued", "running",
+        # "awaiting_media")` and two of those three are not job statuses at all
+        # — `vocab.JOB_STATUSES` has no `running` and no `awaiting_media`, so a
+        # job that was transcribing counted as nothing and the front page read
+        # zero while the fleet was busy. A closed vocabulary is worth subtracting
+        # from rather than enumerating: a status added later is active until
+        # somebody says otherwise, which is the safe direction for a number an
+        # operator uses to decide whether anything is wrong.
         "jobs_running": s.execute(
             sa.select(sa.func.count())
             .select_from(j)
-            .where(j.c.status.in_(("queued", "running", "awaiting_media")))
+            .where(j.c.status.notin_(vocab.JOB_TERMINAL_STATUSES))
+        ).scalar() or 0,
+        "jobs_failed_24h": s.execute(
+            sa.select(sa.func.count())
+            .select_from(j)
+            .where(
+                j.c.status == "failed",
+                j.c.created_at > sa.func.now() - sa.text("interval '24 hours'"),
+            )
         ).scalar() or 0,
     }
 

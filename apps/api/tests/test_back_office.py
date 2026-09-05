@@ -388,3 +388,175 @@ def test_actions_can_be_filtered_to_one_org(admin_api):
     filtered = http.get("/admin/v1/actions", params={"org_id": ORG}).json()
     assert filtered and all(a["target_org_id"] == ORG for a in filtered)
     assert http.get("/admin/v1/actions", params={"org_id": "org_nope"}).json() == []
+
+
+# ── job visibility: the screen support opens when somebody says it broke ──
+
+
+def _a_failed_job(owner, job_id: str = "job_test_visible") -> str:
+    """A job that stopped at `transcribe`, with the stages either side of it.
+
+    Written straight to the tables rather than run through the pipeline: the
+    claim under test is what the back-office discloses about a failure, and
+    that should hold whatever produced it.
+    """
+    with owner.begin() as conn:
+        conn.execute(
+            sa.text("SELECT set_config('app.org_id', :o, true)"), {"o": ORG}
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO projects (id, org_id, name) VALUES (:p, :o, 'Ep 4')"
+                " ON CONFLICT (id) DO NOTHING"
+            ),
+            {"p": "prj_test_visible", "o": ORG},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO jobs (id, org_id, project_id, name, mode, status,"
+                "  error, approved_cap, created_at, started_at, finished_at)"
+                " VALUES (:j, :o, :p, 'MARGRET_INTERVIEW_TAKE2', 'ai', 'failed',"
+                "  :err, 8.0, now(), now(), now())"
+                " ON CONFLICT (id) DO NOTHING"
+            ),
+            {
+                "j": job_id,
+                "o": ORG,
+                "p": "prj_test_visible",
+                "err": '{"code": "ASRError"}',
+            },
+        )
+        for idx, name, status, detail in (
+            (1, "prepare", "done", "sequence · 25/1"),
+            (2, "audio", "done", "1 track(s)"),
+            (3, "transcribe", "failed", None),
+            (4, "vad", "pending", None),
+        ):
+            conn.execute(
+                sa.text(
+                    "INSERT INTO job_steps (id, org_id, job_id, idx, name, status,"
+                    "  detail, seconds) VALUES (:i, :o, :j, :x, :n, :s, :d, 1.5)"
+                    " ON CONFLICT (id) DO NOTHING"
+                ),
+                {
+                    "i": f"stp_{job_id}_{idx}",
+                    "o": ORG,
+                    "j": job_id,
+                    "x": idx,
+                    "n": name,
+                    "s": status,
+                    "d": detail,
+                },
+            )
+    return job_id
+
+
+def test_the_job_list_crosses_tenants_and_says_why_each_one_stopped(admin_api, owner):
+    http, _ = admin_api
+    job_id = _a_failed_job(owner)
+
+    rows = http.get("/admin/v1/jobs?failed=true").json()
+    mine = next(r for r in rows if r["id"] == job_id)
+
+    # Enough to find the customer and call them.
+    assert mine["org_name"]
+    assert mine["project_name"] == "Ep 4"
+    # And enough to know what happened without opening the job.
+    assert mine["error"]["code"] == "ASRError"
+
+
+def test_the_job_list_does_not_disclose_what_the_customer_shot(admin_api, owner):
+    """A job's name is the first upload's filename, so it is content.
+
+    Migration 0010 names an existing job after the file it draws on, minus the
+    extension, and `logging.py` redacts `filename` for the same reason: an
+    operator diagnosing a stuck transcode has no business knowing the rushes
+    are called MARGRET_INTERVIEW_TAKE2. This is the regression guard on that —
+    the field is one `j.c.name` away from coming back.
+    """
+    job_id = _a_failed_job(owner)
+
+    listed = next(
+        r for r in http_get_jobs(admin_api) if r["id"] == job_id
+    )
+    assert "name" not in listed
+    assert "MARGRET" not in str(listed)
+
+    http, _ = admin_api
+    detail = http.get(f"/admin/v1/jobs/{job_id}").json()
+    assert "name" not in detail
+    assert "MARGRET" not in str(detail)
+    for asset in detail["assets"]:
+        assert "filename" not in asset
+    for artifact in detail["artifacts"]:
+        assert "filename" not in artifact
+
+
+def http_get_jobs(admin_api) -> list[dict]:
+    http, _ = admin_api
+    return http.get("/admin/v1/jobs?limit=200").json()
+
+
+def test_the_detail_names_the_stage_that_stopped_it(admin_api, owner):
+    http, _ = admin_api
+    job_id = _a_failed_job(owner)
+
+    detail = http.get(f"/admin/v1/jobs/{job_id}").json()
+
+    assert detail["failed_step"] == "transcribe"
+    names = [s["name"] for s in detail["steps"]]
+    assert names == ["prepare", "audio", "transcribe", "vad"]
+    # Ordered by index, so the screen reads top to bottom as the job ran.
+    assert [s["idx"] for s in detail["steps"]] == [1, 2, 3, 4]
+
+
+def test_an_unknown_job_is_a_404(admin_api):
+    http, _ = admin_api
+    assert http.get("/admin/v1/jobs/job_nope").status_code == 404
+
+
+def test_jobs_are_unreachable_without_a_session(admin_api):
+    http, _ = admin_api
+    http.cookies.clear()
+    assert http.get("/admin/v1/jobs").status_code == 401
+    assert http.get("/admin/v1/jobs/job_test_visible").status_code == 401
+
+
+def test_a_job_in_flight_is_counted_as_running(admin_api, owner):
+    """`transcribing` is running. The overview used to say it was not.
+
+    The count filtered on `("queued", "running", "awaiting_media")` and two of
+    those are not job statuses — `vocab.JOB_STATUSES` has neither — so the front
+    page read zero while the fleet was busy, which is the one number an operator
+    checks to decide whether anything is wrong.
+    """
+    http, _ = admin_api
+    _a_failed_job(owner, "job_test_inflight")
+    with owner.begin() as conn:
+        conn.execute(
+            sa.text("SELECT set_config('app.org_id', :o, true)"), {"o": ORG}
+        )
+        conn.execute(
+            sa.text("UPDATE jobs SET status = 'transcribing' WHERE id = :j"),
+            {"j": "job_test_inflight"},
+        )
+
+    assert http.get("/admin/v1/overview").json()["jobs_running"] >= 1
+
+
+def test_the_detail_carries_every_field_the_list_does(admin_api, owner):
+    """One job, two endpoints, one shape.
+
+    The detail response was missing `seconds`, which the list computes, and the
+    screen that reads both crashed on `undefined.toFixed`. TypeScript did not
+    catch it and could not: the type describes what the server was supposed to
+    send. Only asking both endpoints does.
+    """
+    http, _ = admin_api
+    job_id = _a_failed_job(owner)
+
+    listed = next(r for r in http.get("/admin/v1/jobs?limit=200").json() if r["id"] == job_id)
+    detail = http.get(f"/admin/v1/jobs/{job_id}").json()
+
+    missing = set(listed) - set(detail)
+    assert not missing, f"detail is missing {missing}"

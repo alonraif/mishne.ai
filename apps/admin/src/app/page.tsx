@@ -143,12 +143,21 @@ function Orgs({ email }: { email: string }) {
       </header>
 
       {overview && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
           <Stat label="Organisations" value={String(overview.orgs)} />
           <Stat label="Suspended" value={String(overview.suspended)} />
           <Stat label="Credits outstanding" value={overview.credits_outstanding.toFixed(2)} />
           <Stat label="Held by running jobs" value={overview.credits_held.toFixed(2)} />
-          <Stat label="Jobs in flight" value={String(overview.jobs_running)} />
+          <Link href="/jobs">
+            <Stat label="Jobs in flight" value={String(overview.jobs_running)} />
+          </Link>
+          <Link href="/jobs">
+            <Stat
+              label="Failed today"
+              value={String(overview.jobs_failed_24h)}
+              tone={overview.jobs_failed_24h > 0 ? "danger" : undefined}
+            />
+          </Link>
         </div>
       )}
 
@@ -176,7 +185,7 @@ function Orgs({ email }: { email: string }) {
                 <th className="pb-2 text-right font-normal">Held</th>
                 <th className="pb-2 text-right font-normal">Users</th>
                 <th className="pb-2 text-right font-normal">Projects</th>
-                <th className="pb-2 text-right font-normal">Jobs</th>
+                <th className="pb-2 pr-4 text-right font-normal">Jobs</th>
                 <th className="pb-2 font-normal">Created</th>
               </tr>
             </thead>
@@ -205,7 +214,7 @@ function Orgs({ email }: { email: string }) {
                   </td>
                   <td className="py-2 text-right tabular">{o.user_count}</td>
                   <td className="py-2 text-right tabular">{o.project_count}</td>
-                  <td className="py-2 text-right tabular">{o.job_count}</td>
+                  <td className="py-2 pr-4 text-right tabular">{o.job_count}</td>
                   <td className="py-2 text-xs" style={{ color: "var(--muted)" }}>
                     <When iso={o.created_at} />
                   </td>
@@ -226,7 +235,16 @@ function Orgs({ email }: { email: string }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  /** `danger` for a number that means somebody should look — a failure count. */
+  tone?: "danger";
+}) {
   return (
     <div
       className="rounded-lg border p-3"
@@ -235,7 +253,12 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className="text-xs" style={{ color: "var(--muted)" }}>
         {label}
       </div>
-      <div className="tabular mt-1 text-xl font-semibold">{value}</div>
+      <div
+        className="tabular mt-1 text-xl font-semibold"
+        style={tone === "danger" ? { color: "var(--danger)" } : undefined}
+      >
+        {value}
+      </div>
     </div>
   );
 }
